@@ -116,3 +116,40 @@ async def test_check_cash_ratio_low_alarm():
         assert cash_trigger is not None
         assert "Cash Alert" in cash_trigger["text"]
         assert "Actual 5.0%" in cash_trigger["text"]
+
+
+@pytest.mark.asyncio
+async def test_implausible_cash_ratio_is_treated_as_bad_data_not_an_alert():
+    """2026-09-29: a drifted local ledger produced cash = -38.5% of NAV and a cash alert right before a mass
+    liquidation. A cash ratio outside [0, 1.05] must raise no cash alert."""
+    mock_settings = MagicMock()
+    mock_settings.get_setting.side_effect = lambda key, default=None, user_id=None: "Balanced" if key == "risk_profile" else default
+    mock_snapshot_repo = MagicMock()
+    mock_snapshot_repo.get_latest_by_user.return_value = {
+        "leverage_ratio": 1.0, "total_nlv": 100000, "cash_balance": -38500,
+    }
+    with patch("src.services.sentinel_service.SettingsService", return_value=mock_settings), \
+         patch("src.services.sentinel_service.AlchemySnapshotRepository", return_value=mock_snapshot_repo), \
+         patch("src.services.sentinel_service.AlchemySentinelRepository") as repo_cls, \
+         patch("src.services.fred_service.FredService") as fred_cls, \
+         patch("src.services.sentinel_service.InternetSearchService"), \
+         patch("src.services.sentinel_service.TransactionService"), \
+         patch("src.services.sentinel_service.MarketDataService") as market_cls, \
+         patch("src.services.sentinel_service.CouncilService"):
+        market = MagicMock()
+        market.get_macro_data.return_value = {"market_indicators": {"^VIX": 20.0}}
+        market.get_current_prices.return_value = {"SPY": 500.0}
+        import pandas as pd
+        market.get_historical_data.return_value = pd.DataFrame({"Close": [400.0] * 200})
+        market_cls.return_value = market
+        repo = MagicMock(); repo.engine = MagicMock(); repo.get_all_thresholds.return_value = {}
+        repo_cls.return_value = repo
+        fred = MagicMock(); fred.get_macro_indicators.return_value = {"CPI": {"history": [110, 100]}}
+        fred_cls.return_value = fred
+        service = SentinelService(user_id="test_user", settings_service=mock_settings, repo=repo, snapshot_repo=mock_snapshot_repo)
+        service._get_all_user_ids = MagicMock(return_value=["test_user"])
+        service._get_market_trend = MagicMock(return_value="Neutral")
+        service.current_vix = 20.0
+        triggers = await service._check_risk_consistency()
+        assert [t for t in triggers if t.get("type") == "cash_management"] == []
+        assert not any("Cash" in t.get("text", "") for t in triggers)

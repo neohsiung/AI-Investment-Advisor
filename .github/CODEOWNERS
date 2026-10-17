@@ -1,0 +1,24 @@
+# Code owners — every R2/R3 path needs a review from the owner (see AGENTS.md "Mission & Non-Negotiable Invariants").
+# 這些路徑的變更必須由 owner 審核（R2＝決策/設定，R3＝動錢）。
+# R3 — money-moving
+/src/services/automated_trading_service.py        @neohsiung
+/src/services/unified_risk_gateway_service.py     @neohsiung
+/src/services/capital_policy.py                   @neohsiung
+/src/services/etoro_service.py                    @neohsiung
+/src/services/confidence_rebalance_service.py     @neohsiung
+/src/services/batch_cash_deployment_service.py    @neohsiung
+/config/mission.yaml                              @neohsiung
+/src/config/mission.py                            @neohsiung
+# R2 — decisions, config, schema, deploy path
+/config/                                          @neohsiung
+/prompts/                                         @neohsiung
+/alembic/                                         @neohsiung
+/src/services/sentinel_service.py                 @neohsiung
+/src/infrastructure/tasks.py                      @neohsiung
+/src/infrastructure/celery_app.py                 @neohsiung
+/start.sh                                         @neohsiung
+/scripts/predeploy_gate.sh                        @neohsiung
+/docker-compose*.yml                              @neohsiung
+/tests/invariants/                                @neohsiung
+/AGENTS.md                                        @neohsiung
+/.github/                                         @neohsiung

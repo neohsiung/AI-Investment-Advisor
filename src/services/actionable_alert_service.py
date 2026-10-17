@@ -381,28 +381,9 @@ class ActionableAlertHubService:
                 return {"ok": False, "action": action, "message": "❌ 未指定平倉標的代號 (Ticker)"}
 
             try:
-                # 1. Check if broker provides direct position lookup & close (e.g. mocked in tests)
-                from src.services.etoro_service import EtoroService
-                etoro = EtoroService(user_id=self.user_id)
-                closed_count = 0
-                if hasattr(etoro, "get_portfolio"):
-                    port = etoro.get_portfolio()
-                    positions = [p for p in (port.get("positions", []) if isinstance(port, dict) else []) if str(p.get("ticker", "")).upper() == ticker]
-                    for pos in positions:
-                        pos_id = pos.get("id") or pos.get("position_id")
-                        if pos_id and hasattr(etoro, "close_position"):
-                            etoro.close_position(position_id=pos_id)
-                            closed_count += 1
-
-                if closed_count > 0:
-                    return {
-                        "ok": True,
-                        "action": action,
-                        "ticker": ticker,
-                        "message": f"🚨 已成功送出 {ticker} 市價平倉指令（共平倉 {closed_count} 筆部位）。",
-                    }
-
-                # 2. Unified execution via AutomatedTradingService
+                # All closes go through the single execution service (risk gateway + ledger); no direct broker calls.
+                # 所有平倉一律走唯一的執行服務（含風控閘門與帳本），不直接呼叫券商。
+                # Unified execution via AutomatedTradingService
                 from src.services.automated_trading_service import AutomatedTradingService
                 auto_svc = AutomatedTradingService()
                 res = await auto_svc.evaluate_and_execute_trade(

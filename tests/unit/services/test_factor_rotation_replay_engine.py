@@ -279,9 +279,10 @@ class TestServiceIntegration:
 class TestCeleryTaskExecution:
     """Tests for Celery task dispatch and execution."""
 
+    @patch("src.infrastructure.tasks._synthetic_evolution_enabled", return_value=True)
     @patch("src.infrastructure.tasks._resolve_target_users", return_value=["test_user"])
     @patch("src.infrastructure.tasks.run_factor_rotation_evolution.delay")
-    def test_dispatch_factor_rotation_evolution(self, mock_delay, mock_users):
+    def test_dispatch_factor_rotation_evolution(self, mock_delay, mock_users, _gate):
         from src.infrastructure.tasks import dispatch_factor_rotation_evolution
         res = dispatch_factor_rotation_evolution()
         assert "Dispatched 1" in res

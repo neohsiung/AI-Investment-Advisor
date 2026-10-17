@@ -238,20 +238,17 @@ class CompositorService:
             return fallback_score, fallback_factors
 
     def _fallback_score(self, ticker: str, agent_name: str) -> Tuple[float, Dict[str, Any]]:
-        """Deterministic hash-based fallback when LLM is unavailable."""
-        seed = self._ticker_hash(ticker + "_" + agent_name.lower())
-
-        base_map = {
-            "fundamental": 7.0 + (seed % 5) * 0.5,
-            "momentum": 5.0 + (seed % 5) * 0.8,
-            "sentiment": 6.0 + (seed % 4) * 0.7,
-            "risk": 5.0 + (seed % 5) * 0.6,
-        }
-        base = base_map.get(agent_name.lower(), 6.0)
-        return min(10.0, base), {
-            "key_factor": "Fallback (hash-based)",
-            "details": f"LLM unavailable, used deterministic seed {seed}",
-            "rationale": f"{agent_name} evaluated (fallback mode)",
+        """LLM unavailable: return NO evidence, not a plausible-looking score.
+        Previously this returned a hash of the ticker (7.0-9.0 for "fundamental"), which could pass the buy
+        threshold on pure noise. The result is flagged `_insufficient_data`; `_aggregate_scores` drops it
+        and refuses to execute if too little real evidence remains.
+        LLM 不可用時回傳『沒有證據』而非看似合理的分數（以前是 ticker 雜湊，fundamental 可高達 7–9 分，
+        足以靠雜訊通過買入門檻）。標記為 _insufficient_data，由 _aggregate_scores 排除。"""
+        return 0.0, {
+            "key_factor": "Unavailable (no evidence)",
+            "details": "LLM scoring unavailable; this agent is excluded from the composite",
+            "rationale": f"{agent_name}: insufficient data",
+            "_insufficient_data": True,
         }
 
     # ── Agent Scoring Prompts ──
@@ -471,6 +468,20 @@ Return JSON:
             if not active_artifacts:
                 return sub_scores
 
+            # Live exec of LLM-generated code is OFF unless explicitly enabled: the
+            # artifacts were validated on synthetic data only (see 2026-10-16 audit).
+            # 實盤執行 LLM 生成程式碼預設關閉：這些因子僅在合成資料上驗證過。
+            from src.services.settings_service import SettingsService
+            allow_exec = SettingsService(user_id=self.user_id).get_setting(
+                "allow_synthesized_factor_live_exec", False
+            )
+            if not (allow_exec is True or str(allow_exec).lower() == "true"):
+                logger.warning(
+                    "Synthesized factors skipped for %s: allow_synthesized_factor_live_exec is off "
+                    "(%d ACTIVE artifacts ignored)", ticker, len(active_artifacts),
+                )
+                return sub_scores
+
             # Fetch recent market data for ticker via resilient MarketDataService
             market_df = None
             try:
@@ -480,22 +491,11 @@ Return JSON:
             except Exception as e:
                 logger.warning("Could not fetch market data from MarketDataService for %s: %s", ticker, e)
 
-            # Fallback data generation if market data is unavailable (e.g. offline/mock environment)
+            # No real prices -> no factor score. Never score on a random series.
+            # 無真實行情就不給因子分數，絕不以隨機序列代算。
             if market_df is None or market_df.empty:
-                import numpy as np
-                import pandas as pd
-                n = 40
-                dates = pd.date_range(end=datetime.now(), periods=n, freq="D")
-                seed = self._ticker_hash(ticker)
-                np.random.seed(seed % 10000)
-                close = 100.0 + np.cumsum(np.random.normal(0.1, 1.0, n))
-                market_df = pd.DataFrame({
-                    "Open": close - 0.5,
-                    "High": close + 1.0,
-                    "Low": close - 1.0,
-                    "Close": close,
-                    "Volume": np.random.randint(1000, 20000, n),
-                }, index=dates)
+                logger.warning("Synthesized factors skipped for %s: no market data", ticker)
+                return sub_scores
 
             for art in active_artifacts:
                 try:
@@ -641,6 +641,20 @@ Return JSON:
         base_scores = [s for s in sub_scores if not s.agent_name.startswith("Synth_") and s.agent_name != "Event_Bias"]
         synth_scores = [s for s in sub_scores if s.agent_name.startswith("Synth_")]
         event_bias_score = next((s for s in sub_scores if s.agent_name == "Event_Bias"), None)
+
+        # Agents with no real evidence (LLM failed) are excluded. If less than half of the configured
+        # base weight remains, there is not enough evidence to trade at all.
+        # 無真實證據的代理（LLM 失敗）一律排除；若剩餘權重不足設定總權重的一半，則整體視為證據不足、不得交易。
+        usable_base = [s for s in base_scores if not s.factors.get("_insufficient_data")]
+        total_cfg = sum(self.agent_weights.get(s.agent_name.lower(), 0.25) for s in base_scores)
+        usable_cfg = sum(self.agent_weights.get(s.agent_name.lower(), 0.25) for s in usable_base)
+        if base_scores and (not usable_base or usable_cfg < 0.5 * total_cfg):
+            logger.warning(
+                "Composite blocked: only %.0f%% of agent weight has real evidence (%d/%d agents)",
+                100.0 * usable_cfg / total_cfg if total_cfg else 0.0, len(usable_base), len(base_scores),
+            )
+            return 0.0, False
+        base_scores = usable_base
 
         # Case 1: Standard 4-agent ensemble (no active synthesized factors)
         if not synth_scores:

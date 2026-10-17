@@ -172,6 +172,28 @@ class TokenLoggerService(BaseRepository):
                      "tokens": tokens,
                      "calls": int(row.call_count or 0)
                  }
+
+             # llm_usage_logs is priced from benchmark list prices (~7x real spend). Prefer the
+             # LiteLLM-billed cost when enough days are booked; otherwise keep the estimate but
+             # label it so callers never mistake it for billing.
+             # llm_usage_logs 以商用定價估算（約為真實花費 7 倍）；覆蓋足夠時改用 LiteLLM 計費成本，
+             # 否則保留估算並明確標示來源。
+             summary["estimated_cost"] = summary["total_cost"]
+             summary["cost_source"] = "benchmark_estimate"
+             try:
+                 from src.services.litellm_spend_service import LiteLLMSpendService
+                 real = LiteLLMSpendService(engine=self.engine).get_spend(days)
+             except Exception as re_err:
+                 logger.warning("Real LLM cost unavailable (%s); using benchmark estimate", re_err)
+                 real = None
+             if real is not None:
+                 est = summary["estimated_cost"]
+                 scale = (real["total_cost"] / est) if est > 0 else 0.0
+                 for t in summary["tiers"].values():
+                     t["estimated_cost"] = t["cost"]
+                     t["cost"] = t["cost"] * scale
+                 summary["total_cost"] = real["total_cost"]
+                 summary["cost_source"] = real["source"]
                  
              return summary
 

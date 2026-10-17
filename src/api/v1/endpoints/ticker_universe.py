@@ -236,14 +236,18 @@ async def reclaim_capital_endpoint(
     """主動資本置換：計算或執行賣出低置信度/微型持倉，以籌措高置信度買入所需資金"""
     try:
         from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+        if payload.candidate_score is None or payload.candidate_score <= 0:
+            raise HTTPException(status_code=422, detail="candidate_score is required (a real score is never invented)")
         rbs = ConfidenceRebalanceService(user_id=service.user_id)
         result = await rbs.reclaim_capital_for_buy(
             candidate_ticker=payload.candidate_ticker.upper(),
             target_amount=payload.target_amount,
-            candidate_score=payload.candidate_score or 8.5,
+            candidate_score=payload.candidate_score,
             execute=payload.execute or False,
         )
         return {"status": "success", "data": result}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Reclaim capital failed: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

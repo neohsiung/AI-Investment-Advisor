@@ -328,3 +328,52 @@ class TestRebalanceExecuteSafety:
         assert result["status"] == "market_closed"
         assert "休市中" in result["message"]
         svc._execute_trade.assert_not_called()
+
+import pytest as _pytest_guard
+
+
+@_pytest_guard.fixture(autouse=True)
+def _rebalance_guard_env(monkeypatch):
+    """The plan tests exercise sizing/selection logic, not the DB-backed daily sell counter or research
+    lookups; give the guard healthy, neutral inputs. Guard behaviour has its own tests
+    (tests/unit/services/test_rebalance_guard.py).
+    這些測試驗證部位計算/選擇邏輯；護欄的資料庫查詢以中性值取代，護欄行為另有專屬測試。"""
+    from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+    monkeypatch.setattr(ConfidenceRebalanceService, "_sells_today", lambda self: (0, 0.0))
+    monkeypatch.setattr(ConfidenceRebalanceService, "_latest_score", lambda self, ticker: 6.0)
+
+
+@pytest.mark.asyncio
+async def test_rebalance_never_prunes_the_benchmark_core():
+    """SPY is not in the universe targets by design; it must not be treated as dead capital to liquidate."""
+    from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+
+    svc = ConfidenceRebalanceService(user_id="test-user")
+    svc._get_current_weights = AsyncMock(return_value={
+        "weights": {"SPY": 50.0, "AAPL": 10.0}, "cash_weight": 40.0, "total_value": 1000.0,
+        "positions_map": {"SPY": {"current_price": 700.0}, "AAPL": {"current_price": 300.0}},
+    })
+    svc.ticker_service.optimize_allocations = MagicMock(return_value={"success": True, "targets": [
+        {"ticker": "AAPL", "target_weight": 0.10, "confidence_score": 0.8}]})
+    plan = await svc.get_rebalance_plan()
+    assert "SPY" not in [s["ticker"] for s in plan["trades"]["sells"]]
+    assert "SPY" not in [b["ticker"] for b in plan["guard"]["blocked_sells"]]
+
+
+@pytest.mark.asyncio
+async def test_rebalance_buys_are_ramped_in_not_dumped(monkeypatch):
+    """An all-cash account must not receive eight $100-$180 buys (~60% of NAV) from a single weekly run."""
+    from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+
+    svc = ConfidenceRebalanceService(user_id="test-user")
+    tickers = [f"T{i}" for i in range(8)]
+    svc._get_current_weights = AsyncMock(return_value={
+        "weights": {}, "cash_weight": 100.0, "total_value": 1661.0, "positions_map": {},
+    })
+    svc.ticker_service.optimize_allocations = MagicMock(return_value={"success": True, "targets": [
+        {"ticker": t, "target_weight": 0.10, "confidence_score": 0.9 - i * 0.01} for i, t in enumerate(tickers)]})
+    plan = await svc.get_rebalance_plan()
+    buys = plan["trades"]["buys"]
+    assert len(buys) == 3                                   # batch_deploy_max_tickers default
+    assert all(b["delta_amount"] <= 100.0 for b in buys)    # batch_deploy_max_order_usd default
+    assert [b["ticker"] for b in buys] == ["T0", "T1", "T2"]    # strongest first

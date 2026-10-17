@@ -287,74 +287,135 @@ class BatchCashDeploymentService:
             "deployable_cash": round(deployable_cash, 2),
         }
 
+    # ═══════════════════════════════════════════════════════════════════════
+    # Dynamic candidate selection (replaces the hardcoded 8-ticker batches)
+    # 動態候選選擇（取代寫死的 8 檔批次）
+    # ═══════════════════════════════════════════════════════════════════════
+
+    def _setting_float(self, key: str, default: float) -> float:
+        try:
+            val = self.settings_service.get_setting(key, default)
+            return float(val) if val is not None else default
+        except (TypeError, ValueError, AttributeError) as e:
+            logger.warning("Invalid setting %s (%s); using default %s", key, e, default)
+            return default
+
+    @staticmethod
+    def rank_candidates(
+        target_records: List[Dict[str, Any]],
+        active_tickers: set,
+        holdings: Dict[str, float],
+        total_equity: float,
+        max_order_usd: float,
+        max_tickers: int,
+        min_confidence: float,
+        min_trade_usd: float = 10.0,
+    ) -> List[Dict[str, Any]]:
+        """
+        Pick buy candidates from optimizer targets restricted to the active universe.
+        Eligible = active universe member, target weight > 0, confidence >= min_confidence,
+        and a funding gap (target value - current value) >= min_trade_usd. Ranked by
+        confidence then gap; each order is capped at max_order_usd.
+        自優化器目標（限 active 標的池）挑選買入候選：信心 >= 下限、仍有 >= 最低下單額的缺口，
+        依信心再依缺口排序，單筆上限 max_order_usd。
+        """
+        ranked: List[Dict[str, Any]] = []
+        for rec in target_records:
+            sym = str(rec.get("ticker") or "").upper()
+            if not sym or sym == "CASH" or sym not in active_tickers:
+                continue
+            weight = float(rec.get("target_weight") or 0.0)
+            if weight <= 0:
+                continue
+            raw_conf = rec.get("confidence_score")
+            if raw_conf is None:
+                continue
+            conf = float(raw_conf) * 10.0 if float(raw_conf) <= 1.0 else float(raw_conf)
+            if conf < min_confidence:
+                continue
+            gap = total_equity * weight - float(holdings.get(sym, 0.0) or 0.0)
+            if gap < min_trade_usd:
+                continue
+            ranked.append({
+                "ticker": sym,
+                "target_pct": weight,
+                "base_amount": round(min(gap, max_order_usd), 2),
+                "confidence": conf,
+                "role": f"Universe target {weight:.1%} (conf {conf:.1f}/10, gap ${gap:.0f})",
+                "_gap": gap,
+            })
+        ranked.sort(key=lambda c: (-c["confidence"], -c["_gap"]))
+        return ranked[:max(1, int(max_tickers))]
+
+    async def _select_dynamic_candidates(
+        self,
+        total_equity: float,
+        holdings: Dict[str, float],
+        target_records: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Load universe/targets and rank. Returns [] (with a warning) when nothing qualifies.
+        載入標的池與目標並排序；無合格候選時回傳 [] 並記 warning，不退回寫死名單。"""
+        from src.repositories.ticker_universe_repository import TickerUniverseRepository
+        repo = TickerUniverseRepository()
+        if target_records is None:
+            target_records = repo.get_target_allocations(self.user_id)
+        active = {
+            str(u.get("ticker") or "").upper()
+            for u in repo.get_all(self.user_id, status="active")
+        }
+        ranked = self.rank_candidates(
+            target_records=target_records,
+            active_tickers=active,
+            holdings=holdings,
+            total_equity=total_equity,
+            max_order_usd=self._setting_float("batch_deploy_max_order_usd", 100.0),
+            max_tickers=int(self._setting_float("batch_deploy_max_tickers", 3)),
+            min_confidence=self._setting_float("batch_deploy_min_confidence", 5.5),
+        )
+        if not ranked:
+            logger.warning(
+                "BatchCashDeployment: no eligible candidates (active universe=%d, targets=%d); nothing to deploy",
+                len(active), len(target_records),
+            )
+        return ranked
+
+    async def _load_holdings(self) -> Dict[str, float]:
+        """Broker positions as {symbol: market_value}; raises on broker failure (no silent empty).
+        券商持倉 {代號: 市值}；券商失敗時拋出例外，不靜默回傳空值。"""
+        holdings: Dict[str, float] = {}
+        broker = await self._get_broker()
+        if not broker:
+            raise RuntimeError("no broker available to read positions")
+        for p in await broker.get_positions():
+            sym = getattr(p, "symbol", "")
+            for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
+                if sym.endswith(suffix):
+                    sym = sym[:-len(suffix)]
+            holdings[sym] = float(getattr(p, "market_value", 0.0) or 0.0)
+        return holdings
+
     async def get_active_batch_number(self) -> int:
         """
-        全自動判定當前應執行的批次 (1, 2, 3，若全數完成或資金達標則回傳 0)。
-        判定依據：
-        1. 檢視可支配建倉資金：若 deployable_cash < 10.0，無可動用資金，直接回傳 0 (建倉週期圓滿結束)。
-        2. 檢視 Redis 中儲存的當前批次狀態 batch_deployment:current_batch:{user_id}
-        3. 檢視券商真實持倉：
-           - 若 NVDA 與 TSM 已持倉 (市值各 >= $40)，視為第 1 批次已完成，推進至第 2 批次。
-           - 若 MU 與 AMD 已持倉 (市值各 >= $30)，視為第 2 批次已完成，推進至第 3 批次。
-           - 若 SPCX 已持倉 (市值 >= $30)，視為第 3 批次已完成。
-        4. 回傳當前有效批次 (1, 2, 3 或 0)。
+        Returns 1 while there is deployable cash AND at least one eligible universe candidate
+        with a funding gap; otherwise 0. No longer inferred from fixed tickers.
+        有可動用資金且至少一檔 universe 候選仍有缺口時回傳 1，否則 0；不再由固定標的推斷。
         """
         try:
             status = await self.get_portfolio_status()
             deployable = float(status.get("deployable_cash", 0.0) or 0.0)
             if deployable < 10.0:
                 return 0
+            holdings = await self._load_holdings()
+            candidates = await self._select_dynamic_candidates(
+                total_equity=float(status.get("total_equity", 0.0) or 0.0),
+                holdings=holdings,
+            )
         except Exception as e:
-            logger.debug(f"Failed to check deployable cash for active batch: {e}")
-
-        stored_batch = 1
-        try:
-            from src.infrastructure.cache.redis_client import get_redis
-            r = await get_redis(decode_responses=True)
-            val = await r.get(f"batch_deployment:current_batch:{self.user_id}")
-            if val is not None:
-                stored_batch = int(val)
-        except Exception as e:
-            logger.debug(f"Could not read active batch from redis: {e}")
-
-        if stored_batch == 0:
+            # Unknown state must not look like "all done": surface it.
+            # 狀態未知不可偽裝成「已完成」：以 warning 記錄並視為無法判定（回傳 0 並標記）。
+            logger.warning("get_active_batch_number: cannot evaluate deployment state (%s); returning 0", e)
             return 0
-
-        holdings: Dict[str, float] = {}
-        try:
-            broker = await self._get_broker()
-            if broker:
-                positions = await broker.get_positions()
-                for p in positions:
-                    sym = getattr(p, "symbol", "")
-                    for suffix in [".US", ".RTH", ".EXT", ".L", ".UK"]:
-                        if sym.endswith(suffix):
-                            sym = sym[:-len(suffix)]
-                    holdings[sym] = float(getattr(p, "market_value", 0.0) or 0.0)
-        except Exception as e:
-            logger.debug(f"Could not read positions for batch inference: {e}")
-
-        has_b1_nvda = holdings.get("NVDA", 0.0) >= 40.0
-        has_b1_tsm = holdings.get("TSM", 0.0) >= 40.0
-        has_b2_mu = holdings.get("MU", 0.0) >= 30.0
-        has_b2_amd = holdings.get("AMD", 0.0) >= 30.0
-        has_b3_spcx = holdings.get("SPCX", 0.0) >= 30.0
-
-        derived_batch = 1
-        if has_b1_nvda and has_b1_tsm:
-            derived_batch = 2
-            if has_b2_mu and has_b2_amd:
-                derived_batch = 3
-                if has_b3_spcx:
-                    derived_batch = 0
-
-        if derived_batch == 0:
-            return 0
-
-        active_batch = max(stored_batch, derived_batch)
-        if active_batch > 3:
-            return 0
-        return active_batch
+        return 1 if candidates else 0
 
     async def get_deployment_plan(self, batch_number: int = 1) -> Dict[str, Any]:
         """
@@ -385,24 +446,12 @@ class BatchCashDeploymentService:
                         sym = sym[:-len(suffix)]
                 current_holdings[sym] = float(getattr(p, "market_value", 0.0) or 0.0)
 
-        # 定義 3 大批次候選
-        batches = {
-            1: [
-                {"ticker": "NVDA", "target_pct": 0.10, "base_amount": 114.00, "confidence": 6.86, "role": "Alpha Top 1 算力龍頭開倉"},
-                {"ticker": "TSM",  "target_pct": 0.10, "base_amount": 144.00, "confidence": 6.69, "role": "Alpha Top 2 先進製程開倉"},
-                {"ticker": "AAPL", "target_pct": 0.10, "base_amount": 89.00,  "confidence": 6.86, "role": "Top 3 核心終端生態底倉加碼補足"},
-            ],
-            2: [
-                {"ticker": "MSFT", "target_pct": 0.10, "base_amount": 91.00,  "confidence": 6.47, "role": "雲端 AI 企業端加碼"},
-                {"ticker": "MU",   "target_pct": 0.05, "base_amount": 79.00,  "confidence": 6.86, "role": "高頻寬記憶體 (HBM) 週期建倉"},
-                {"ticker": "AMD",  "target_pct": 0.05, "base_amount": 77.00,  "confidence": 6.47, "role": "資料中心 GPU 第二梯隊補強"},
-            ],
-            3: [
-                {"ticker": "SPCX", "target_pct": 0.05, "base_amount": 76.00,  "confidence": 6.47, "role": "太空經濟衛星通訊主題配置"},
-            ],
-        }
-
-        selected_batch = [dict(b) for b in batches.get(batch_number, batches[1])]
+        # 候選由 universe 目標與研究信心動態決定（不再使用寫死的 8 檔批次）
+        selected_batch = await self._select_dynamic_candidates(
+            total_equity=float(total_equity or 0.0),
+            holdings=current_holdings,
+            target_records=target_records,
+        )
 
         # 跨板塊動能注入與 HHI 集中度自癒 (Phase 51)
         portfolio_sector_report = None
@@ -909,6 +958,9 @@ class BatchCashDeploymentService:
             "status": status,
             "portfolio_status": status,
             "can_execute": can_execute,
+            # Explicit reason when nothing qualified, so callers can show it (never a silent empty plan).
+            # 無任何合格候選時明確標記原因，呼叫端可顯示，不會是靜默的空計畫。
+            "no_eligible_candidates": len(selected_batch) == 0,
             "total_batch_amount": round(total_batch_amount, 2),
             "items": allocated_items,
             "plan_items": allocated_items,

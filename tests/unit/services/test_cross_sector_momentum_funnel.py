@@ -285,7 +285,7 @@ class TestWorkflowDeduplication:
              patch("src.utils.market_clock.MarketClock.is_market_open", return_value=True):
             instance = mock_staggered_cls.return_value
             instance.get_active_staggered_orders = AsyncMock(return_value=[
-                {"ticker": "NVDA", "status": "PENDING", "limit_price": 110.0}
+                {"ticker": "NVDA", "status": "PENDING", "limit_price": 110.0, "broker_order_id": "B-1"}
             ])
 
             res = run_market_open_cash_deployment(user_id="test_user", batch_number=1)
@@ -293,6 +293,23 @@ class TestWorkflowDeduplication:
             assert res["status"] == "skipped"
             assert res["reason"] == "staggered_dip_orders_active"
             assert res["pending_orders_count"] == 1
+
+    def test_market_open_task_ignores_simulated_pending_orders(self):
+        """PENDING records with no broker_order_id are bookkeeping only; they must not block the real batch."""
+        from src.infrastructure.tasks import run_market_open_cash_deployment
+
+        with patch("src.services.staggered_dip_buying_service.StaggeredDipBuyingService") as mock_staggered_cls, \
+             patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService") as mock_batch_cls, \
+             patch("src.utils.market_clock.MarketClock.is_market_open", return_value=True):
+            instance = mock_staggered_cls.return_value
+            instance.get_active_staggered_orders = AsyncMock(return_value=[
+                {"ticker": "NVDA", "status": "PENDING", "limit_price": 110.0, "broker_order_id": None}
+            ])
+            mock_batch_cls.return_value.execute_batch = AsyncMock(return_value={"success": True})
+
+            res = run_market_open_cash_deployment(user_id="test_user", batch_number=1)
+            assert res == {"success": True}
+            mock_batch_cls.return_value.execute_batch.assert_awaited_once()
 
 
 # ============================================================================

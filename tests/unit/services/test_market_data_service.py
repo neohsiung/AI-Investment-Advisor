@@ -142,7 +142,8 @@ def test_get_financials(market_data_service):
     mock_info = {"market_cap": 2000000000000, "pe_ratio": 30}
     market_data_service.fmp.fetch_info = MagicMock(return_value=mock_info)
     
-    with patch.object(market_data_service, '_is_provider_enabled', return_value=True):
+    with patch.object(market_data_service, '_is_provider_enabled', return_value=True), \
+         patch.object(market_data_service, '_chain', return_value=[market_data_service.fmp]):
         info = market_data_service.get_financials("AAPL")
         assert info == mock_info
 

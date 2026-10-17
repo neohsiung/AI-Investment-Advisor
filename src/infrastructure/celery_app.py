@@ -136,6 +136,41 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.dispatch_universe_lifecycle",
         "schedule": crontab(hour=8, minute=0, day_of_week="1"),  # Mon 08:00 EST
     },
+    # Strategy lab — Saturday 12:00 EST, 0-LLM weekly evaluation with multiple-testing accounting
+    # 策略實驗室：週六 12:00 EST，0-LLM 每週評估（含多重檢定記帳）。
+    "strategy-lab": {
+        "task": "src.infrastructure.tasks.run_strategy_lab",
+        "schedule": crontab(hour=12, minute=0, day_of_week="6"),
+    },
+    # Benchmark parking — weekdays 09:50 EST, after the 09:35/09:36 deployments (default OFF via setting)
+    # 基準停泊：交易日 09:50 EST（晚於 09:35/09:36 建倉；設定預設關閉）。
+    "benchmark-parking": {
+        "task": "src.infrastructure.tasks.run_benchmark_parking",
+        "schedule": crontab(hour=9, minute=50, day_of_week="1-5"),
+    },
+    # Mission watchdog — daily 06:00 EST, 0-LLM; alerts on kill-criteria breaches (never halts trading by itself)
+    # 使命看門狗：每日 06:00 EST，0-LLM；kill criteria 觸發即通知（不會自行停止交易）。
+    "mission-watchdog": {
+        "task": "src.infrastructure.tasks.run_mission_watchdog",
+        "schedule": crontab(hour=6, minute=0),
+    },
+    # Real LLM cost collector — every 15 minutes (LiteLLM /key/info delta -> llm_real_cost_daily)
+    # 真實 LLM 成本收集：每 15 分鐘輪詢 LiteLLM /key/info 並記帳。
+    "litellm-spend-collect": {
+        "task": "src.infrastructure.tasks.run_litellm_spend_collect",
+        "schedule": crontab(minute="*/15"),
+    },
+    # Universe research refresh — weekdays 07:30 EST (before the 09:35 deployment/rebalance tasks)
+    # 標的池研究分數刷新：交易日 07:30 EST（早於 09:35 建倉/再平衡），0-LLM。
+    "universe-research-refresh": {
+        "task": "src.infrastructure.tasks.dispatch_universe_research_refresh",
+        "schedule": crontab(hour=7, minute=30, day_of_week="1-5"),
+    },
+    # Finnhub news polling (replaces public webhook); no-op unless finnhub_poll_enabled.
+    "finnhub-news-poll": {
+        "task": "src.infrastructure.tasks.run_finnhub_poll",
+        "schedule": crontab(minute="*/30", hour="8-17", day_of_week="1-5"),
+    },
     # Strategy Lifecycle & Discovery Evolution — runs weekly on Sunday night (21:00 EST)
     # 策略生命週期與自主探索演進：每週自動滾動執行歷史回測掃描、檢驗既有策略績效、探索新體制候選策略並更新註冊中心。
     "strategy-lifecycle-evolution": {

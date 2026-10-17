@@ -127,11 +127,27 @@ settings:
   - key: auto_promote_synthesized_factors
     group: ai
     type: bool
-    default: true
+    default: false
     label_en: Auto-promote synthesized factors
     label_zh: 自動晉升自研量化因子
     help_en: Automatically promote synthesized code artifacts from provisional canary shadow tracking to active status upon passing evaluation.
     help_zh: 當自研因子通過回測、WFA、蒙地卡羅與金絲雀影子考覈無異常時，由排程自動晉升為實盤 ACTIVE 因子。
+  - key: allow_synthesized_factor_live_exec
+    group: ai
+    type: bool
+    default: false
+    label_en: Allow live exec of synthesized factor code
+    label_zh: 允許實盤執行自研因子程式碼
+    help_en: Off by default. ACTIVE artifacts are LLM-generated code validated only on synthetic data; enabling runs them in-process during scoring.
+    help_zh: 預設關閉。ACTIVE 因子為 LLM 生成程式碼且僅經合成資料驗證；開啟後會在評分時於程序內直接執行。
+  - key: enable_autonomous_evolution_beat
+    group: ai
+    type: bool
+    default: false
+    label_en: Enable synthetic-data evolution schedules
+    label_zh: 啟用合成資料演化排程
+    help_en: Off by default. Gates factor-rotation, genetic and autonomous-factor beat tasks that tune live settings from synthetic data.
+    help_zh: 預設關閉。控管以合成資料調整實盤設定的因子輪動、遺傳與自主因子排程。
   - key: factor_max_correlation_threshold
     group: ai
     type: float
@@ -1328,6 +1344,103 @@ settings:
     label_zh: 小額訂單 0-LLM 數理引擎分流門檻 (USD)
     help_en: Trade amount below which routine execution bypasses full LLM council and uses deterministic mathematical allocation.
     help_zh: 當交易金額小於此門檻時，日常執行直接採用確定性數理因子模型，杜絕無謂 Token 消耗。
+  - key: event_llm_mode
+    group: trading
+    type: enum
+    enum: ["off", "held_only", "on"]
+    default: "off"
+    label_en: LLM analysis of news events
+    label_zh: 新聞事件的 LLM 分析模式
+    help_en: "off = events that pass the free filter get no LLM analysis, no impact rows and no orders (default, cheapest). held_only = analyse only events on tickers you hold. on = analyse every event that passes the filter (capped by the daily cap)."
+    help_zh: "off＝通過免費篩選的事件不做 LLM 分析、不寫影響值、不下單（預設、最省）；held_only＝只分析持倉標的事件；on＝通過篩選的事件都分析（受每日上限約束）。"
+  - key: event_analysis_daily_cap
+    group: trading
+    type: int
+    default: 8
+    min: 0
+    max: 100
+    label_en: Max full event analyses per day
+    label_zh: 每日完整事件分析上限
+    help_en: Caps how many ingested news events pass the relevance filter into the multi-agent (LLM) analysis each US/Eastern day; events on held tickers get double. 0 = unlimited.
+    help_zh: 每個美東日通過相關性篩選、進入多代理（耗 LLM）分析的事件數上限；持倉標的加倍；0 為不限。
+  - key: finnhub_poll_enabled
+    group: trading
+    type: bool
+    default: false
+    label_en: Poll Finnhub news (replaces webhook)
+    label_zh: 輪詢 Finnhub 新聞（取代 webhook）
+    help_en: Poll company news for active tickers every 30 min on weekdays and run event analysis on new items. Lets you drop the public ngrok webhook. Each analysed item costs LLM tokens.
+    help_zh: 平日每 30 分鐘輪詢活躍標的新聞並進行事件分析，可取代公網 ngrok webhook；每則分析會耗用 LLM。
+  - key: finnhub_poll_max_events
+    group: trading
+    type: int
+    default: 3
+    min: 0
+    max: 20
+    label_en: Max Finnhub events per poll
+    label_zh: 每次輪詢最多分析事件數
+    help_en: Cap on LLM-analysed news items per poll; the rest are deferred to the next run.
+    help_zh: 每次輪詢最多送 LLM 分析的新聞數，其餘延後。
+  - key: universe_research_max_age_days
+    group: trading
+    type: int
+    default: 14
+    min: 1
+    max: 90
+    label_en: Max research age (days)
+    label_zh: 研究分數最大有效天數
+    help_en: Research older than this counts as unresearched (neutral score) when computing target allocations.
+    help_zh: 超過此天數的研究分數在計算目標配置時視為未研究（中性分數）。
+  - key: rotation_roundtrip_friction_pct
+    group: trading
+    type: float
+    default: 1.0
+    min: 0.0
+    max: 5.0
+    label_en: Assumed round-trip trading friction (%)
+    label_zh: 假設的來回交易摩擦 (%)
+    help_en: Cost of selling one holding and buying another (spread + slippage + fees), in percent. Conservative default 1.0 until measured fills justify lowering it. Capital rotation must beat this plus its score hurdle.
+    help_zh: 賣出一檔再買入另一檔的成本（價差＋滑價＋手續費，%）。在有實測成交資料前採保守預設 1.0；換庫必須贏過此成本與評分門檻。
+  - key: rotation_min_holding_days
+    group: trading
+    type: int
+    default: 5
+    min: 0
+    max: 90
+    label_en: Minimum holding days before capital rotation
+    label_zh: 換庫前最短持有天數
+    help_en: A position cannot be sold by capital rotation until it has been held this many days since its latest buy. Unknown age blocks the sell. 0 disables the check.
+    help_zh: 持倉自最近一次買進起須滿此天數才可被換庫賣出；年齡未知則不賣；0 為關閉此檢查。
+  - key: batch_deploy_max_order_usd
+    group: trading
+    type: float
+    default: 100.0
+    min: 10.0
+    max: 100000.0
+    label_en: Max single order in batch deployment (USD)
+    label_zh: 分批建倉單筆上限 (USD)
+    help_en: Hard cap on any single buy order created by batch cash deployment.
+    help_zh: 分批建倉所產生之任一買單的金額硬上限。
+  - key: batch_deploy_max_tickers
+    group: trading
+    type: int
+    default: 3
+    min: 1
+    max: 10
+    label_en: Max tickers per deployment run
+    label_zh: 單次建倉最多標的數
+    help_en: Top-N universe candidates (by research confidence, then funding gap) funded per run.
+    help_zh: 每次建倉依研究信心與缺口排序，最多投入前 N 檔 universe 候選。
+  - key: batch_deploy_min_confidence
+    group: trading
+    type: float
+    default: 5.5
+    min: 0.0
+    max: 10.0
+    label_en: Min research confidence to deploy (0-10)
+    label_zh: 建倉最低研究信心 (0-10)
+    help_en: Candidates below this score (including unresearched ones, which default to 5.0) are never funded.
+    help_zh: 低於此分數（含無研究紀錄、預設 5.0 者）的候選不會被投入資金。
   - key: enable_staggered_dip_buying
     group: trading
     type: bool
@@ -1529,6 +1642,49 @@ settings:
     danger: true
     label_en: Max trades per day
     label_zh: 每日最大交易次數
+  - key: autonomous_confidence_boost_enabled
+    group: trading
+    type: bool
+    default: false
+    danger: true
+    label_en: "Allow keyword-based confidence boosts"
+    label_zh: 允許依關鍵字提升信心分數
+    help_en: "OFF by default. When ON, AutonomousConfidenceOptimizer adds points to sub-threshold scores based on words in the rationale text."
+    help_zh: 預設關閉。開啟後優化器會依理由文字中的關鍵字替低於門檻的分數加分。
+  - key: benchmark_parking_enabled
+    group: trading
+    type: bool
+    default: false
+    danger: true
+    label_en: "Park idle capital in the benchmark (SPY)"
+    label_zh: 將閒置資金停泊於基準（SPY）
+    help_en: "OFF by default. When ON, a daily job buys the benchmark toward mission.min_benchmark_weight_pct of tradable capital (never sells it). Preview first: GET /api/v1/mission/parking-plan."
+    help_zh: 預設關閉。開啟後每日排程會把基準買到可交易資本的 mission 最低基準權重（絕不賣出）。請先用 GET /api/v1/mission/parking-plan 預覽。
+  - key: benchmark_parking_max_order_usd
+    group: trading
+    type: float
+    default: 250.0
+    min: 10
+    label_en: Benchmark parking max order (USD per run)
+    label_zh: 基準停泊單次最大金額（USD）
+  - key: benchmark_parking_min_gap_usd
+    group: trading
+    type: float
+    default: 50.0
+    min: 10
+    label_en: Benchmark parking minimum gap (USD)
+    label_zh: 基準停泊最小差距（USD，帶寬）
+  - key: tradable_capital_pct
+    group: trading
+    type: float
+    default: 75.0
+    min: 0
+    max: 100
+    danger: true
+    label_en: "Tradable capital (% of account)"
+    label_zh: 可交易資本（占帳戶百分比）
+    help_en: "Share of the real account the autonomous path may deploy; the rest stays cash. 0 DISABLES trading."
+    help_zh: 自動交易最多可動用的帳戶比例，其餘保持現金；設為 0 代表禁止交易。
   - key: tradable_capital_usd
     group: trading
     type: float
@@ -1537,7 +1693,7 @@ settings:
     danger: true
     label_en: Tradable capital (USD)
     label_zh: 可交易資本（USD）
-    help_en: Hard cap on capital the autonomous path may deploy.
+    help_en: "Additional hard USD cap on capital the autonomous path may deploy (0 = no USD cap; the percentage cap still applies)."
   - key: monthly_data_subscription_cost_usd
     group: trading
     type: float
@@ -2862,6 +3018,34 @@ settings:
     min: 1
     label_en: Macro (FRED) scan interval (minutes)
     label_zh: 總經（FRED）掃描間隔（分鐘）
+  - key: sentinel_global_event_min_sources
+    group: sentinel
+    type: int
+    default: 2
+    min: 1
+    max: 5
+    label_en: "Global events: min corroborating domains"
+    label_zh: 全球事件：最少佐證網域數
+    help_en: A global-event alert fires only if this many distinct, non-blocked domains flag it in the same scan.
+    help_zh: 同一次掃描中至少有此數量的不同（未被封鎖）網域同時示警，才會觸發全球事件警報。
+  - key: sentinel_global_event_dedupe_hours
+    group: sentinel
+    type: int
+    default: 72
+    min: 1
+    max: 720
+    label_en: "Global events: dedupe window (hours)"
+    label_zh: 全球事件：去重窗口（小時）
+    help_en: The same page cannot re-trigger an alert within this window.
+    help_zh: 同一頁面在此窗口內不會重複觸發警報。
+  - key: sentinel_global_event_blocked_domains
+    group: sentinel
+    type: json
+    default: []
+    label_en: "Global events: extra blocked domains"
+    label_zh: 全球事件：封鎖網域清單
+    help_en: Domains never treated as breaking events. Empty = built-in default list (Wikipedia, Investopedia, quiz/video/social sites, ...).
+    help_zh: 不視為即時事件的網域；留空表示使用內建預設（維基百科、Investopedia、測驗/影音/社群等）。
   - key: sentinel_deep_interval_min
     group: sentinel
     type: int
@@ -3547,6 +3731,14 @@ settings:
     label_zh: 目標年化淨 Alpha (超越標普500超額)
     help_en: Annual net alpha hurdle target after deducting all costs (default 0.10 = +10%).
     help_zh: 扣除所有模型與運營成本後之年度淨超額目標（預設 0.10 即年化打贏大盤 10%）。
+  - key: net_alpha_valid_since
+    group: allocation
+    type: string
+    default: "2026-10-15"
+    label_en: Net alpha valid-since date (YYYY-MM-DD)
+    label_zh: 淨 Alpha 有效起算日 (YYYY-MM-DD)
+    help_en: Snapshots before this date are ignored by net alpha (they were derived from a drifting local ledger, not the broker).
+    help_zh: 此日期之前的快照不納入淨 Alpha（當時由本地帳本推算，與券商不一致）。
   - key: monthly_saas_subscription_cost_usd
     group: allocation
     type: float

@@ -35,6 +35,10 @@ class QualityAssessment:
     )
     _fallback_reason: Optional[str] = None
     _insufficient_data: bool = False
+    # False when too few fundamental inputs were available; the fundamental score is then NOT
+    # a measurement and overall_score is computed from technical + liquidity only.
+    # 基本面輸入不足時為 False：此時基本面分數不是真實量測，overall 僅由技術+流動性計算。
+    fundamentals_available: bool = True
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -244,6 +248,17 @@ class QualityGateService:
                 fund_scores.append(3.5)
 
             fundamental_score = round(sum(fund_scores) / len(fund_scores), 2)
+            fundamental_inputs = [
+                financials.get("debtToEquity"), financials.get("returnOnEquity"),
+                financials.get("operatingMargins") if financials.get("operatingMargins") is not None
+                else financials.get("profitMargins"),
+                financials.get("revenueGrowth"),
+                financials.get("forwardPE") if financials.get("forwardPE") is not None
+                else financials.get("trailingPE"),
+            ]
+            fundamentals_available = sum(v is not None for v in fundamental_inputs) >= 3
+            if not fundamentals_available:
+                reasons.append("Fundamental data unavailable; score based on technical + liquidity only")
 
             # 7. Technical Scoring (0 - 10)
             tech_components = []
@@ -313,10 +328,18 @@ class QualityGateService:
             liquidity_score = round(sum(liq_components) / len(liq_components), 2)
 
             # 9. Composite Score
-            overall_score = round(
-                0.45 * fundamental_score + 0.35 * technical_score + 0.20 * liquidity_score,
-                2
-            )
+            if fundamentals_available:
+                overall_score = round(
+                    0.45 * fundamental_score + 0.35 * technical_score + 0.20 * liquidity_score,
+                    2
+                )
+            else:
+                # Never feed defaulted fundamentals into the composite; renormalise instead.
+                # 不把預設值填的基本面算進綜合分，改以技術+流動性重新正規化。
+                overall_score = round(
+                    (0.35 * technical_score + 0.20 * liquidity_score) / 0.55,
+                    2
+                )
 
             min_required_score = thresholds["min_quality_score"]
             score_passed = overall_score >= min_required_score
@@ -355,8 +378,9 @@ class QualityGateService:
                 liquidity_score=liquidity_score,
                 reasons=reasons,
                 metrics=metrics,
-                _fallback_reason=None,
+                _fallback_reason=None if fundamentals_available else "fundamentals_unavailable",
                 _insufficient_data=has_insufficient_data,
+                fundamentals_available=fundamentals_available,
             )
 
         except Exception as e:
@@ -376,4 +400,10 @@ class QualityGateService:
                 reasons=[f"Evaluation failed due to exception: {str(e)}"],
                 metrics={},
                 _fallback_reason=f"Exception: {str(e)}",
+                # An evaluation crash is a data/infra failure, not a verdict on the ticker. Mark it
+                # so lifecycle eviction and research refresh skip it (2026-10-16: a settings parse
+                # error produced score 0.00 and 7 of 8 active tickers were evicted).
+                # 評估崩潰是資料/基礎設施故障而非標的裁決；標記後生命週期不會據此剔除標的。
+                _insufficient_data=True,
+                fundamentals_available=False,
             )

@@ -890,24 +890,34 @@ class MarketDataService:
         
         return all_news[:5]
 
+    FUNDAMENTAL_KEYS = ("returnOnEquity", "debtToEquity", "operatingMargins", "profitMargins", "revenueGrowth")
+
     def get_financials(self, ticker: str) -> Dict[str, Any]:
         """
         Get fundamental financial data for a ticker.
-        獲取標底的基本面財務數據。
+        Providers are merged in priority order: the first usable profile (market cap) wins for
+        shared keys, but later providers still fill in missing fundamentals, because the first
+        provider (e.g. a reference-data API) often returns only market cap/sector.
+        獲取標的基本面財務數據：依優先序合併各供應商，先到者優先，後到者補齊缺漏的基本面欄位
+        （第一順位常只回市值/產業）。
         """
-        fund_providers = self._chain("fundamentals")
-        
-        for provider in fund_providers:
-            if not self._is_provider_enabled(provider): continue
+        merged: Dict[str, Any] = {}
+        for provider in self._chain("fundamentals"):
+            if not self._is_provider_enabled(provider):
+                continue
             try:
                 info = provider.fetch_info(ticker)
-                if info and info.get('market_cap'): # Basic validation
-                     # Normalize keys if needed, but for now we expect mostly common keys
-                     return info
             except Exception as e:
                 self.logger.debug(f"Provider {self._get_provider_name(provider)} failed for financials: {e}")
                 continue
-        return {}
+            if not info or not isinstance(info, dict):
+                continue
+            for k, v in info.items():
+                if v is not None and merged.get(k) is None:
+                    merged[k] = v
+            if merged.get("market_cap") and any(merged.get(k) is not None for k in self.FUNDAMENTAL_KEYS):
+                break
+        return merged if merged.get("market_cap") else {}
 
     def get_valuation_metrics(self, ticker: str) -> Dict[str, Any]:
         """

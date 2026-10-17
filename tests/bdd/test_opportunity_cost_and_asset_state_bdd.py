@@ -21,6 +21,16 @@ from src.services.confidence_rebalance_service import ConfidenceRebalanceService
 from src.services.exit_compositor_service import ExitCompositorService
 
 
+
+@pytest.fixture(autouse=True)
+def _legacy_friction_constants(monkeypatch):
+    """These tests pin the hurdle ARITHMETIC using the old 0.30% round-trip friction; production defaults are
+    covered in test_opportunity_cost_friction_defaults.py. 這些測試固定的是門檻算術（舊 0.30%）；正式預設另有測試。"""
+    from src.services.opportunity_cost_service import OpportunityCostService as S
+    monkeypatch.setattr(S, "FALLBACK_ROUNDTRIP_FRICTION_PCT", 0.3)
+    monkeypatch.setattr(S, "DEFAULT_SLIPPAGE_PCT", 0.0010)
+    monkeypatch.setattr(S, "DEFAULT_COMMISSION_PCT", 0.0005)
+
 class TestBddStateDrivenWinnerPreservation:
     """
     Feature: 狀態驅動之贏家保護機制 (State-Driven Winner Protection)
@@ -88,8 +98,11 @@ class TestBddStateDrivenWinnerPreservation:
         assert tsm_item["action"] == "HOLD_COMPOUNDING"
         assert "不砍贏家" in tsm_item["reason"]
 
-        # 4. 非核心死資本 DEAD_STOCK 被正確識別為賣出
-        assert "DEAD_STOCK" in sell_tickers
+        # 4. 非核心死資本 DEAD_STOCK 被識別為賣出候選，但換入買單 (~$21) 不足賣出額 ($50) 的 80%，
+        #    依使命護欄「賣出必須有換入計畫」被擋下（不再因為想持有現金而賣）。
+        assert "DEAD_STOCK" not in sell_tickers
+        assert any(b["ticker"] == "DEAD_STOCK" and b["guard_reason"] == "no_replacement_plan"
+                   for b in plan["guard"]["blocked_sells"])
 
     @pytest.mark.asyncio
     async def test_bdd_scenario_low_weight_broken_holding_is_promptly_liquidated(self):
@@ -106,8 +119,10 @@ class TestBddStateDrivenWinnerPreservation:
         }
 
         mock_weights = {
-            "weights": {"BAD_MICRO": 2.00, "NVDA": 18.00},
-            "cash_weight": 80.0,
+            # NVDA is 5pp under target so a real replacement buy (~$50) exists for the $20 micro sell.
+            # NVDA 低於目標 5 個百分點，因此 $20 的微型持倉賣單有真實的換入買單（約 $50）。
+            "weights": {"BAD_MICRO": 2.00, "NVDA": 15.00},
+            "cash_weight": 83.0,
             "total_value": 1000.0,
         }
 
@@ -262,9 +277,11 @@ class TestBddSmartCashDeployment:
         sells = plan["trades"]["sells"]
         buys = plan["trades"]["buys"]
 
-        # 1. 3 檔死資本全數列入賣單
-        assert len(sells) == 3
-        assert plan["summary"]["total_sell_amount"] == 300.0
+        # 1. 3 檔死資本只放行 2 檔（使命不變量：每日非安全類賣出 ≤ 2 檔），第 3 檔順延
+        assert len(sells) == 2
+        assert plan["summary"]["total_sell_amount"] == 200.0
+        assert len(plan["guard"]["blocked_sells"]) == 1
+        assert plan["guard"]["blocked_sells"][0]["guard_reason"] == "daily_sell_count_cap"
 
         # 2. 2 檔目標股全數列入買單，且每筆買單金額明確大於 broker 門檻 ($10)
         assert len(buys) == 2
@@ -274,7 +291,9 @@ class TestBddSmartCashDeployment:
 
         # 3. 資金完全自給自足，現金缺口為 0
         assert plan["summary"]["cash_shortfall"] == 0.0
-        assert plan["summary"]["total_buy_amount"] == 300.0
+        # each buy is ramped in under the per-order cap (batch_deploy_max_order_usd, default $100)
+        assert all(b["delta_amount"] <= 100.0 for b in buys)
+        assert plan["summary"]["total_buy_amount"] == 200.0
 
 
 class TestBddLongTermWinnerAndOpportunityCostWorkflow:
@@ -424,11 +443,42 @@ class TestBddLongTermWinnerAndOpportunityCostWorkflow:
             plan = await rbs.get_rebalance_plan()
 
         # ── Then ──
-        sells = plan["trades"]["sells"]
-        broken_sell = next((s for s in sells if s["ticker"] == "BROKEN_STOCK"), None)
-        assert broken_sell is not None
-        assert broken_sell["protection_status"] == "NO_PROTECTION_REBALANCE"
-        assert broken_sell["action"] == "SELL"
-        assert "不具備贏家保護資格" in broken_sell["reason"]
+        # 失去贏家資格的標的確實被判定為賣出候選；但本計畫沒有任何換入買單，
+        # 依使命護欄「賣出必須有換入計畫」暫不執行（記錄於 guard.blocked_sells）。
+        assert plan["trades"]["sells"] == []
+        blocked = next((s for s in plan["guard"]["blocked_sells"] if s["ticker"] == "BROKEN_STOCK"), None)
+        assert blocked is not None
+        assert blocked["guard_reason"] == "no_replacement_plan"
+        assert blocked["protection_status"] == "NO_PROTECTION_REBALANCE"
+        assert blocked["action"] == "SELL"
+        assert "不具備贏家保護資格" in blocked["reason"]
 
 
+
+
+import pytest as _pytest_guard
+
+
+@_pytest_guard.fixture(autouse=True)
+def _rebalance_guard_env(monkeypatch):
+    """The plan tests exercise sizing/selection logic, not the DB-backed daily sell counter or research
+    lookups; give the guard healthy, neutral inputs. Guard behaviour has its own tests
+    (tests/unit/services/test_rebalance_guard.py).
+    這些測試驗證部位計算/選擇邏輯；護欄的資料庫查詢以中性值取代，護欄行為另有專屬測試。"""
+    from src.services.confidence_rebalance_service import ConfidenceRebalanceService
+    monkeypatch.setattr(ConfidenceRebalanceService, "_sells_today", lambda self: (0, 0.0))
+    monkeypatch.setattr(ConfidenceRebalanceService, "_latest_score", lambda self, ticker: 6.0)
+
+    # Deterministic regime: new buys allowed, so sells have the replacement plan the guard requires.
+    # 固定為允許買入的體制，賣單才有護欄要求的換入計畫。
+    from src.services.market_regime_service import MarketRegime, RegimePolicy
+
+    bull = RegimePolicy(
+        regime=MarketRegime.BULL_MOMENTUM, cash_reserve_pct=5.0, buy_confidence_threshold=6.5,
+        stop_atr_multiplier=2.5, max_leverage=1.2, allow_new_buys=True, rationale="test",
+    )
+
+    async def _policy(self):
+        return bull
+
+    monkeypatch.setattr(ConfidenceRebalanceService, "_get_regime_policy", _policy)

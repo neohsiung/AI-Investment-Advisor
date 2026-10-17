@@ -210,6 +210,7 @@ async def test_check_position_exits_capital_rotation_success(sentinel):
             "market_value": 600.0,
             "current_price": 30.0,
             "avg_price": 35.0,
+            "open_date": __import__("datetime").datetime.now() - __import__("datetime").timedelta(days=10),
         }
     }
     sentinel._acquire_cooldown = AsyncMock(return_value=True)
@@ -221,6 +222,8 @@ async def test_check_position_exits_capital_rotation_success(sentinel):
     
     # Holding has exit_score = 4.5 -> retention conviction = 10.0 - 4.5 = 5.5
     # Delta = 8.8 - 5.5 = 3.3 >= rotation_min_score_delta (2.0)
+    # Like-for-like research scores: holding 5.5, candidate 8.8 -> delta 3.3 >= 2.0
+    sentinel._research_score = lambda t: {"INTC": 5.5, "TSM": 8.8}.get(t)
     mock_exit_compositor = MagicMock()
     mock_exit_compositor.score_exit = AsyncMock(return_value={
         "composite_score": 4.5,
@@ -364,7 +367,7 @@ async def test_handle_position_exits_capital_rotation_executes_buy(sentinel):
         # Second call: BUY TSM with proceeds ($600.0)
         assert calls[1].kwargs["ticker"] == "TSM"
         assert calls[1].kwargs["action"] == "BUY"
-        assert calls[1].kwargs["quantity"] == 600.0
+        assert calls[1].kwargs["quantity"] == 100.0  # capped at batch_deploy_max_order_usd (sell proceeds were $600)
         assert calls[1].kwargs["confidence_score"] == 8.8
         assert calls[1].kwargs["strategy_name"] == "capital_rotation"
 
@@ -809,3 +812,38 @@ async def test_clear_position_peak_and_stop_purges_memory_and_redis(sentinel):
 
 
 
+
+
+@pytest.mark.anyio
+async def test_stagnation_prune_without_replacement_target_is_skipped(sentinel):
+    """Mission invariant: non-safety sells need a replacement plan; a one-legged stagnation prune must not run."""
+    trig = {
+        "id": "stagnation_prune_AAPL_test", "action": "trigger_exit", "ticker": "AAPL",
+        "sell_quantity": 5.0, "strategy_name": "stagnation_pruning", "current_price": 100.0,
+        "avg_price": 100.0, "return_pct": 0.1,
+    }
+    sentinel._acquire_cooldown = AsyncMock(return_value=True)
+    mock_auto_trade = MagicMock()
+    mock_auto_trade.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
+    with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
+        await sentinel._handle_position_exits([trig])
+        mock_auto_trade.evaluate_and_execute_trade.assert_not_called()
+        # with a replacement target it proceeds like any rotation-style exit
+        await sentinel._handle_position_exits([{**trig, "target_ticker": "MSFT", "candidate_score": 8.0}])
+        assert mock_auto_trade.evaluate_and_execute_trade.call_count >= 1
+
+
+@pytest.mark.anyio
+async def test_benchmark_core_is_never_exited_by_stop_loss(sentinel, mock_dependencies):
+    """The mission benchmark (SPY) is the default allocation; discretionary exits must not touch it."""
+    mock_dependencies["settings"]._settings_map["enable_fixed_stops"] = True
+    allocation = {
+        "SPY": {"shares": 2.0, "quantity": 2.0, "weight": 60.0, "market_value": 1400.0,
+                "current_price": 700.0, "avg_price": 800.0},          # -12.5%, would trip an 8% stop
+        "AAPL": {"shares": 10.0, "quantity": 10.0, "weight": 15.0, "market_value": 900.0,
+                 "current_price": 90.0, "avg_price": 100.0},           # -10% -> still exits
+    }
+    sentinel._get_current_allocation = AsyncMock(return_value=allocation)
+    sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
+    triggers = await sentinel._check_position_exits()
+    assert [t["ticker"] for t in triggers] == ["AAPL"]

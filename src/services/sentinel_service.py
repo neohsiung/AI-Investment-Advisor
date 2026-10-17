@@ -1257,7 +1257,12 @@ class SentinelService:
             
             # Check Fed Funds Rate trend
             fed = economics.get("FedFunds", {})
-            if fed and fed.get("trend") == "Up":
+            # "trend == Up" is a STATE that stays true until the next FOMC move; alert once per
+            # observation date, not on every tick (2026-10 audit: same 3.75% alert 10x in 14 days).
+            # 「趨勢向上」是持續成立的狀態；同一觀測日期只警報一次，避免每個 tick 重複。
+            if fed and fed.get("trend") == "Up" and await self._acquire_cooldown(
+                f"macro_fed_rate_up:{fed.get('date', 'na')}", 30 * 24 * 3600, fail_open=True
+            ):
                 triggers.append({
                     "text": f"🏦 聯邦利率上升: {fed.get('value', 'N/A')}% (as of {fed.get('date', 'N/A')})",
                     "id": "macro_fed_rate_up",
@@ -1268,7 +1273,9 @@ class SentinelService:
             # Check Yield Curve Inversion
             spread = economics.get("10Y2Y_Spread", {})
             if spread and isinstance(spread.get("value"), (int, float)):
-                if spread["value"] < 0:
+                if spread["value"] < 0 and await self._acquire_cooldown(
+                    "macro_yield_inversion", 24 * 3600, fail_open=True
+                ):
                     triggers.append({
                         "text": f"⚠️ 殖利率曲線倒掛: 10Y-2Y = {spread['value']:.2f}%",
                         "id": "macro_yield_inversion",
@@ -1380,37 +1387,55 @@ class SentinelService:
                 "geopolitical conflict sanctions impact stock market today",
             ]
 
-            seen_ids = set()
+            from src.services.global_event_filter import GlobalEventFilter, DEFAULT_BLOCKED_DOMAINS
+
+            blocked = self.settings_service.get_setting("sentinel_global_event_blocked_domains", None)
+            if not isinstance(blocked, (list, tuple)) or not blocked:
+                blocked = DEFAULT_BLOCKED_DOMAINS
+            try:
+                min_sources = int(self.settings_service.get_setting("sentinel_global_event_min_sources", 2) or 2)
+                dedupe_hours = int(self.settings_service.get_setting("sentinel_global_event_dedupe_hours", 72) or 72)
+            except (TypeError, ValueError):
+                min_sources, dedupe_hours = 2, 72
+            gate = GlobalEventFilter(blocked_domains=blocked, min_sources=min_sources)
+
+            scored: List[Dict[str, Any]] = []
             for query in queries:
                 try:
-                    results = await self.search_service.search_financial_context(query, max_results=3)
-                    if not results:
-                        continue
-
-                    for item in results:
-                        title = item.get("title", "")
-                        content = item.get("content", "")
-                        combined = f"{title} {content}"
-
-                        # Score using keyword service (cached + records hits)
-                        total_weight, matched = self.keyword_service.score_text(combined)
-
+                    results = await self.search_service.search_financial_context(query, max_results=5)
+                    for item in results or []:
+                        title = item.get("title") or ""
+                        # The search service returns `link`/`snippet` (not url/content).
+                        # 搜尋服務回傳的欄位是 link/snippet，而非 url/content。
+                        url = item.get("link") or item.get("url") or ""
+                        snippet = item.get("snippet") or item.get("content") or ""
+                        total_weight, matched = self.keyword_service.score_text(f"{title} {snippet}")
                         if total_weight >= risk_threshold:
-                            event_id = f"global_macro_{hash(title) % 100000}"
-                            if event_id not in seen_ids:
-                                seen_ids.add(event_id)
-                                triggers.append({
-                                    "text": f"🌍 全球重大事件: {title[:100]} (加權分數: {total_weight:.2f})",
-                                    "id": event_id,
-                                    "ticker": "GLOBAL",
-                                    "priority": 2, # P2: Geopolitical
-                                    "data": {
-                                        "keywords": matched[:5],
-                                        "source": item.get("url", ""),
-                                    }
-                                })
+                            scored.append({"title": title, "url": url, "weight": total_weight, "matched": matched})
                 except Exception as e:
-                    logger.debug(f"Global macro search query failed: {e}")
+                    logger.warning(f"Global macro search query failed: {e}")
+
+            report = gate.filter_scan(scored)
+            if report.rejected:
+                logger.info(
+                    "Sentinel Dimension 6: filtered %d/%d candidates (%s)",
+                    len(report.rejected), len(scored),
+                    "; ".join(f"{r}" for _, r in report.rejected[:6]),
+                )
+            for it in report.accepted:
+                # Same page must not re-fire for dedupe_hours, across all workers.
+                # 同一頁面在 dedupe_hours 內不得跨 worker 重複觸發。
+                if not await self._acquire_cooldown(
+                    f"global_event:{it['event_id']}", dedupe_hours * 3600, fail_open=True
+                ):
+                    continue
+                triggers.append({
+                    "text": f"🌍 全球重大事件: {it['title'][:100]} (加權分數: {it['weight']:.2f})",
+                    "id": it["event_id"],
+                    "ticker": "GLOBAL",
+                    "priority": 2,
+                    "data": {"keywords": it["matched"][:5], "source": it["url"], "domain": it["domain"]},
+                })
 
             if triggers:
                 logger.info(f"Sentinel Dimension 6: Detected {len(triggers)} global macro events.")
@@ -2890,7 +2915,20 @@ class SentinelService:
             cash = latest_dict.get("cash_balance", 0.0)
             if nlv > 0:
                 actual_cash_ratio = cash / nlv
-        
+
+        # A cash ratio outside [0, 1.05] is impossible for a real account (2026-09-29 showed -38.5% from a
+        # drifted local ledger, right before a mass liquidation). Treat it as bad data: no cash alerts.
+        # 現金比例不可能落在 [0, 1.05] 之外（9/29 曾因本地帳本漂移出現 -38.5%，隨後發生大量清倉）；
+        # 視為壞資料，不發現金警報。
+        if not (0.0 <= actual_cash_ratio <= 1.05):
+            logger.warning(
+                "Sentinel: implausible cash ratio %.1f%% (cash=%s nlv=%s) — cash checks skipped as bad data",
+                actual_cash_ratio * 100.0,
+                latest_dict.get("cash_balance") if latest is not None else None,
+                latest_dict.get("total_nlv") if latest is not None else None,
+            )
+            return triggers
+
         if actual_cash_ratio < final_target_cash * 0.9:
             triggers.append({
                 "id": f"cash_ratio_low_{uid}",
@@ -3418,7 +3456,10 @@ class SentinelService:
                     logger.warning(f"[Cash Concentration] Cash weight={cash_weight:.1f}% exceeds limit={max_single_weight:.1f}%")
 
             # 4b. Check for Concentration Risk
+            from src.services.core_holdings import is_core as _is_core_c
             for ticker, info in current_allocation.items():
+                if _is_core_c(ticker):
+                    continue   # the benchmark core is meant to be large (mission: >= 70% of tradable capital)
                 current_weight = info.get('weight', 0)
                 
                 if current_weight >= max_single_weight:
@@ -3741,9 +3782,12 @@ class SentinelService:
             tx_df_cache = None
 
             eval_candidates: List[Dict[str, Any]] = []
+            from src.services.core_holdings import is_core
             for ticker, info in current_allocation.items():
                 if str(ticker).upper() in ("CASH", "USD"):
                     continue
+                if is_core(ticker):
+                    continue   # benchmark core is never exited by discretionary logic
 
                 shares = float(info.get("shares", 0) or info.get("quantity", 0))
                 if shares <= 0.0001:
@@ -4228,6 +4272,18 @@ class SentinelService:
                 f"[Sentinel Exit Execution] Submitting {strategy_name} for {ticker}: {sell_qty} shares, score={composite_score}"
             )
 
+            # Mission invariant: a non-safety sell needs a replacement plan. Stagnation pruning only frees
+            # cash (one-legged); swapping dead money into a better holding is capital_rotation's job, which
+            # carries a pre-flighted target_ticker. Without a target the prune is skipped, not executed.
+            # 使命不變量：非安全類賣出必須有換入計畫。停滯修剪只會釋放現金（單腿）；把死資金換進更好標的
+            # 是 capital_rotation 的工作（帶有預檢過的 target_ticker）。沒有 target 就略過，不執行。
+            if strategy_name == "stagnation_pruning" and not trigger.get("target_ticker"):
+                logger.warning(
+                    f"[Sentinel Exit Execution] Stagnation prune of {ticker} SKIPPED: no replacement target "
+                    f"(non-safety sells require a replacement plan; capital_rotation handles swaps)"
+                )
+                continue
+
             # Pre-Flight Gate for Capital Rotation: Ensure target_ticker can actually be BOUGHT
             # before placing any live SELL order to avoid one-legged liquidation.
             if strategy_name == "capital_rotation":
@@ -4287,6 +4343,12 @@ class SentinelService:
                 ):
                     cand_score = float(trigger.get("candidate_score", 8.0))
                     est_proceeds = round(sell_qty * (current_price or 0), 2)
+                    # Same single-order cap as batch deployment; the remainder stays cash (benchmark parking / next batch).
+                    # 與批次建倉相同的單筆上限；餘額留作現金。
+                    max_order = float(self.settings_service.get_setting("batch_deploy_max_order_usd", 100.0, self.user_id) or 100.0)
+                    if est_proceeds > max_order:
+                        logger.info(f"[Sentinel Exit Execution] Rotation buy capped ${est_proceeds} -> ${max_order:.2f}")
+                        est_proceeds = round(max_order, 2)
                     if est_proceeds >= 10.0:
                         logger.info(
                             f"[Sentinel Exit Execution] Rotation sell executed for {ticker}; "
@@ -4319,6 +4381,41 @@ class SentinelService:
             except Exception as e:
                 logger.error(f"[Sentinel Exit Execution] Failed to execute exit for {ticker}: {e}", exc_info=True)
 
+    def _research_score(self, ticker: str) -> Optional[float]:
+        """Newest cached research score on a 0-10 scale (the entry-side scale), or None. Never invents one.
+        最新快取研究分數（0-10，進場端同一尺度），沒有就回傳 None，絕不捏造。"""
+        try:
+            from src.repositories.ticker_universe_repository import TickerUniverseRepository
+            rows = TickerUniverseRepository().get_research(self.user_id, ticker, limit=1)
+        except Exception as e:
+            logger.warning(f"[Capital Rotation] research score lookup failed for {ticker}: {e}")
+            return None
+        if not rows or not rows[0].get("confidence_score"):
+            return None
+        v = float(rows[0]["confidence_score"])
+        return v * 10.0 if v <= 1.0 else v
+
+    def _holding_age_days(self, ticker: str, info: Dict[str, Any]) -> Optional[float]:
+        """Days since the position's most recent BUY (adds reset the clock). None = unknown.
+        自最近一次買進起算的持有天數（加碼會重置）；None 表示無法判定。"""
+        try:
+            opened = info.get("open_date")
+            if not opened:
+                df = self.transaction_service.get_transactions(self.user_id)
+                if df is None or df.empty or "ticker" not in df.columns or "trade_date" not in df.columns:
+                    return None
+                buys = df[(df["ticker"] == ticker) & (df["action"] == "BUY")]
+                if buys.empty:
+                    return None
+                opened = buys["trade_date"].max()
+            ts = pd.to_datetime(opened)
+            if getattr(ts, "tzinfo", None) is not None:
+                ts = ts.tz_localize(None) if hasattr(ts, "tz_localize") else ts.replace(tzinfo=None)
+            return max(0.0, (pd.Timestamp.now() - ts).total_seconds() / 86400.0)
+        except Exception as e:
+            logger.warning(f"[Capital Rotation] holding age unavailable for {ticker}: {e}")
+            return None
+
     async def _check_capital_rotation_opportunities(
         self,
         current_allocation: Dict[str, Dict[str, Any]],
@@ -4344,8 +4441,9 @@ class SentinelService:
 
             # Filter valid holdings
             active_holdings = {}
+            from src.services.core_holdings import is_core as _is_core
             for ticker, info in current_allocation.items():
-                if str(ticker).upper() in ("CASH", "USD"):
+                if str(ticker).upper() in ("CASH", "USD") or _is_core(ticker):
                     continue
                 shares = float(info.get("shares", 0) or info.get("quantity", 0) or 0)
                 price = float(info.get("current_price", 0) or 0)
@@ -4395,23 +4493,15 @@ class SentinelService:
                         )
                         continue
 
-                cand_score = cand.get("composite_score") or cand.get("confidence") or cand.get("score")
+                # Like-for-like: candidates and holdings are both compared on the cached research score (entry scale).
+                # A supplied pre-score is used only when no research score exists. No live LLM scoring fallback.
+                # 候選與持倉都以快取研究分數（進場尺度）比較；無研究分數才用外部提供的預分數；不再即時呼叫 LLM 評分。
+                cand_score = self._research_score(cand_ticker)
                 if cand_score is None:
-                    if unscored_count >= 3:
-                        continue
-                    unscored_count += 1
-                    # Score candidate via CompositorService if not pre-scored
-                    try:
-                        from src.services.confidence_compositor_service import CompositorService
-                        compositor = CompositorService(user_id=self.user_id)
-                        agent_scores = await self._with_timeout(
-                            compositor._gather_agent_scores(cand_ticker, cash_ratio=0.05, target_cash_ratio=0.1),
-                            timeout=15.0,
-                        )
-                        cand_score, _ = compositor._aggregate_scores(agent_scores)
-                    except Exception as ce:
-                        logger.debug(f"[Capital Rotation] Could not score candidate {cand_ticker}: {ce}")
-                        continue
+                    cand_score = cand.get("composite_score") or cand.get("confidence") or cand.get("score")
+                if cand_score is None:
+                    logger.info(f"[Capital Rotation] Candidate {cand_ticker} skipped: no comparable research score")
+                    continue
 
                 cand_score = float(cand_score)
                 if cand_score > best_cand_score:
@@ -4433,7 +4523,23 @@ class SentinelService:
             weakest_exit_decision = None
             weakest_info = None
 
-            for ticker, info in active_holdings.items():
+            # Minimum holding period: a position cannot be rotated out until it has been held long enough
+            # to outlast round-trip friction. Unknown age fails closed (no sell on absent evidence).
+            # 最短持有期：持倉須先撐過來回摩擦才可被換出；年齡未知則不賣（缺證據不當作可賣）。
+            min_hold = float(self.settings_service.get_setting("rotation_min_holding_days", 5, self.user_id) or 0)
+            sellable = {}
+            for t_, i_ in active_holdings.items():
+                age = self._holding_age_days(t_, i_)
+                if age is None:
+                    logger.info(f"[Capital Rotation] {t_} skipped as rotation source: holding age unknown (fail closed)")
+                elif age < min_hold:
+                    logger.info(f"[Capital Rotation] {t_} skipped as rotation source: held {age:.1f}d < {min_hold:.0f}d minimum")
+                else:
+                    sellable[t_] = i_
+            if not sellable:
+                return []
+
+            for ticker, info in sellable.items():
                 shares = float(info.get("shares", 0) or info.get("quantity", 0) or 0)
                 current_price = float(info.get("current_price", 0) or 0)
                 avg_price = float(info.get("avg_price", 0) or 0)
@@ -4449,12 +4555,20 @@ class SentinelService:
                         reason_hint=f"Capital rotation comparative evaluation against {best_candidate['ticker']}",
                     )
                     exit_score = float(exit_decision.get("composite_score", 5.0))
-                    # Retention conviction: inverse of exit urgency
-                    holding_conviction = max(0.0, 10.0 - exit_score)
+                    # Retention conviction on the SAME scale as candidates (research score). Exit urgency only
+                    # overrides it when it is genuinely alarming (>= 6), so a brand-new neutral position does not
+                    # look weak (the old 10 - exit_score made every fresh holding ~5.7 vs a candidate's 8.0).
+                    # 持有信心與候選同尺度（研究分數）；僅在出場急迫性真的偏高(>=6)時才以其覆蓋。
+                    holding_research = self._research_score(ticker)
+                    if holding_research is None:
+                        logger.info(f"[Capital Rotation] {ticker} skipped as rotation source: no comparable research score")
+                        continue
+                    holding_conviction = holding_research
+                    if exit_score >= 6.0:
+                        holding_conviction = min(holding_research, max(0.0, 10.0 - exit_score))
                 except Exception as ee:
                     logger.warning(f"[Capital Rotation] Could not evaluate holding {ticker}: {ee}")
-                    holding_conviction = 5.0
-                    exit_decision = {"composite_score": 5.0, "breakdown": []}
+                    continue  # unknown conviction must not make a holding sellable
 
                 if holding_conviction < weakest_conviction:
                     weakest_conviction = holding_conviction
@@ -4641,6 +4755,9 @@ class SentinelService:
 
             for ticker, info in current_allocation.items():
                 if str(ticker).upper() in ("CASH", "USD"):
+                    continue
+                from src.services.core_holdings import is_core as _is_core_p
+                if _is_core_p(ticker):
                     continue
 
                 shares = float(info.get("shares", 0) or info.get("quantity", 0))

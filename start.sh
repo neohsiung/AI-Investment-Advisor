@@ -486,6 +486,16 @@ function start_tunnel {
 # Commands
 # ─────────────────────────────────────────────────────────────────────────────
 
+function run_predeploy_gate {
+    # Nothing is built or restarted unless the gate passes (see scripts/predeploy_gate.sh).
+    # 閘門未通過就不 build、不重啟。
+    if [ -x scripts/predeploy_gate.sh ]; then
+        scripts/predeploy_gate.sh || { echo "Deploy aborted by predeploy gate."; return 1; }
+    else
+        echo "❌ scripts/predeploy_gate.sh missing — refusing to deploy"; return 1
+    fi
+}
+
 function cmd_up {
     echo "=== Starting investment-advisor ==="
     check_env
@@ -506,6 +516,8 @@ function cmd_up {
     # 2026-08-23). The brake is the ai_trading_enabled setting, applied by
     # seed_safe_defaults below.
     # paper 模式在本專案是全停而非降級；安全預設用 ai_trading_enabled=false。
+
+    run_predeploy_gate || return 1
 
     if [ "${SKIP_BUILD:-0}" != "1" ]; then
         echo "Building images..."
@@ -667,6 +679,8 @@ function cmd_upgrade {
             return 1
         fi
     fi
+
+    run_predeploy_gate || return 1
 
     echo "Rebuilding images..."
     $PROD_COMPOSE build

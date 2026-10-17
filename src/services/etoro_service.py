@@ -1279,81 +1279,18 @@ class EtoroService(IBroker):
 
         broker_cash = account.available_cash
 
-        # 1. Delete any previous CASH sync entries to prevent circular corrections
-        # 1. We no longer blindly delete existing 'ETORO_SYNC' CASH entries.
-        # Instead, we recalculate based on the current state and only add a delta if needed.
-        # Original code deleted them here, which caused frequent drift.
-        local_cash = self.transaction_repo.get_cash_balance(user_id)
-        diff = broker_cash - local_cash
-        
-        SYNC_THRESHOLD = 0.50
-        SAFETY_CAP = 5000.0
-
-        if abs(diff) < SYNC_THRESHOLD:
-            return
-
-        if abs(diff) > SAFETY_CAP:
+        # Single anchor row: idempotent, converges to broker cash instead of piling up DEPOSIT/WITHDRAWAL pairs
+        # (the old per-day rows were sync_adjustment and therefore never counted by get_cash_balance).
+        # 單一錨點列：可重複執行並收斂到券商現金（舊的逐日同步列屬 sync_adjustment，從未被計入餘額）。
+        base = self.transaction_repo.get_cash_balance(user_id, None, include_anchor=False)
+        diff = broker_cash - base
+        if abs(diff) > 5000.0:
             logger.warning(
-                f"Cash sync diff too large (${diff:.2f}), skipping. "
-                f"Local={local_cash:.2f}, Broker={broker_cash:.2f}. "
-                f"Investigate manually."
+                f"Cash anchor diff large (${diff:.2f}); applying anyway because the broker is the source of truth. "
+                f"Base={base:.2f}, Broker={broker_cash:.2f}."
             )
-            return
-
-        # 2. Check for existing sync entry today - update in-place instead of creating endless transactions
-        today_str = datetime.now().strftime('%Y-%m-%d')
-        action = "DEPOSIT" if diff > 0 else "WITHDRAWAL"
-        logger.info(f"Syncing Cash: Local={local_cash:.2f}, Broker={broker_cash:.2f}, Diff={diff:.2f}, Action={action}")
-
-        import uuid as _uuid
-        import json as _json
-        trace = {
-            "reason": "Automated Portfolio Alignment",
-            "local_cash_at_sync": local_cash,
-            "broker_cash_reference": broker_cash,
-            "diff_to_align": diff,
-            "source": "eToro_PnL_AvailableCash",
-            "timestamp": datetime.now().isoformat()
-        }
-
-        with self.transaction_repo.engine.begin() as conn:
-            # Check if an ETORO_SYNC entry exists for today
-            existing = conn.execute(
-                text("SELECT id FROM transactions WHERE user_id = :uid AND ticker = 'CASH' AND trade_date = :dt AND source_file = 'ETORO_SYNC' LIMIT 1"),
-                {"uid": user_id, "dt": today_str}
-            ).fetchone()
-
-            if existing:
-                conn.execute(
-                    text("""
-                        UPDATE transactions 
-                        SET action = :action, price = :price, amount = :amount, raw_data = :raw, updated_at = NOW()
-                        WHERE id = :id
-                    """),
-                    {
-                        "id": existing[0],
-                        "action": action,
-                        "price": abs(diff),
-                        "amount": abs(diff),
-                        "raw": _json.dumps(trace)
-                    }
-                )
-            else:
-                conn.execute(
-                    text("""
-                        INSERT INTO transactions (id, user_id, ticker, trade_date, action, quantity, price, fees, amount, source_file, entry_category, raw_data)
-                        VALUES (:id, :uid, 'CASH', :dt, :action, 1, :price, 0, :amount, 'ETORO_SYNC', 'sync_adjustment', :raw)
-                    """),
-                    {
-                        "id": str(_uuid.uuid4()),
-                        "uid": user_id,
-                        "dt": today_str,
-                        "action": action,
-                        "price": abs(diff),
-                        "amount": abs(diff),
-                        "raw": _json.dumps(trace)
-                    }
-                )
+        applied = self.transaction_repo.set_cash_anchor(user_id, broker_cash)
+        logger.info(f"Cash anchor: base={base:.2f} broker={broker_cash:.2f} offset={applied:.2f}")
 
     async def _backfill_from_positions(self, user_id: str) -> int:
         """
@@ -1405,6 +1342,16 @@ class EtoroService(IBroker):
             open_date_str = pos.open_date.strftime('%Y-%m-%d') if pos.open_date else datetime.now().strftime('%Y-%m-%d')
             pos_sig = f"{pos.symbol}_BUY_{open_date_str}_{float(pos.quantity):.4f}"
             if pos_sig in existing_sigs:
+                continue
+
+            # Race guard: the order path may have written its own BUY after our snapshot above was read.
+            # 競態防護：下單路徑可能在上方快照之後才寫入自己的買單紀錄，寫入回補列前再以新查詢確認一次。
+            try:
+                if self.transaction_repo.has_matching_buy(user_id, pos.symbol, float(pos.quantity), open_date_str):
+                    existing_sigs.add(pos_sig)
+                    continue
+            except Exception as e:
+                logger.warning(f"Backfill race check failed for {pos.symbol}: {e}; skipping backfill this round")
                 continue
 
             logger.info(

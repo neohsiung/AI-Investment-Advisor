@@ -301,7 +301,8 @@ class TestBatchCashDeploymentService:
             ))
 
             with patch("src.repositories.ticker_universe_repository.TickerUniverseRepository.get_target_allocations") as mock_targets, \
-                 patch("src.services.notification_service.NotificationService.notify_all") as mock_notify:
+                 patch("src.services.notification_service.NotificationService.notify_all") as mock_notify, \
+                 patch("asyncio.sleep", new=AsyncMock()):
 
                 mock_targets.return_value = [
                     {"ticker": "AAPL", "target_weight": 0.1127, "confidence_score": 0.686},
@@ -367,6 +368,7 @@ class TestAutomatedTradingSlippageIntegration:
         asyncio.run(_test())
 
     def test_get_active_batch_number_logic(self):
+        """Active batch is 1 only while deployable cash AND an eligible universe candidate exist."""
         async def _test():
             settings = DummySettingsService()
             broker = MagicMock()
@@ -381,41 +383,26 @@ class TestAutomatedTradingSlippageIntegration:
                 settings_service=settings,
                 broker=broker,
             )
+            candidate = [{"ticker": "AAPL", "base_amount": 100.0}]
 
-            with patch("src.infrastructure.cache.redis_client.get_redis") as mock_redis_getter:
-                mock_redis = AsyncMock()
-                mock_redis.get.return_value = None
-                mock_redis_getter.return_value = mock_redis
+            # 1. Candidates exist and cash is deployable -> 1
+            with patch.object(BatchCashDeploymentService, "_select_dynamic_candidates", AsyncMock(return_value=candidate)):
+                assert await svc.get_active_batch_number() == 1
 
-                # 1. No holdings -> batch 1
-                b = await svc.get_active_batch_number()
-                assert b == 1
+            # 2. No eligible candidates (e.g. all targets funded) -> 0
+            with patch.object(BatchCashDeploymentService, "_select_dynamic_candidates", AsyncMock(return_value=[])):
+                assert await svc.get_active_batch_number() == 0
 
-                # 2. NVDA & TSM held -> batch 2
-                p_nvda = MagicMock(symbol="NVDA", market_value=114.0)
-                p_tsm = MagicMock(symbol="TSM", market_value=144.0)
-                broker.get_positions = AsyncMock(return_value=[p_nvda, p_tsm])
-                b2 = await svc.get_active_batch_number()
-                assert b2 == 2
+            # 3. Deployable cash below minimum -> 0 regardless of candidates
+            account.available_cash = 300.0  # reserve is 338.50, so deployable = 0
+            with patch.object(BatchCashDeploymentService, "_select_dynamic_candidates", AsyncMock(return_value=candidate)):
+                assert await svc.get_active_batch_number() == 0
 
-                # 3. MU & AMD also held -> batch 3
-                p_mu = MagicMock(symbol="MU", market_value=80.0)
-                p_amd = MagicMock(symbol="AMD", market_value=77.0)
-                broker.get_positions = AsyncMock(return_value=[p_nvda, p_tsm, p_mu, p_amd])
-                b3 = await svc.get_active_batch_number()
-                assert b3 == 3
-
-                # 4. SPCX also held -> batch 0 (all complete)
-                p_spcx = MagicMock(symbol="SPCX", market_value=76.0)
-                broker.get_positions = AsyncMock(return_value=[p_nvda, p_tsm, p_mu, p_amd, p_spcx])
-                b0 = await svc.get_active_batch_number()
-                assert b0 == 0
-
-                # 5. When deployable cash < 10 -> returns 0
-                account.available_cash = 300.0  # reserve is 338.50, so deployable = 0
-                broker.get_positions = AsyncMock(return_value=[])
-                b_cash = await svc.get_active_batch_number()
-                assert b_cash == 0
+            # 4. Broker position read fails -> 0, never raises (state unknown is surfaced via warning)
+            account.available_cash = 1404.09
+            broker.get_positions = AsyncMock(side_effect=RuntimeError("broker down"))
+            with patch.object(BatchCashDeploymentService, "_select_dynamic_candidates", AsyncMock(return_value=candidate)):
+                assert await svc.get_active_batch_number() == 0
 
         asyncio.run(_test())
 

@@ -28,10 +28,10 @@ def test_ticker_hash(compositor):
 
 def test_fallback_score(compositor):
     score, factors = compositor._fallback_score("AAPL", "Fundamental")
-    assert 0.0 <= score <= 10.0
-    assert "key_factor" in factors
-    assert "details" in factors
-    assert factors["details"].startswith("LLM unavailable")
+    # No evidence is NOT a plausible score (it used to be a ticker hash of 7-9 for fundamental).
+    assert score == 0.0
+    assert factors["_insufficient_data"] is True
+    assert "key_factor" in factors and "details" in factors
 
 
 def test_aggregate_scores(compositor):
@@ -176,11 +176,28 @@ async def test_score_via_llm_success(compositor):
 @pytest.mark.asyncio
 async def test_score_via_llm_failure(compositor):
     compositor._get_pipeline = AsyncMock(side_effect=Exception("LLM crash"))
-    # Should fallback to deterministic hash score
+    # An LLM failure yields "no evidence", clearly marked, never a fake score.
     score, factors = await compositor._score_via_llm("AAPL", "Fundamental", "System prompt", "User prompt")
-    assert 0.0 <= score <= 10.0
-    assert "Fallback" in factors["key_factor"]
+    assert score == 0.0
+    assert factors["_insufficient_data"] is True
     assert "_fallback_reason" in factors
+
+
+def test_aggregate_excludes_agents_without_evidence(compositor):
+    ok = lambda n, c: AgentSubScore(n, "AAPL", c, {}, "", "")
+    bad = lambda n: AgentSubScore(n, "AAPL", 0.0, {"_insufficient_data": True}, "", "")
+    # 3 of 4 agents have evidence -> composite uses only those
+    composite, execute = compositor._aggregate_scores([ok("Fundamental", 8.0), ok("Momentum", 8.0), ok("Sentiment", 8.0), bad("Risk")])
+    assert composite == pytest.approx(8.0) and execute is True
+
+
+def test_aggregate_refuses_when_most_evidence_is_missing(compositor):
+    ok = lambda n, c: AgentSubScore(n, "AAPL", c, {}, "", "")
+    bad = lambda n: AgentSubScore(n, "AAPL", 0.0, {"_insufficient_data": True}, "", "")
+    composite, execute = compositor._aggregate_scores([ok("Risk", 9.0), bad("Fundamental"), bad("Momentum"), bad("Sentiment")])
+    assert execute is False and composite == 0.0
+    composite, execute = compositor._aggregate_scores([bad("Fundamental"), bad("Momentum")])
+    assert execute is False
 
 
 @pytest.mark.asyncio
@@ -277,6 +294,27 @@ def test_aggregate_scores_with_active_synthesized_factor(compositor):
     assert execute_5 is True
 
 
+def _synth_live_exec_on():
+    """Enable live exec flag and supply real-shaped OHLCV (no random fallback anymore).
+    開啟實盤執行旗標並提供 OHLCV 資料（已不再有隨機價格後備）。"""
+    import contextlib
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {"Open": range(1, 61), "High": range(2, 62), "Low": range(0, 60),
+         "Close": [100.0 + i for i in range(60)], "Volume": [1000] * 60}
+    )
+    settings = MagicMock()
+    settings.get_setting.return_value = True
+    mds = MagicMock()
+    mds.get_history_df.return_value = df
+    stack = contextlib.ExitStack()
+    stack.enter_context(patch("src.services.settings_service.SettingsService", return_value=settings))
+    stack.enter_context(patch("src.services.market_data_service.MarketDataService", return_value=mds))
+    return stack
+
+
+
 @pytest.mark.asyncio
 async def test_gather_synthesized_factor_scores_success(compositor):
     """
@@ -295,7 +333,8 @@ async def test_gather_synthesized_factor_scores_success(compositor):
         parameters={"target_regime": "TREND_ACCELERATION"},
     )
 
-    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]):
+    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]), \
+         _synth_live_exec_on():
         synth_scores = await compositor._gather_synthesized_factor_scores("AAPL")
         assert len(synth_scores) == 1
         sub = synth_scores[0]
@@ -323,7 +362,8 @@ async def test_gather_synthesized_factor_scores_graceful_fallback(compositor):
         parameters={"target_regime": "VOLATILITY_PIVOT"},
     )
 
-    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]):
+    with patch("src.services.canary_shadow_runner.canary_runner.list_artifacts", return_value=[mock_art]), \
+         _synth_live_exec_on():
         synth_scores = await compositor._gather_synthesized_factor_scores("AAPL")
         assert len(synth_scores) == 1
         sub = synth_scores[0]

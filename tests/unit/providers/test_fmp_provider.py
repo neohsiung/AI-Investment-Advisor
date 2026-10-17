@@ -208,3 +208,49 @@ class TestFMPProviderExtended:
             prices = provider.fetch_current_prices(['AAPL', 'GOOGL'])
             
             assert prices == {}
+
+
+class TestFMPFundamentalRatios:
+    """fetch_info exposes the TTM ratios QualityGateService reads (missing stays absent)."""
+
+    def _resp(self, payload):
+        r = MagicMock()
+        r.status_code = 200
+        r.json.return_value = payload
+        return r
+
+    def test_fetch_info_maps_ratio_endpoints(self):
+        def fake_get(url, params=None, timeout=None):
+            if url.endswith("/profile"):
+                return self._resp([{"mktCap": 4e12, "sector": "Technology", "industry": "Semis"}])
+            if url.endswith("/ratios-ttm"):
+                return self._resp([{"debtToEquityRatioTTM": 0.4, "operatingProfitMarginTTM": 0.6,
+                                    "netProfitMarginTTM": 0.5, "priceToEarningsRatioTTM": 45.0}])
+            if url.endswith("/key-metrics-ttm"):
+                return self._resp([{"returnOnEquityTTM": 0.9}])
+            if url.endswith("/financial-growth"):
+                return self._resp([{"revenueGrowth": 1.2}])
+            raise AssertionError(url)
+
+        with patch("src.data.providers.fmp_provider.requests.get", side_effect=fake_get):
+            info = FMPProvider(api_key="k", settings_service=MagicMock()).fetch_info("NVDA")
+        assert info["market_cap"] == 4e12
+        assert info["returnOnEquity"] == 0.9
+        assert info["debtToEquity"] == 0.4
+        assert info["operatingMargins"] == 0.6
+        assert info["profitMargins"] == 0.5
+        assert info["trailingPE"] == 45.0
+        assert info["revenueGrowth"] == 1.2
+
+    def test_failed_ratio_endpoint_leaves_key_absent(self):
+        def fake_get(url, params=None, timeout=None):
+            if url.endswith("/profile"):
+                return self._resp([{"mktCap": 1e9}])
+            if url.endswith("/ratios-ttm"):
+                raise requests.exceptions.Timeout()
+            return self._resp([])
+
+        with patch("src.data.providers.fmp_provider.requests.get", side_effect=fake_get):
+            info = FMPProvider(api_key="k", settings_service=MagicMock()).fetch_info("X")
+        assert info["market_cap"] == 1e9
+        assert "debtToEquity" not in info and "returnOnEquity" not in info

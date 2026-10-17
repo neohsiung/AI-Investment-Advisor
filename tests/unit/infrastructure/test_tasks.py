@@ -1013,10 +1013,19 @@ class TestStrategyEvolutionTasks:
 class TestAutonomousEvolutionTasks:
     def test_dispatch_autonomous_evolution(self):
         with patch.object(tasks, "_resolve_target_users", return_value=["u1", "u2"]), \
+             patch.object(tasks, "_synthetic_evolution_enabled", return_value=True), \
              patch.object(tasks.run_autonomous_evolution, "delay") as mock_delay:
             res = tasks.dispatch_autonomous_evolution()
             assert res == "Dispatched 2 autonomous_evolution tasks"
             assert mock_delay.call_count == 2
+
+    def test_dispatch_autonomous_evolution_gated_off(self):
+        with patch.object(tasks, "_resolve_target_users", return_value=["u1", "u2"]), \
+             patch.object(tasks, "_synthetic_evolution_enabled", return_value=False), \
+             patch.object(tasks.run_autonomous_evolution, "delay") as mock_delay:
+            res = tasks.dispatch_autonomous_evolution()
+            assert res == "Dispatched 0 autonomous_evolution tasks"
+            assert mock_delay.call_count == 0
 
     def test_run_autonomous_evolution_missing_user_id(self):
         res = tasks.run_autonomous_evolution(user_id=None)

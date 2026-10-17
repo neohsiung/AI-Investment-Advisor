@@ -102,10 +102,13 @@ async def test_execute_staggered_dip_deployment_persists_cross_sector_fields(moc
     risk_res.reasons = []
     risk_gw.evaluate_trade_risk.return_value = risk_res
 
+    broker = MagicMock()
+    broker.place_order = AsyncMock(return_value={"order_id": "B-1"})
     svc = StaggeredDipBuyingService(
         user_id="test_user",
         settings_service=mock_settings,
         risk_gateway=risk_gw,
+        broker=broker,
     )
 
     mock_batch_svc = MagicMock()
@@ -134,6 +137,28 @@ async def test_execute_staggered_dip_deployment_persists_cross_sector_fields(moc
             assert ord_rec["ticker"] == "V"
             assert ord_rec["is_cross_sector_injected"] is True
             assert ord_rec["injected_sector"] == "Financial"
+
+
+@pytest.mark.asyncio
+async def test_execute_staggered_dip_deployment_refuses_without_execution_broker(mock_redis, mock_settings):
+    """No broker with place_order -> refuse loudly, record nothing (no simulated fills)."""
+    svc = StaggeredDipBuyingService(user_id="test_user", settings_service=mock_settings, broker=MagicMock(spec=[]))
+    mock_batch_svc = MagicMock()
+    mock_batch_svc.get_active_batch_number = AsyncMock(return_value=1)
+    mock_batch_svc.get_deployment_plan = AsyncMock(return_value={
+        "portfolio_status": {"deployable_cash": 300.0},
+        "items": [{"ticker": "V", "amount_usd": 100.0}],
+    })
+    redis_set = AsyncMock()
+    mock_redis.setex = redis_set
+    with patch("src.infrastructure.cache.redis_client.get_redis", AsyncMock(return_value=mock_redis)), \
+         patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService", return_value=mock_batch_svc):
+        res = await svc.execute_staggered_dip_deployment(batch_number=1, force=True)
+    assert res["success"] is False
+    assert res["status"] == "no_execution_broker"
+    assert not any(
+        str(c.args[0]).startswith(StaggeredDipBuyingService.REDIS_KEY_PREFIX) for c in redis_set.call_args_list
+    )
 
 
 @pytest.mark.asyncio

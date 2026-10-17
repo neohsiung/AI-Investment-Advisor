@@ -12,6 +12,16 @@ from src.services.ticker_universe_service import TickerUniverseService
 from src.services.confidence_rebalance_service import ConfidenceRebalanceService
 
 
+
+@pytest.fixture(autouse=True)
+def _legacy_friction_constants(monkeypatch):
+    """These tests pin the hurdle ARITHMETIC using the old 0.30% round-trip friction; production defaults are
+    covered in test_opportunity_cost_friction_defaults.py. 這些測試固定的是門檻算術（舊 0.30%）；正式預設另有測試。"""
+    from src.services.opportunity_cost_service import OpportunityCostService as S
+    monkeypatch.setattr(S, "FALLBACK_ROUNDTRIP_FRICTION_PCT", 0.3)
+    monkeypatch.setattr(S, "DEFAULT_SLIPPAGE_PCT", 0.0010)
+    monkeypatch.setattr(S, "DEFAULT_COMMISSION_PCT", 0.0005)
+
 class TestOpportunityCostService:
 
     def test_roundtrip_friction_calculation(self):

@@ -772,6 +772,161 @@ def generate_monthly_report(user_id: str = None):
         return f"Error: {str(e)}"
 
 
+@app.task(name="src.infrastructure.tasks.run_litellm_spend_collect", soft_time_limit=60, time_limit=90)
+def run_litellm_spend_collect():
+    """
+    Poll LiteLLM /key/info and book the spend delta into llm_real_cost_daily (real billed cost).
+    輪詢 LiteLLM /key/info，將花費增量記入每日真實成本表。
+    """
+    try:
+        from src.services.litellm_spend_service import LiteLLMSpendService
+        res = LiteLLMSpendService().collect()
+        return res
+    except Exception as e:
+        # Surface loudly: a silent gap makes the cost metric fall back to estimates.
+        logger.error(f"run_litellm_spend_collect failed: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.run_strategy_lab", soft_time_limit=1500, time_limit=1620)
+def run_strategy_lab():
+    """
+    Weekly 0-LLM evaluation of every pre-registered strategy variant on real prices, net of costs, relative to the
+    benchmark, with cumulative trial accounting (Deflated Sharpe). Never allocates capital; candidates go to shadow.
+    每週 0-LLM 評估所有預先登記的策略變體（真實價格、扣成本、相對基準、累計試驗數 DSR）；絕不配置資金。
+    """
+    try:
+        from src.config.mission import load_mission
+        from src.evaluation.data import load_price_panel
+        from src.services.market_data_service import MarketDataService
+        from src.services.strategy_lab_service import StrategyLabService
+        from src.services.universe_lifecycle_service import DEFAULT_CANDIDATE_POOL
+
+        benchmark = load_mission().objective.benchmark
+        uid = os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+        prices = load_price_panel(MarketDataService(user_id=uid), DEFAULT_CANDIDATE_POOL, days=2600, benchmark=benchmark)
+        res = StrategyLabService().run(prices, benchmark=benchmark)
+        logger.info("run_strategy_lab: N=%s variants=%s shadow_candidates=%s",
+                    res["n_trials_total"], res["variants_evaluated"], len(res["shadow_candidates"]))
+        return {k: res[k] for k in ("n_trials_total", "variants_evaluated", "shadow_candidates")}
+    except Exception as e:
+        logger.error(f"run_strategy_lab failed: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.run_benchmark_parking", soft_time_limit=300, time_limit=360)
+def run_benchmark_parking(user_id: str = None):
+    """
+    Park idle capital in the mission benchmark (default OFF: benchmark_parking_enabled). Weekdays after the
+    market-open deployments. Buys only; never sells the benchmark.
+    把閒置資金停泊於使命基準（預設關閉）；交易日開盤建倉之後執行；只買不賣。
+    """
+    if not is_market_open_today():
+        return {"status": "skipped", "reason": "market_closed_today"}
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_benchmark_parking: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.benchmark_parking_service import BenchmarkParkingService
+        res = _run_async_safe(BenchmarkParkingService(user_id=user_id).run())
+        logger.info("run_benchmark_parking: action=%s amount=%s executed=%s reason=%s",
+                    res.get("action"), res.get("amount_usd"), res.get("executed"), res.get("reason"))
+        return res
+    except Exception as e:
+        logger.error(f"run_benchmark_parking failed: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.run_mission_watchdog", soft_time_limit=120, time_limit=150)
+def run_mission_watchdog(user_id: str = None):
+    """
+    Daily 0-LLM check of the mission kill criteria. Alerts on any breach (and on 'partial' only in the log).
+    It never changes trading state by itself; auto-halt is a separate, default-off R3 behaviour.
+    每日 0-LLM 檢查使命 kill criteria；任一觸發即通知。本任務不會自行改變交易狀態。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_mission_watchdog: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.mission_watchdog_service import MissionWatchdogService
+        res = MissionWatchdogService(user_id=user_id).evaluate()
+        logger.info("run_mission_watchdog: overall=%s breaches=%s", res["overall"], res["breaches"])
+        if res["breaches"]:
+            lines = [f"• {c['id']} {c['name']}: {c['value']} (limit {c['threshold']} {c['unit']}) — {c['note']}"
+                     for c in res["criteria"] if c["status"] == "breach"]
+            try:
+                from src.services.settings_service import SettingsService
+                from src.services.notification_service import NotificationService
+                noti = NotificationService.create_with_settings(
+                    settings_service=SettingsService(user_id=user_id), user_id=user_id)
+                _run_async_safe(noti.notify_all(
+                    "🚨 使命 kill criteria 觸發 / Mission kill criteria breached", "\n".join(lines), user_id=user_id))
+            except Exception as ne:
+                logger.error("run_mission_watchdog: breach notification failed: %s", ne)
+        return res
+    except Exception as e:
+        logger.error(f"run_mission_watchdog failed: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.dispatch_universe_research_refresh")
+def dispatch_universe_research_refresh():
+    """Fan-out dispatcher: 為活躍租戶分派標的池研究分數刷新任務（0-LLM）。"""
+    users = _resolve_target_users()
+    for uid in users:
+        run_universe_research_refresh.delay(user_id=uid)
+    return f"Dispatched {len(users)} universe_research_refresh tasks"
+
+
+@app.task(name="src.infrastructure.tasks.run_universe_research_refresh", soft_time_limit=900, time_limit=960)
+def run_universe_research_refresh(user_id: str = None, reoptimize: bool = True):
+    """
+    Refresh quality-based research scores for active/candidate tickers, then recompute target
+    allocations from them (no orders are placed). 0-LLM.
+    刷新 active/候選標的的品質研究分數，並據此重算目標配置（不下單）；0-LLM。
+    """
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_universe_research_refresh: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.universe_lifecycle_service import UniverseLifecycleService
+        svc = UniverseLifecycleService(user_id=user_id)
+        res = _run_async_safe(svc.refresh_research_scores())
+        n_ok = len(res.get("refreshed", []))
+        opt_msg = "skipped"
+        if reoptimize and n_ok > 0:
+            from src.services.ticker_universe_service import TickerUniverseService
+            opt = TickerUniverseService(user_id=user_id).optimize_allocations()
+            opt_msg = f"targets={len(opt.get('targets', []))} success={opt.get('success')}"
+        elif reoptimize:
+            logger.warning("run_universe_research_refresh: nothing refreshed; targets NOT recomputed")
+        logger.info("run_universe_research_refresh for %s: refreshed=%d skipped=%d optimize=%s",
+                    user_id, n_ok, len(res.get("skipped", [])), opt_msg)
+        return {"refreshed": n_ok, "skipped": res.get("skipped", []), "optimize": opt_msg}
+    except Exception as e:
+        logger.error(f"run_universe_research_refresh failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
+@app.task(name="src.infrastructure.tasks.run_finnhub_poll", soft_time_limit=600, time_limit=660)
+def run_finnhub_poll(user_id: str = None):
+    """Poll Finnhub company news for active tickers (replaces the public webhook). Default OFF.
+    輪詢 Finnhub 新聞（取代公網 webhook），預設關閉。"""
+    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+    if not user_id:
+        logger.error("run_finnhub_poll: user_id is required.")
+        return "Error: user_id is required"
+    try:
+        from src.services.finnhub_poll_service import FinnhubPollService
+        return _run_async_safe(FinnhubPollService(user_id).run())
+    except Exception as e:
+        logger.error(f"run_finnhub_poll failed for {user_id}: {e}", exc_info=True)
+        return f"Error: {str(e)}"
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_universe_lifecycle")
 def dispatch_universe_lifecycle():
     """Fan-out dispatcher: 為活躍租戶分派標的池生命週期演化任務。"""
@@ -949,7 +1104,13 @@ def run_market_open_cash_deployment(user_id: str = None, batch_number: Optional[
         staggered_svc = StaggeredDipBuyingService(user_id=user_id)
         if staggered_svc._get_setting("enable_staggered_dip_buying", True) and not force:
             active_orders = _run_async_safe(staggered_svc.get_active_staggered_orders())
-            pending_orders = [o for o in (active_orders or []) if o.get("status") == "PENDING"]
+            # Only orders that reached the broker count as in-flight; records without a
+            # broker_order_id are bookkeeping only and must not block real deployment.
+            # 只有真正送到券商（有 broker_order_id）的委託才算在途；純紀錄不得阻擋真實建倉。
+            pending_orders = [
+                o for o in (active_orders or [])
+                if o.get("status") == "PENDING" and o.get("broker_order_id")
+            ]
             if pending_orders:
                 logger.info(
                     "run_market_open_cash_deployment: %d pending staggered dip orders active for %s. Skipping redundant market open batch to prevent duplicate allocation.",
@@ -1231,13 +1392,34 @@ def run_strategy_evolution(user_id: str = None, force: bool = False):
         return f"Error: {str(e)}"
 
 
+def _synthetic_evolution_enabled(user_id: str) -> bool:
+    """
+    Gate for evolution loops that tune live settings from synthetic data.
+    Off unless `enable_autonomous_evolution_beat` is explicitly true; a read failure
+    keeps it off (fail-closed) and is logged at warning level.
+    以合成資料調整實盤設定的演化迴圈總開關；預設關閉，讀取失敗亦維持關閉並以 warning 記錄。
+    """
+    try:
+        from src.services.settings_service import SettingsService
+        val = SettingsService(user_id=user_id).get_setting("enable_autonomous_evolution_beat", False)
+        return val is True or str(val).lower() == "true"
+    except Exception as e:
+        logger.warning("enable_autonomous_evolution_beat unreadable for %s (%s); evolution stays off", user_id, e)
+        return False
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_factor_rotation_evolution")
 def dispatch_factor_rotation_evolution():
     """Fan-out dispatcher: 為活躍租戶分派多因子歷史回放重播與退火調參任務。"""
     users = _resolve_target_users()
+    dispatched = 0
     for uid in users:
+        if not _synthetic_evolution_enabled(uid):
+            logger.warning("dispatch_factor_rotation_evolution: skipped for %s (enable_autonomous_evolution_beat is off)", uid)
+            continue
         run_factor_rotation_evolution.delay(user_id=uid)
-    return f"Dispatched {len(users)} factor_rotation_evolution tasks"
+        dispatched += 1
+    return f"Dispatched {dispatched} factor_rotation_evolution tasks"
 
 
 @app.task(name="src.infrastructure.tasks.run_factor_rotation_evolution", soft_time_limit=600, time_limit=660)
@@ -1297,9 +1479,14 @@ def run_factor_rotation_evolution(user_id: str = None, iterations: int = 30, for
 def dispatch_factor_genetic_evolution():
     """Fan-out dispatcher: 為活躍租戶分派多因子權重遺傳演算法超參數演化排程任務。"""
     users = _resolve_target_users()
+    dispatched = 0
     for uid in users:
+        if not _synthetic_evolution_enabled(uid):
+            logger.warning("dispatch_factor_genetic_evolution: skipped for %s (enable_autonomous_evolution_beat is off)", uid)
+            continue
         run_factor_genetic_evolution.delay(user_id=uid)
-    return f"Dispatched {len(users)} factor_genetic_evolution tasks"
+        dispatched += 1
+    return f"Dispatched {dispatched} factor_genetic_evolution tasks"
 
 
 @app.task(name="src.infrastructure.tasks.run_factor_genetic_evolution", soft_time_limit=900, time_limit=960)
@@ -1375,9 +1562,14 @@ def dispatch_autonomous_evolution():
     Dispatches off-market autonomous factor exploration and canary shadow day stepping.
     """
     users = _resolve_target_users()
+    dispatched = 0
     for uid in users:
+        if not _synthetic_evolution_enabled(uid):
+            logger.warning("dispatch_autonomous_evolution: skipped for %s (enable_autonomous_evolution_beat is off)", uid)
+            continue
         run_autonomous_evolution.delay(user_id=uid)
-    return f"Dispatched {len(users)} autonomous_evolution tasks"
+        dispatched += 1
+    return f"Dispatched {dispatched} autonomous_evolution tasks"
 
 
 @app.task(name="src.infrastructure.tasks.run_autonomous_evolution", soft_time_limit=600, time_limit=660)
@@ -1409,7 +1601,7 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
         try:
             from src.services.settings_service import SettingsService
             settings_svc = SettingsService(user_id=user_id)
-            auto_promote_enabled = bool(settings_svc.get_setting("auto_promote_synthesized_factors", True))
+            auto_promote_enabled = bool(settings_svc.get_setting("auto_promote_synthesized_factors", False))
         except Exception as e:
             logger.warning("Could not read auto_promote_synthesized_factors setting for %s: %s", user_id, e)
 

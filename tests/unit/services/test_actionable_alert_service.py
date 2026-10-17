@@ -179,22 +179,19 @@ async def test_execute_action_pause_and_resume(mock_settings_service):
 
 @pytest.mark.asyncio
 async def test_execute_action_close_pos():
+    """The 1-tap close goes through the single execution service (risk gateway + ledger), never straight to the broker."""
     hub = ActionableAlertHubService(user_id="test_user_p3")
 
-    with patch("src.services.etoro_service.EtoroService") as MockEtoro:
-        mock_instance = MagicMock()
-        mock_instance.get_portfolio.return_value = {
-            "positions": [
-                {"id": "pos_999", "ticker": "AMD", "value": 1500.0}
-            ]
-        }
-        mock_instance.close_position = MagicMock()
-        MockEtoro.return_value = mock_instance
+    with patch("src.services.automated_trading_service.AutomatedTradingService") as MockAuto:
+        auto = MagicMock()
+        auto.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
+        MockAuto.return_value = auto
 
         res = await hub.execute_action("close_pos", {"ticker": "AMD"})
         assert res["ok"] is True
         assert "AMD" in res["message"]
-        mock_instance.close_position.assert_called_once_with(position_id="pos_999")
+        kwargs = auto.evaluate_and_execute_trade.call_args.kwargs
+        assert kwargs["ticker"] == "AMD" and kwargs["action"] == "SELL"
 
 
 @pytest.mark.asyncio

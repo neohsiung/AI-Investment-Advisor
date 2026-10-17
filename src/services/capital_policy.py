@@ -52,6 +52,14 @@ logger = logging.getLogger("CapitalPolicy")
 # 上限設定鍵（美元）。0、負數或未設定皆代表「不設限，使用券商真實淨值」。
 SETTING_TRADABLE_CAPITAL = "tradable_capital_usd"
 
+# Percentage-of-account cap (2026-10-16 decision: the system may touch at most 75% of the real account;
+# the rest stays as cash). 0 or a negative value DISABLES trading (tradable capital = 0) — unlike the USD cap,
+# where 0 means "no USD cap". Missing/garbage values fall back to the default, never to "everything".
+# 帳戶百分比上限（2026-10-16 決定：最多動用真實帳戶的 75%，其餘保持現金）。
+# 0 或負值＝禁止交易（可交易資本為 0），與 USD 上限「0＝不設上限」不同；缺漏/無效值回到預設而非全額。
+SETTING_TRADABLE_CAPITAL_PCT = "tradable_capital_pct"
+DEFAULT_TRADABLE_CAPITAL_PCT = 75.0
+
 # Default while the $100 live test runs. Raising this one value is the whole
 # ceremony for scaling up later.
 # $100 實測期間的預設值；日後放大資金只需改這一個值。
@@ -82,17 +90,22 @@ def tradable_capital(
     if nlv <= 0:
         return 0.0
 
-    cap = _configured_cap(user_id, settings_repo)
-    if cap is None:
-        return nlv
+    pct = _configured_pct(user_id, settings_repo)
+    if pct <= 0:
+        logger.warning("Capital policy: %s <= 0 — trading is DISABLED (tradable capital = 0)", SETTING_TRADABLE_CAPITAL_PCT)
+        return 0.0
+    limit = nlv * min(pct, 100.0) / 100.0
 
-    if cap < nlv:
+    cap = _configured_cap(user_id, settings_repo)
+    if cap is not None and cap < limit:
+        limit = cap
+
+    if limit < nlv:
         logger.info(
-            f"Capital policy: sizing against ${cap:.2f} tradable capital "
-            f"(account NLV ${nlv:.2f})"
+            f"Capital policy: sizing against ${limit:.2f} tradable capital "
+            f"(account NLV ${nlv:.2f}, pct={pct:.0f}%)"
         )
-        return cap
-    return nlv
+    return min(limit, nlv)
 
 
 def is_small_test_capital(
@@ -133,6 +146,21 @@ def _configured_cap(user_id: str, settings_repo: Any) -> Optional[float]:
     # An explicit 0 (or negative) is the documented way to remove the cap.
     # 明確設為 0（或負數）是解除上限的方式。
     return None if cap <= 0 else cap
+
+
+def _configured_pct(user_id: str, settings_repo: Any) -> float:
+    """Read the percentage cap. Missing/invalid -> default 75; value <= 0 means trading disabled.
+    讀取百分比上限；缺漏/無效→預設 75；<=0 代表禁止交易。"""
+    raw = _read_setting(user_id, SETTING_TRADABLE_CAPITAL_PCT, settings_repo)
+    if raw is None:
+        return DEFAULT_TRADABLE_CAPITAL_PCT
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"Invalid {SETTING_TRADABLE_CAPITAL_PCT}={raw!r}; falling back to {DEFAULT_TRADABLE_CAPITAL_PCT:.0f}%"
+        )
+        return DEFAULT_TRADABLE_CAPITAL_PCT
 
 
 def _small_test_threshold(user_id: str, settings_repo: Any) -> float:

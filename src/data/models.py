@@ -1255,3 +1255,43 @@ class LLMBlueGreenDeployment(Base):
     )
 
 
+
+
+class LlmRealCostDaily(Base):
+    """`llm_real_cost_daily` — alembic 025. LiteLLM-billed LLM spend per day and key alias."""
+    __tablename__ = 'llm_real_cost_daily'
+
+    day = Column(Date, primary_key=True, nullable=False)
+    key_alias = Column(String(64), primary_key=True, nullable=False)
+    spend_usd = Column(Numeric(14, 6), nullable=False, server_default=text('0'))
+    source = Column(String(32), nullable=False, server_default=text("'litellm_key_info'"))
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class LlmRealCostState(Base):
+    """`llm_real_cost_state` — alembic 025. Collector cursor (last seen cumulative key spend)."""
+    __tablename__ = 'llm_real_cost_state'
+
+    key_alias = Column(String(64), primary_key=True, nullable=False)
+    last_spend = Column(Numeric(14, 6), nullable=False)
+    last_reset_at = Column(String(40))
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class StrategyTrial(Base):
+    """`strategy_trials` — alembic 026. Every strategy variant ever evaluated (multiple-testing ledger)."""
+    __tablename__ = 'strategy_trials'
+
+    params_hash = Column(String(64), primary_key=True, nullable=False)
+    family = Column(String(64), nullable=False)
+    params_json = Column(Text, nullable=False)
+    first_eval_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_eval_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    n_evals = Column(Integer, nullable=False, server_default=text('0'))
+    last_metrics = Column(Text)
+    last_verdict = Column(Text)
+    status = Column(String(24), nullable=False, server_default=text("'rejected'"))
+
+    __table_args__ = (
+        Index('ix_strategy_trials_family', 'family'),
+    )

@@ -967,7 +967,13 @@ class AutomatedTradingService:
 
         # 自主判決置信度優化 (Autonomous Confidence Optimizer)
         optimized_confidence = normalized_confidence
-        if normalized_confidence < threshold and (autonomous_reporting_mode or auto_exit_enabled):
+        # The optimizer ADDS points to a sub-threshold score based on keywords found in the free-text rationale
+        # (e.g. "rebalance" +1.5 on a BUY, "excess cash" +1.0). A score that moves money must not be inflatable by
+        # wording, so it is OFF unless explicitly enabled (default false, 2026-10-16 mission audit).
+        # 優化器依自由文字理由中的關鍵字替低於門檻的分數加分；會動用資金的分數不得被措辭灌水，預設關閉。
+        boost_flag = self.settings_repo.get(user_id, "autonomous_confidence_boost_enabled")
+        boost_enabled = str(boost_flag).lower() in ("true", "1")
+        if boost_enabled and normalized_confidence < threshold and (autonomous_reporting_mode or auto_exit_enabled):
             try:
                 from src.services.autonomous_reporting_service import AutonomousConfidenceOptimizer
                 optimized_confidence, boosts = AutonomousConfidenceOptimizer.optimize_confidence(
@@ -1404,6 +1410,56 @@ class AutomatedTradingService:
             logger.warning(f"Failed to record order transaction: {e}")
             return None
 
+    async def execute_benchmark_parking(self, user_id: str, amount_usd: float, rationale: str) -> Dict[str, Any]:
+        """
+        Buy the mission benchmark (config/mission.yaml objective.benchmark) with idle capital.
+        This is the ONLY entry point for benchmark parking, so it lives in the single execution service. It is
+        rule-based (no score): the caller (BenchmarkParkingService) already sized the amount against the
+        tradable-capital cap and the benchmark target; here we re-check the kill switch and the risk gateway
+        and fail closed on any error. Position-sizing/Kelly clamps are intentionally NOT applied — they exist
+        for single-stock bets and would shrink the core allocation into a noisy trickle of tiny orders.
+        以閒置資金買入使命基準（SPY）。這是基準停泊的唯一入口，因此放在唯一的執行服務內。
+        規則導向（不用分數）：呼叫端已依可交易資本上限與基準目標定額；這裡重新檢查總開關與風控閘門，
+        任何錯誤一律 fail-closed。刻意不套用單股部位/Kelly 限縮（那是為個股押注設計的）。
+        """
+        from src.config.mission import load_mission
+
+        benchmark = load_mission().objective.benchmark.upper()
+        trading_enabled = self.settings_repo.get(user_id, "ai_trading_enabled")
+        if str(trading_enabled).lower() not in ("true", "1"):
+            return {"status": "blocked", "reason": "Trading is disabled in settings"}
+        if amount_usd is None or float(amount_usd) < 10.0:
+            return {"status": "skipped", "reason": f"amount ${amount_usd} below the $10 broker minimum"}
+        try:
+            from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
+            gw = await UnifiedRiskGatewayService(user_id=user_id).evaluate_trade_risk(
+                ticker=benchmark, action="BUY", amount_usd=float(amount_usd),
+                current_price=None, strategy_name="benchmark_parking", confidence_score=None,
+            )
+        except Exception as e:
+            logger.error("Benchmark parking blocked: risk gateway error (fail closed): %s", e)
+            return {"status": "blocked", "reason": f"risk gateway error: {e}"}
+        if not gw.allowed:
+            return {"status": "blocked", "reason": "; ".join(gw.reasons) or "risk gateway blocked"}
+
+        order = Order(
+            symbol=benchmark,
+            action=OrderAction.BUY,
+            quantity=float(amount_usd),
+            amount_usd=float(amount_usd),
+            sizing_mode=OrderSizingMode.AMOUNT,
+            order_type=OrderType.MARKET,
+            leverage=1,
+            reason=rationale,
+            strategy_name="benchmark_parking",
+        )
+        # confidence_score=10 is the authorisation level of a rule-based allocation, not a prediction.
+        return await self._execute_trade(
+            user_id, order, 10, rationale, "benchmark_parking (rule-based)",
+            confidence_breakdown=[],   # no per-agent scores: this is a rule, not a prediction
+            threshold=None, strategy_name="benchmark_parking",
+        )
+
     async def _execute_trade(
         self,
         user_id: str,
@@ -1448,14 +1504,27 @@ class AutomatedTradingService:
         slippage_guard = None
         try:
             from src.services.slippage_guard_service import SlippageGuardService
-            slippage_guard = SlippageGuardService(user_id=user_id, settings_service=self.settings_repo)
-            guard_eval = await slippage_guard.evaluate_trade(
-                ticker=order.symbol,
-                action=order.action.value,
-                amount_usd=order.amount_usd or order.quantity,
-                current_price=order.price,
-            )
-            if not guard_eval.passed:
+            # SlippageGuardService reads settings via SettingsService.get_setting(); the repository object
+            # (self.settings_repo) has no such method, so the guard used to crash and never ran.
+            # SlippageGuardService 需要 SettingsService.get_setting()；repository 物件沒有此方法，
+            # 護欄過去每次都崩潰而從未真正執行。
+            from src.services.settings_service import SettingsService as _SS
+            from src.services.strategy_registry import StrategyRegistry as _SR
+            slippage_guard = SlippageGuardService(user_id=user_id, settings_service=_SS(user_id=user_id))
+            # Safety exits (stop-loss, trailing stop, emergency) must never be deferred by the opening-window or
+            # spread breaker: getting out matters more than the fill quality. Only entries and discretionary
+            # sells are subject to it.
+            # 安全類出場（停損/追蹤停損/緊急）不得被開盤窗口或價差熔斷延後；只有進場與非安全賣出受此限制。
+            if order.action.value.upper() == "SELL" and _SR.is_safety_control(strategy_name or ""):
+                guard_eval = None
+            else:
+                guard_eval = await slippage_guard.evaluate_trade(
+                    ticker=order.symbol,
+                    action=order.action.value,
+                    amount_usd=order.amount_usd or order.quantity,
+                    current_price=order.price,
+                )
+            if guard_eval is not None and not guard_eval.passed:
                 logger.warning(
                     f"Slippage Guard Blocked {order.action.value} {order.symbol}: {guard_eval.reason}"
                 )
@@ -1465,7 +1534,7 @@ class AutomatedTradingService:
                     "circuit_breaker_triggered": True,
                     "slippage_guard": True,
                 }
-            if guard_eval.adaptive_limit_price and (not order.price or order.price <= 0):
+            if guard_eval is not None and guard_eval.adaptive_limit_price and (not order.price or order.price <= 0):
                 order.price = guard_eval.adaptive_limit_price
         except Exception as sg_err:
             logger.warning(f"SlippageGuard non-blocking check error: {sg_err}")

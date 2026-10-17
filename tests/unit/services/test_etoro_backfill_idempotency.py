@@ -25,6 +25,7 @@ class DummyTx:
 async def test_backfill_from_positions_idempotency():
     # Setup mock transaction repo
     mock_repo = MagicMock()
+    mock_repo.has_matching_buy.return_value = False   # no concurrently-written system order
     stored_txs = []
 
     def fake_get_all_by_user(user_id, account_id=None):
@@ -120,3 +121,33 @@ async def test_backfill_from_positions_idempotency():
     added_3 = await service._backfill_from_positions(user_id)
     assert added_3 == 0, "AAPL already has trade with matching position ID / signature, must not backfill"
     assert len(stored_txs) == 3
+
+
+@pytest.mark.asyncio
+async def test_backfill_skips_when_system_order_was_written_after_the_snapshot():
+    """Race: the order path inserted its own BUY after the backfill read its snapshot -> no synthetic duplicate."""
+    mock_repo = MagicMock()
+    mock_repo.get_all_by_user.return_value = []            # stale snapshot: the system order is not in it
+    mock_repo.has_matching_buy.return_value = True         # ...but a fresh query finds it
+    service = EtoroService()
+    service.transaction_repo = mock_repo
+    service.get_positions = AsyncMock(return_value=[Position(
+        symbol="MSFT", quantity=0.18519, open_price=539.99, current_price=540.0, market_value=100.0,
+        unrealized_pnl=0.0, open_date=datetime(2026, 10, 16, 13, 37, 18), position_id="3608225247")])
+    added = await service._backfill_from_positions("u")
+    assert added == 0
+    mock_repo.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_backfill_race_check_failure_skips_instead_of_guessing():
+    mock_repo = MagicMock()
+    mock_repo.get_all_by_user.return_value = []
+    mock_repo.has_matching_buy.side_effect = RuntimeError("db down")
+    service = EtoroService()
+    service.transaction_repo = mock_repo
+    service.get_positions = AsyncMock(return_value=[Position(
+        symbol="MSFT", quantity=0.18519, open_price=539.99, current_price=540.0, market_value=100.0,
+        unrealized_pnl=0.0, open_date=datetime(2026, 10, 16, 13, 37, 18), position_id="3608225247")])
+    assert await service._backfill_from_positions("u") == 0
+    mock_repo.add.assert_not_called()

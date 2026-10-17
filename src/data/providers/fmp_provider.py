@@ -142,17 +142,57 @@ class FMPProvider(MarketDataProvider):
                 data = resp.json()
                 if data:
                     item = data[0]
-                    return {
-                        "market_cap": item.get('mktCap'),
+                    info = {
+                        "market_cap": item.get('mktCap') or item.get('marketCap'),
                         "sector": item.get('sector'),
                         "industry": item.get('industry'),
                         "description": item.get('description'),
                         "website": item.get('website'),
                         "ceo": item.get('ceo')
                     }
+                    info.update(self._fetch_fundamental_ratios(ticker))
+                    return info
         except Exception as e:
             self.logger.error(f"FMP fetch_info error: {e}")
         return {}
+
+    def _fetch_fundamental_ratios(self, ticker: str) -> Dict[str, Any]:
+        """
+        TTM ratios consumed by QualityGateService, mapped to its key names. Each endpoint fails
+        independently (missing keys stay absent, never zero).
+        取得品質閘門所需的 TTM 比率並對映其欄位名；各端點獨立失敗，缺值保持缺漏而非 0。
+        """
+        out: Dict[str, Any] = {}
+
+        def _get(endpoint: str, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            try:
+                params = {"symbol": ticker, "apikey": self.api_key, **(extra or {})}
+                r = requests.get(f"https://financialmodelingprep.com/stable/{endpoint}", params=params, timeout=5)
+                if r.status_code == 200:
+                    d = r.json()
+                    if isinstance(d, list) and d:
+                        return d[0]
+                    if isinstance(d, dict):
+                        return d
+            except Exception as e:
+                self.logger.warning(f"FMP {endpoint} error for {ticker}: {e}")
+            return {}
+
+        ratios = _get("ratios-ttm")
+        metrics = _get("key-metrics-ttm")
+        growth = _get("financial-growth", {"limit": 1})
+        mapping = [
+            ("returnOnEquity", metrics.get("returnOnEquityTTM")),
+            ("debtToEquity", ratios.get("debtToEquityRatioTTM")),
+            ("operatingMargins", ratios.get("operatingProfitMarginTTM")),
+            ("profitMargins", ratios.get("netProfitMarginTTM")),
+            ("trailingPE", ratios.get("priceToEarningsRatioTTM")),
+            ("revenueGrowth", growth.get("revenueGrowth")),
+        ]
+        for key, val in mapping:
+            if val is not None:
+                out[key] = val
+        return out
 
     def fetch_sector_performance(self) -> List[Dict[str, Any]]:
         """Fetch real-time sector performance."""

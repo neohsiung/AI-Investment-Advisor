@@ -408,18 +408,31 @@ async def update_daily_snapshot(db_path: str = None, user_id: str = None, force:
     calc = LeverageCalculator(user_id=user_id, repository=trans_repo, db_path=db_path)
     metrics = calc.calculate_metrics(current_prices, user_id)
 
-    # Prefer real broker equity & cash if available (single source of truth)
+    # Prefer real broker equity & cash if available (single source of truth).
+    # If a broker is configured but the anchor fails, do NOT record a ledger-derived NAV:
+    # the local ledger drifts from the broker (2026-10 audit: ~$550 phantom cash on 10/1-10/7
+    # snapshots), and a plausible-looking wrong NAV silently corrupts every return metric.
+    # 已設定券商但錨定失敗時，不寫入以本地帳本推算的 NAV（本地帳本會與券商分岔，
+    # 2026-10 稽核發現 10/1~10/7 快照多出約 $550 幽靈現金），寧可缺一天也不寫看似合理的錯值。
+    broker_configured = False
     try:
         from src.services.etoro_service import EtoroService
         broker = EtoroService(user_id=user_id)
-        if broker.api_key and broker.user_key:
+        broker_configured = bool(broker.api_key and broker.user_key)
+        if broker_configured:
             acc = await broker.get_account()
             if acc and getattr(acc, 'total_equity', None) and acc.total_equity > 0:
                 metrics['nlv'] = float(acc.total_equity)
                 metrics['cash_balance'] = float(acc.available_cash)
                 logger.info(f"update_daily_snapshot: Anchored snapshot to live eToro account: NLV=${metrics['nlv']}, Cash=${metrics['cash_balance']}")
+            else:
+                logger.error("update_daily_snapshot: broker returned no usable equity; snapshot NOT recorded")
+                return
     except Exception as e:
-        logger.debug(f"update_daily_snapshot: Broker account fallback to local metrics: {e}")
+        if broker_configured:
+            logger.error(f"update_daily_snapshot: broker anchor failed ({e}); snapshot NOT recorded")
+            return
+        logger.warning(f"update_daily_snapshot: no broker configured, using local ledger metrics: {e}")
 
     recorder = SnapshotRecorder(db_path=db_path)
     recorder.record_daily_snapshot(
