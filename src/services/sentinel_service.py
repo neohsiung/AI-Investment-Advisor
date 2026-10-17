@@ -4398,7 +4398,8 @@ class SentinelService:
                     est_proceeds = round(sell_qty * (current_price or 0), 2)
                     # Same single-order cap as batch deployment; the remainder stays cash (benchmark parking / next batch).
                     # 與批次建倉相同的單筆上限；餘額留作現金。
-                    max_order = float(self.settings_service.get_setting("batch_deploy_max_order_usd", 100.0, self.user_id) or 100.0)
+                    from src.services.order_cap_policy import single_order_cap_usd
+                    max_order = single_order_cap_usd(self.settings_service, self.user_id)
                     if est_proceeds > max_order:
                         logger.info(f"[Sentinel Exit Execution] Rotation buy capped ${est_proceeds} -> ${max_order:.2f}")
                         est_proceeds = round(max_order, 2)
