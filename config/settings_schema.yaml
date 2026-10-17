@@ -1685,6 +1685,16 @@ settings:
     label_zh: 可交易資本（占帳戶百分比）
     help_en: "Share of the real account the autonomous path may deploy; the rest stays cash. 0 DISABLES trading."
     help_zh: 自動交易最多可動用的帳戶比例，其餘保持現金；設為 0 代表禁止交易。
+  - key: trade_proposal_mode
+    group: trading
+    type: enum
+    enum: ["off", "shadow", "enforce"]
+    default: "shadow"
+    danger: true
+    label_en: "Trade proposal validator mode"
+    label_zh: 交易提案驗證器模式
+    help_en: "off = do not run the validator. shadow = validate every Sentinel event-path signal and record the proposal and counterfactual outcomes, but orders are unchanged (default). enforce = reserved, NOT implemented yet: behaves exactly like shadow."
+    help_zh: "off＝不執行驗證器；shadow＝對 Sentinel 事件路徑的每個訊號做驗證並記錄提案與反事實結果，但下單行為完全不變（預設）；enforce＝保留值、尚未實作，行為與 shadow 完全相同。"
   - key: tradable_capital_usd
     group: trading
     type: float
