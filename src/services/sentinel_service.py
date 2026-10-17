@@ -2433,8 +2433,45 @@ class SentinelService:
         else:
              users = [user_id]
              
+        # WP5b: notify-only by default. Unknown / unreadable value => notify.
+        # WP5b：預設只通知；未知或讀取失敗一律視為 notify。
+        mode = "notify"
+        try:
+            raw_mode = self.settings_service.get_setting("sentinel_emergency_protocol_mode", "notify")
+            if raw_mode in ("notify", "legacy"):
+                mode = raw_mode
+            else:
+                logger.warning(
+                    f"Sentinel: unknown sentinel_emergency_protocol_mode {raw_mode!r}; treating as 'notify'."
+                )
+        except Exception as e:
+            logger.warning(
+                f"Sentinel: could not read sentinel_emergency_protocol_mode ({e}); treating as 'notify'."
+            )
+
+        if mode == "notify":
+            logger.warning(
+                "Sentinel: emergency condition detected; mode=notify, NO orders placed. "
+                f"Rationale: {rationale[:200]}"
+            )
+            try:
+                await self._dispatch_notifications_direct(
+                    title="🚨 Sentinel emergency condition detected / 偵測到緊急情況",
+                    content=(
+                        "An emergency condition was detected. No automatic liquidation or hedge was "
+                        "performed (sentinel_emergency_protocol_mode=notify). Please review your "
+                        "positions manually.\n"
+                        "偵測到緊急情況，系統未執行任何自動清倉或避險，請人工檢視持倉。\n\n"
+                        f"Rationale / 判定: {rationale[:500]}"
+                    ),
+                    category="sentinel",
+                )
+            except Exception as e:
+                logger.error(f"Sentinel: emergency notification failed (no orders were placed): {e}")
+            return
+
         logger.warning(f"Sentinel: Triggering Emergency Liquidation Protocol for {len(users)} users.")
-        
+
         try:
             from src.services.automated_trading_service import AutomatedTradingService
             from src.services.transaction_service import TransactionService
