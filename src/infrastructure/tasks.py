@@ -803,7 +803,8 @@ def run_strategy_lab():
         from src.services.universe_lifecycle_service import DEFAULT_CANDIDATE_POOL
 
         benchmark = load_mission().objective.benchmark
-        uid = os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
+        from src.config.owner import resolve_user_id
+        uid = resolve_user_id(None)  # single owner; the stack sets no PRIMARY_USER_ID / 單一擁有者，部署未設環境變數
         prices = load_price_panel(MarketDataService(user_id=uid), DEFAULT_CANDIDATE_POOL, days=2600, benchmark=benchmark)
         res = StrategyLabService().run(prices, benchmark=benchmark)
         logger.info("run_strategy_lab: N=%s variants=%s shadow_candidates=%s",
@@ -823,10 +824,10 @@ def run_benchmark_parking(user_id: str = None):
     """
     if not is_market_open_today():
         return {"status": "skipped", "reason": "market_closed_today"}
-    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
-    if not user_id:
-        logger.error("run_benchmark_parking: user_id is required.")
-        return "Error: user_id is required"
+    # Beat calls this with no argument and the stack sets no PRIMARY_USER_ID: resolve the single owner.
+    # beat 不帶參數呼叫、部署也未設 PRIMARY_USER_ID：解析為單一擁有者，否則排程永遠不會執行。
+    from src.config.owner import resolve_user_id
+    user_id = resolve_user_id(user_id)
     try:
         from src.services.benchmark_parking_service import BenchmarkParkingService
         res = _run_async_safe(BenchmarkParkingService(user_id=user_id).run())
@@ -845,10 +846,10 @@ def run_mission_watchdog(user_id: str = None):
     It never changes trading state by itself; auto-halt is a separate, default-off R3 behaviour.
     每日 0-LLM 檢查使命 kill criteria；任一觸發即通知。本任務不會自行改變交易狀態。
     """
-    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
-    if not user_id:
-        logger.error("run_mission_watchdog: user_id is required.")
-        return "Error: user_id is required"
+    # Beat calls this with no argument and the stack sets no PRIMARY_USER_ID: resolve the single owner.
+    # beat 不帶參數呼叫、部署也未設 PRIMARY_USER_ID：解析為單一擁有者，否則排程永遠不會執行。
+    from src.config.owner import resolve_user_id
+    user_id = resolve_user_id(user_id)
     try:
         from src.services.mission_watchdog_service import MissionWatchdogService
         res = MissionWatchdogService(user_id=user_id).evaluate()
@@ -915,10 +916,10 @@ def run_universe_research_refresh(user_id: str = None, reoptimize: bool = True):
 def run_finnhub_poll(user_id: str = None):
     """Poll Finnhub company news for active tickers (replaces the public webhook). Default OFF.
     輪詢 Finnhub 新聞（取代公網 webhook），預設關閉。"""
-    user_id = user_id or os.getenv("PRIMARY_USER_ID") or os.getenv("USER_ID")
-    if not user_id:
-        logger.error("run_finnhub_poll: user_id is required.")
-        return "Error: user_id is required"
+    # Beat calls this with no argument and the stack sets no PRIMARY_USER_ID: resolve the single owner.
+    # beat 不帶參數呼叫、部署也未設 PRIMARY_USER_ID：解析為單一擁有者，否則排程永遠不會執行。
+    from src.config.owner import resolve_user_id
+    user_id = resolve_user_id(user_id)
     try:
         from src.services.finnhub_poll_service import FinnhubPollService
         return _run_async_safe(FinnhubPollService(user_id).run())
