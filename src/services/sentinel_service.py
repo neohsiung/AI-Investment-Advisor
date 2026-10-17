@@ -2472,7 +2472,7 @@ class SentinelService:
         if mode == "notify":
             logger.warning(
                 "Sentinel: emergency condition detected; mode=notify, NO orders placed. "
-                f"Rationale: {rationale[:200]}"
+                f"Rationale: {redact_secrets(rationale)[:200]}"
             )
             try:
                 await self._dispatch_notifications_direct(
@@ -2482,7 +2482,7 @@ class SentinelService:
                         "performed (sentinel_emergency_protocol_mode=notify). Please review your "
                         "positions manually.\n"
                         "偵測到緊急情況，系統未執行任何自動清倉或避險，請人工檢視持倉。\n\n"
-                        f"Rationale / 判定: {rationale[:500]}"
+                        f"Rationale / 判定: {redact_secrets(rationale)[:500]}"
                     ),
                     category="sentinel",
                 )
