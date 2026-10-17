@@ -277,6 +277,12 @@ class TestServiceIntegration:
 
 
 class TestCeleryTaskExecution:
+    @pytest.fixture(autouse=True)
+    def _gate_on(self):
+        """WP1: legacy evolution is gated; these tests exercise the enabled path. / 開啟閘門以測試啟用路徑。"""
+        with patch("src.infrastructure.tasks._synthetic_evolution_enabled", return_value=True):
+            yield
+
     """Tests for Celery task dispatch and execution."""
 
     @patch("src.infrastructure.tasks._synthetic_evolution_enabled", return_value=True)

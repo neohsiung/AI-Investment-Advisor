@@ -1363,9 +1363,14 @@ def run_net_alpha_attribution(user_id: str = None, lookback_days: int = 30):
 def dispatch_strategy_evolution():
     """Fan-out dispatcher: 為活躍租戶分派量化策略自主演進與優化任務。"""
     users = _resolve_target_users()
+    dispatched = 0
     for uid in users:
+        if not _synthetic_evolution_enabled(uid):
+            logger.warning("dispatch_strategy_evolution: skipped for %s (enable_autonomous_evolution_beat is off)", uid)
+            continue
         run_strategy_evolution.delay(user_id=uid)
-    return f"Dispatched {len(users)} strategy_evolution tasks"
+        dispatched += 1
+    return f"Dispatched {dispatched} strategy_evolution tasks"
 
 
 @app.task(name="src.infrastructure.tasks.run_strategy_evolution", soft_time_limit=600, time_limit=660)
@@ -1380,6 +1385,9 @@ def run_strategy_evolution(user_id: str = None, force: bool = False):
     if not user_id:
         logger.error("run_strategy_evolution: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
         return "Error: user_id is required"
+
+    if not _synthetic_evolution_enabled(user_id):
+        return _evolution_skipped("run_strategy_evolution", user_id)
 
     try:
         from src.services.strategy_discovery_service import StrategyDiscoveryService
@@ -1408,6 +1416,12 @@ def _synthetic_evolution_enabled(user_id: str) -> bool:
         return False
 
 
+def _evolution_skipped(task_name: str, user_id: str) -> dict:
+    """Skip result for gated legacy evolution jobs; `force` never bypasses the gate. / 受閘門管制的舊演化任務跳過結果；force 不得繞過。"""
+    logger.warning("%s: skipped for %s (enable_autonomous_evolution_beat is off; force does not bypass)", task_name, user_id)
+    return {"status": "skipped", "reason": "synthetic_evolution_disabled"}
+
+
 @app.task(name="src.infrastructure.tasks.dispatch_factor_rotation_evolution")
 def dispatch_factor_rotation_evolution():
     """Fan-out dispatcher: 為活躍租戶分派多因子歷史回放重播與退火調參任務。"""
@@ -1433,6 +1447,9 @@ def run_factor_rotation_evolution(user_id: str = None, iterations: int = 30, for
     if not user_id:
         logger.error("run_factor_rotation_evolution: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
         return "Error: user_id is required"
+
+    if not _synthetic_evolution_enabled(user_id):
+        return _evolution_skipped("run_factor_rotation_evolution", user_id)
 
     try:
         from src.services.settings_service import SettingsService
@@ -1505,6 +1522,9 @@ def run_factor_genetic_evolution(
     if not user_id:
         logger.error("run_factor_genetic_evolution: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
         return "Error: user_id is required"
+
+    if not _synthetic_evolution_enabled(user_id):
+        return _evolution_skipped("run_factor_genetic_evolution", user_id)
 
     try:
         from src.services.settings_service import SettingsService
@@ -1588,6 +1608,9 @@ def run_autonomous_evolution(user_id: str = None, force: bool = False):
     if not user_id:
         logger.error("run_autonomous_evolution: user_id is required. Set PRIMARY_USER_ID env var or pass explicitly.")
         return "Error: user_id is required"
+
+    if not _synthetic_evolution_enabled(user_id):
+        return _evolution_skipped("run_autonomous_evolution", user_id)
 
     try:
         import numpy as np
