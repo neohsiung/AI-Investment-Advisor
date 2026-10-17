@@ -806,7 +806,7 @@ class StrategyAutoEvolutionService:
             FactorWeightMatrix,
         )
 
-        tuning_enabled = self._get_setting("enable_tactical_factor_replay_tuning", True, bool)
+        tuning_enabled = self._get_setting("enable_tactical_factor_replay_tuning", False, bool)
         if not tuning_enabled:
             logger.info("Factor replay tuning is disabled by settings.")
 

@@ -1452,7 +1452,7 @@ def run_factor_rotation_evolution(user_id: str = None, iterations: int = 30, for
         from src.services.factor_rotation_replay_engine import FactorRotationReplayEngine
 
         settings_svc = SettingsService(user_id=user_id)
-        enabled = settings_svc.get_setting("enable_tactical_factor_replay_tuning", True, user_id=user_id)
+        enabled = settings_svc.get_setting("enable_tactical_factor_replay_tuning", False, user_id=user_id)
         if not enabled and not force:
             logger.info("run_factor_rotation_evolution: Skipped because enable_tactical_factor_replay_tuning is disabled.")
             return {"status": "skipped", "reason": "disabled"}
@@ -1527,7 +1527,7 @@ def run_factor_genetic_evolution(
         from src.services.factor_rotation_replay_engine import FactorRotationReplayEngine
 
         settings_svc = SettingsService(user_id=user_id)
-        enabled = settings_svc.get_setting("enable_factor_genetic_evolution", True, user_id=user_id)
+        enabled = settings_svc.get_setting("enable_factor_genetic_evolution", False, user_id=user_id)
         if not enabled and not force:
             logger.info("run_factor_genetic_evolution: Skipped because enable_factor_genetic_evolution is disabled.")
             return {"status": "skipped", "reason": "disabled"}

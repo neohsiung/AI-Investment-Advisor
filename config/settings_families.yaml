@@ -22,10 +22,12 @@ families:
       - enable_autonomous_evolution_beat
       - auto_promote_synthesized_factors
       - allow_synthesized_factor_live_exec
+      - enable_factor_genetic_evolution
+      - enable_tactical_factor_replay_tuning
     notes:
       - "enable_autonomous_evolution_beat is the single gate; read through src/services/evolution_gate.synthetic_evolution_enabled (tasks.py and strategy_discovery_service share it). `force` never bypasses it."
       - "The retired duplicate strategy_evolution_enabled (default true) no longer exists in the schema or in src/. Existing DB rows with that key are inert and were not touched."
-      - "auto_promote_synthesized_factors and allow_synthesized_factor_live_exec are separate downstream permissions; all three defaults must stay off (tested)."
+      - "auto_promote_synthesized_factors and allow_synthesized_factor_live_exec are separate downstream permissions; all defaults in this family must stay off (tested). enable_factor_genetic_evolution and enable_tactical_factor_replay_tuning were inner switches that defaulted on; they now default off and sit behind the single gate."
 
   - id: event_analysis
     purpose_en: Whether and how much news/events are analysed by the LLM council, and how events are ingested.

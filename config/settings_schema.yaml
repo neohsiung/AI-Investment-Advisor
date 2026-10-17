@@ -847,7 +847,7 @@ settings:
   - key: enable_tactical_factor_replay_tuning
     group: trading
     type: bool
-    default: true
+    default: false
     label_en: Enable tactical factor replay auto-evolution
     label_zh: 啟用多因子回放回測與夏普自動調參
     help_en: Autonomously replay historical regimes and calibrate factor weight matrices using Simulated Annealing and Walk-Forward cross validation.
@@ -939,7 +939,7 @@ settings:
   - key: enable_factor_genetic_evolution
     group: trading
     type: bool
-    default: true
+    default: false
     label_en: Enable factor genetic hyper-evolution
     label_zh: 啟用多因子權重遺傳演算法超參數演化
     help_en: Autonomously optimize regime factor weights and hyper-parameters using genetic algorithm with Walk-Forward cross validation.
