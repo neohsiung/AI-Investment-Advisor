@@ -39,6 +39,7 @@ def _buys(days_ago):
 
 async def _rotate(s, buys_df, info_extra=None):
     s.transaction_service.get_transactions.return_value = buys_df
+    s._research_score = lambda t: {"GOOGL": 5.0, "NVDA": 8.0}.get(t)   # like-for-like research scale
     holdings = {"GOOGL": {"shares": 0.3, "current_price": 340.0, "avg_price": 340.0, "weight": 5.0, **(info_extra or {})}}
     with patch("src.services.trading_protections_service.TradingProtectionsService.check", return_value=None), \
          patch("src.services.exit_compositor_service.ExitCompositorService.score_exit",

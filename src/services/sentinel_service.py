@@ -4381,6 +4381,20 @@ class SentinelService:
             except Exception as e:
                 logger.error(f"[Sentinel Exit Execution] Failed to execute exit for {ticker}: {e}", exc_info=True)
 
+    def _research_score(self, ticker: str) -> Optional[float]:
+        """Newest cached research score on a 0-10 scale (the entry-side scale), or None. Never invents one.
+        最新快取研究分數（0-10，進場端同一尺度），沒有就回傳 None，絕不捏造。"""
+        try:
+            from src.repositories.ticker_universe_repository import TickerUniverseRepository
+            rows = TickerUniverseRepository().get_research(self.user_id, ticker, limit=1)
+        except Exception as e:
+            logger.warning(f"[Capital Rotation] research score lookup failed for {ticker}: {e}")
+            return None
+        if not rows or not rows[0].get("confidence_score"):
+            return None
+        v = float(rows[0]["confidence_score"])
+        return v * 10.0 if v <= 1.0 else v
+
     def _holding_age_days(self, ticker: str, info: Dict[str, Any]) -> Optional[float]:
         """Days since the position's most recent BUY (adds reset the clock). None = unknown.
         自最近一次買進起算的持有天數（加碼會重置）；None 表示無法判定。"""
@@ -4479,23 +4493,15 @@ class SentinelService:
                         )
                         continue
 
-                cand_score = cand.get("composite_score") or cand.get("confidence") or cand.get("score")
+                # Like-for-like: candidates and holdings are both compared on the cached research score (entry scale).
+                # A supplied pre-score is used only when no research score exists. No live LLM scoring fallback.
+                # 候選與持倉都以快取研究分數（進場尺度）比較；無研究分數才用外部提供的預分數；不再即時呼叫 LLM 評分。
+                cand_score = self._research_score(cand_ticker)
                 if cand_score is None:
-                    if unscored_count >= 3:
-                        continue
-                    unscored_count += 1
-                    # Score candidate via CompositorService if not pre-scored
-                    try:
-                        from src.services.confidence_compositor_service import CompositorService
-                        compositor = CompositorService(user_id=self.user_id)
-                        agent_scores = await self._with_timeout(
-                            compositor._gather_agent_scores(cand_ticker, cash_ratio=0.05, target_cash_ratio=0.1),
-                            timeout=15.0,
-                        )
-                        cand_score, _ = compositor._aggregate_scores(agent_scores)
-                    except Exception as ce:
-                        logger.debug(f"[Capital Rotation] Could not score candidate {cand_ticker}: {ce}")
-                        continue
+                    cand_score = cand.get("composite_score") or cand.get("confidence") or cand.get("score")
+                if cand_score is None:
+                    logger.info(f"[Capital Rotation] Candidate {cand_ticker} skipped: no comparable research score")
+                    continue
 
                 cand_score = float(cand_score)
                 if cand_score > best_cand_score:
@@ -4549,12 +4555,20 @@ class SentinelService:
                         reason_hint=f"Capital rotation comparative evaluation against {best_candidate['ticker']}",
                     )
                     exit_score = float(exit_decision.get("composite_score", 5.0))
-                    # Retention conviction: inverse of exit urgency
-                    holding_conviction = max(0.0, 10.0 - exit_score)
+                    # Retention conviction on the SAME scale as candidates (research score). Exit urgency only
+                    # overrides it when it is genuinely alarming (>= 6), so a brand-new neutral position does not
+                    # look weak (the old 10 - exit_score made every fresh holding ~5.7 vs a candidate's 8.0).
+                    # 持有信心與候選同尺度（研究分數）；僅在出場急迫性真的偏高(>=6)時才以其覆蓋。
+                    holding_research = self._research_score(ticker)
+                    if holding_research is None:
+                        logger.info(f"[Capital Rotation] {ticker} skipped as rotation source: no comparable research score")
+                        continue
+                    holding_conviction = holding_research
+                    if exit_score >= 6.0:
+                        holding_conviction = min(holding_research, max(0.0, 10.0 - exit_score))
                 except Exception as ee:
                     logger.warning(f"[Capital Rotation] Could not evaluate holding {ticker}: {ee}")
-                    holding_conviction = 5.0
-                    exit_decision = {"composite_score": 5.0, "breakdown": []}
+                    continue  # unknown conviction must not make a holding sellable
 
                 if holding_conviction < weakest_conviction:
                     weakest_conviction = holding_conviction

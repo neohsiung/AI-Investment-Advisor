@@ -222,6 +222,8 @@ async def test_check_position_exits_capital_rotation_success(sentinel):
     
     # Holding has exit_score = 4.5 -> retention conviction = 10.0 - 4.5 = 5.5
     # Delta = 8.8 - 5.5 = 3.3 >= rotation_min_score_delta (2.0)
+    # Like-for-like research scores: holding 5.5, candidate 8.8 -> delta 3.3 >= 2.0
+    sentinel._research_score = lambda t: {"INTC": 5.5, "TSM": 8.8}.get(t)
     mock_exit_compositor = MagicMock()
     mock_exit_compositor.score_exit = AsyncMock(return_value={
         "composite_score": 4.5,
