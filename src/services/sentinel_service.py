@@ -30,6 +30,10 @@ from src.domain.interfaces import Message, LLMConfig
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.config.owner import resolve_user_id
 
+# Upper bound on the WP5 shadow step so it can never hold up order execution for long.
+# WP5 shadow 步驟的時間上限，避免拖慢下單。
+SHADOW_PROPOSAL_TIMEOUT_S = 90.0
+
 class SentinelService:
     """
     The Sentinel: 24/7 Proactive Multi-Dimensional Monitoring Service.
@@ -2209,6 +2213,22 @@ class SentinelService:
         Execute trade signals via AutomatedTradingService (unified confidence threshold logic).
         透過 AutomatedTradingService 執行交易訊號（套用統一信心指數閥值邏輯）。
         """
+        # WP5 shadow: record validator verdicts (DB writes + logs only) BEFORE the unchanged executor loop below.
+        # It gets copies, is time-boxed, and can never alter or block the executor call.
+        # WP5 shadow：先記錄驗證器判定（只寫 DB 與 log），再走下方原封不動的執行迴圈；
+        # 只拿到複本、有時限，絕不改動或阻擋執行器呼叫。
+        try:
+            from src.services import proposal_shadow_service as shadow_svc
+            if shadow_svc.resolve_trade_proposal_mode(self.settings_service) != shadow_svc.MODE_OFF:
+                await asyncio.wait_for(
+                    shadow_svc.record_shadow_proposals(
+                        user_id, [dict(s) for s in signals], source, settings_service=self.settings_service
+                    ),
+                    timeout=SHADOW_PROPOSAL_TIMEOUT_S,
+                )
+        except Exception as shadow_err:
+            logger.warning(f"Sentinel: shadow proposal recording failed (orders unaffected): {shadow_err!r}")
+
         try:
             from src.services.automated_trading_service import AutomatedTradingService
             auto_trade_svc = AutomatedTradingService()
