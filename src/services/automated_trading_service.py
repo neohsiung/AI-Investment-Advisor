@@ -119,6 +119,24 @@ class AutomatedTradingService:
         self.notification_service = notification_service
         self.tx_repo = tx_repo or AlchemyTransactionRepository()
 
+    @staticmethod
+    def _quantity_unresolved(ticker: str, action: str, cause: str, detail: str) -> Dict[str, Any]:
+        """
+        WP5c-a: fail-closed result when the order quantity cannot be resolved. No broker call,
+        no notification, no ledger write happens after this. / 數量無法解析時的 fail-closed 結果。
+        """
+        logger.error(
+            f"quantity_unresolved ({cause}): refusing to trade {action} {ticker} — {detail}"
+        )
+        return {
+            "status": "error",
+            "reason": "quantity_unresolved",
+            "cause": cause,
+            "ticker": ticker,
+            "action": str(action).upper() if action is not None else action,
+            "message": f"Order quantity could not be resolved ({cause}); no order placed.",
+        }
+
     async def evaluate_and_execute_trade(self, user_id: str, ticker: str, action: str, quantity: float = None,
                                          confidence_score: int = None, rationale: str = None,
                                          target_weight: float = None, current_weight: float = None,
@@ -177,17 +195,22 @@ class AutomatedTradingService:
                                 f"portfolio_value=${portfolio_value:.2f}, current_price=${current_price:.2f}, shares={quantity:.4f}"
                             )
                         else:
-                            logger.warning(f"Could not get current price for {ticker}, falling back to legacy quantity")
-                            if quantity is None:
-                                quantity = 1.0  # Default fallback
+                            # WP5c-a: fail closed — never guess a size ("sell 1 share").
+                            # WP5c-a：fail-closed，不再猜測數量。
+                            return self._quantity_unresolved(
+                                ticker, action, "price_unavailable",
+                                f"current price unavailable for {ticker}")
             except Exception as e:
-                logger.warning(f"Weight-based calculation failed: {e}, using quantity parameter")
                 if quantity is None:
-                    quantity = 1.0  # Default fallback
-        
-        # Ensure quantity is set
+                    return self._quantity_unresolved(
+                        ticker, action, "weight_calc_failed", f"weight-based calculation failed: {e}")
+                logger.warning(f"Weight-based calculation failed: {e}, using quantity parameter")
+
+        # Ensure quantity is set — fail closed rather than default to a made-up size.
+        # 數量必須已解析，否則 fail-closed。
         if quantity is None:
-            quantity = 1.0
+            return self._quantity_unresolved(
+                ticker, action, "quantity_missing", "no quantity and no usable weight inputs")
 
         # 2026-08-02: rationale defaults to None but is used in `in` substring
         # tests below (excess-cash detection) and interpolated into user-facing

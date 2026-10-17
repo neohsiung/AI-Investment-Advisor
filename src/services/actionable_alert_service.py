@@ -385,15 +385,31 @@ class ActionableAlertHubService:
                 # 所有平倉一律走唯一的執行服務（含風控閘門與帳本），不直接呼叫券商。
                 # Unified execution via AutomatedTradingService
                 from src.services.automated_trading_service import AutomatedTradingService
+                from src.services.transaction_service import TransactionService
+                # Close the ACTUAL holding (eToro positions are fractional units). The executor no longer invents a
+                # default quantity, so the caller must say how much to close; no holding = nothing to close.
+                # 平倉數量取實際持倉（eToro 為小數單位）；執行器不再補預設數量，沒有持倉就不下單並明說。
+                held_qty = float(
+                    (TransactionService().get_holdings_map(self.user_id).get(ticker, {}) or {}).get("quantity", 0) or 0
+                )
+                if held_qty <= 0:
+                    return {"ok": False, "action": action, "ticker": ticker,
+                            "message": f"❌ 找不到 {ticker} 的持倉，未送出任何平倉單。"}
                 auto_svc = AutomatedTradingService()
                 res = await auto_svc.evaluate_and_execute_trade(
                     user_id=self.user_id,
                     ticker=ticker,
                     action="SELL",
+                    quantity=held_qty,
                     confidence_score=10.0,
                     rationale="Interactive Alert Hub 1-tap manual emergency close",
                 )
                 status_str = res.get("status") or ("success" if res.get("success") else "submitted")
+                if status_str in ("error", "blocked", "skipped", "rejected", "rejected_or_timeout"):
+                    # The executor did not place the order — never tell the operator it was sent.
+                    # 執行器未下單，不得告訴操作者「已送出」。
+                    return {"ok": False, "action": action, "ticker": ticker,
+                            "message": f"❌ {ticker} 平倉單未送出 (執行結果: {status_str}: {res.get('reason', '')})。"}
                 return {
                     "ok": True,
                     "action": action,
