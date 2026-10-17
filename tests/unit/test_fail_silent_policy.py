@@ -38,6 +38,8 @@ DECISION_PATH_MODULES = [
     "src/services/outcome_reflection_service.py",
     "src/services/strategy_validation_service.py",
     "src/services/capital_policy.py",
+    "src/services/proposal_validator.py",
+    "src/services/gate_policy.py",
     "src/services/self_ops_service.py",
     "src/infrastructure/risk_manager.py",
     "src/infrastructure/llm/llm_config_chain.py",
