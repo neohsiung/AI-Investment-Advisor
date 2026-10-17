@@ -77,7 +77,8 @@ def test_strategy_lab_loads_prices_as_the_owner():
     from src.infrastructure import tasks
     mds = MagicMock()
     lab = MagicMock()
-    lab.return_value.run.return_value = {"n_trials_total": 1, "variants_evaluated": 1, "shadow_candidates": []}
+    lab.return_value.run.return_value = {"n_trials_total": 1, "variants_evaluated": 1, "shadow_candidates": [],
+                                         "trials_deferred": 0, "cap_reached": False}
     with patch("src.config.owner.resolve_user_id", return_value=OWNER), \
          patch("src.services.market_data_service.MarketDataService", mds), \
          patch("src.evaluation.data.load_price_panel", return_value=MagicMock()), \
