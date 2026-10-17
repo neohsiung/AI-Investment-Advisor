@@ -401,11 +401,13 @@ class ConfidenceRebalanceService:
         try:
             from src.services.settings_service import SettingsService as _SS
             _cfg = _SS(user_id=self.user_id)
-            max_order = float(_cfg.get_setting("batch_deploy_max_order_usd", 100.0) or 100.0)
+            from src.services.order_cap_policy import single_order_cap_usd
+            max_order = single_order_cap_usd(_cfg, None)
             max_names = int(float(_cfg.get_setting("batch_deploy_max_tickers", 3) or 3))
         except Exception as e:
-            logger.warning("ConfidenceRebalance: ramp-in settings unreadable (%s); using defaults 100/3", e)
-            max_order, max_names = 100.0, 3
+            from src.services.order_cap_policy import default_single_order_cap_usd
+            max_order, max_names = default_single_order_cap_usd(), 3
+            logger.warning("ConfidenceRebalance: ramp-in settings unreadable (%s); using defaults %s/3", e, max_order)
         if buys:
             ranked = sorted(buys, key=lambda b: (float(b.get("confidence") or 0.0), b["delta_amount"]), reverse=True)
             kept = []

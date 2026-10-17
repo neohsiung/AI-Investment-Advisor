@@ -385,7 +385,7 @@ class StrategyDiscoveryService:
     ) -> Dict[str, Any]:
         """
         Execute an automated strategy discovery and evolution cycle:
-        1. Check user settings (strategy_evolution_enabled).
+        1. Check the canonical gate (enable_autonomous_evolution_beat); force does not bypass it.
         2. Retrieve market indicators and history.
         3. Identify cognitive blindspots from Sentinel.
         4. Sweep parameter grid across crisis cycles.
@@ -399,10 +399,15 @@ class StrategyDiscoveryService:
         resolved_uid = resolve_user_id(user_id)
         settings_svc = SettingsService(user_id=resolved_uid)
 
-        enabled = settings_svc.get_setting("strategy_evolution_enabled", default=True)
-        if str(enabled).lower() in ("false", "0", "no") and not force:
-            logger.info(f"Strategy evolution disabled in settings for {resolved_uid}; skipping.")
-            return {"status": "skipped", "reason": "strategy_evolution_enabled is false"}
+        # Canonical gate shared with the Celery evolution jobs; `force` never bypasses it.
+        # 與 Celery 演化任務共用的規範閘門；force 不得繞過。
+        from src.services.evolution_gate import synthetic_evolution_enabled
+        if not synthetic_evolution_enabled(resolved_uid):
+            logger.warning(
+                "StrategyDiscoveryService: skipped for %s (enable_autonomous_evolution_beat is off; force=%s does not bypass)",
+                resolved_uid, force,
+            )
+            return {"status": "skipped", "reason": "synthetic_evolution_disabled"}
 
         # 1. Fetch market data series (or fallback to empirical census)
         vix_series: List[float] = []
