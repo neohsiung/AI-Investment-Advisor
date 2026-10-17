@@ -847,7 +847,7 @@ settings:
   - key: enable_tactical_factor_replay_tuning
     group: trading
     type: bool
-    default: true
+    default: false
     label_en: Enable tactical factor replay auto-evolution
     label_zh: 啟用多因子回放回測與夏普自動調參
     help_en: Autonomously replay historical regimes and calibrate factor weight matrices using Simulated Annealing and Walk-Forward cross validation.
@@ -939,7 +939,7 @@ settings:
   - key: enable_factor_genetic_evolution
     group: trading
     type: bool
-    default: true
+    default: false
     label_en: Enable factor genetic hyper-evolution
     label_zh: 啟用多因子權重遺傳演算法超參數演化
     help_en: Autonomously optimize regime factor weights and hyper-parameters using genetic algorithm with Walk-Forward cross validation.
@@ -1369,8 +1369,8 @@ settings:
     default: false
     label_en: Poll Finnhub news (replaces webhook)
     label_zh: 輪詢 Finnhub 新聞（取代 webhook）
-    help_en: Poll company news for active tickers every 30 min on weekdays and run event analysis on new items. Lets you drop the public ngrok webhook. Each analysed item costs LLM tokens.
-    help_zh: 平日每 30 分鐘輪詢活躍標的新聞並進行事件分析，可取代公網 ngrok webhook；每則分析會耗用 LLM。
+    help_en: Poll company news for active tickers every 30 min on weekdays and run event analysis on new items. Lets you drop the public ngrok webhook. Each analysed item costs LLM tokens. Requires event_llm_mode to be held_only or on - it is inert (polling idles) while event_llm_mode is off.
+    help_zh: 平日每 30 分鐘輪詢活躍標的新聞並進行事件分析，可取代公網 ngrok webhook；每則分析會耗用 LLM。須搭配 event_llm_mode 為 held_only 或 on；event_llm_mode 為 off 時此開關不生效（輪詢閒置）。
   - key: finnhub_poll_max_events
     group: trading
     type: int
@@ -1563,14 +1563,6 @@ settings:
     label_zh: 缺少歷史量價數據時寬鬆放行
     help_en: Allow trading signals to pass if historical OHLCV data is insufficient for breakout verification.
     help_zh: 當歷史 OHLCV 數據不足無法評估量價時，預設寬鬆放行（Fail-Open）。
-  - key: strategy_evolution_enabled
-    group: trading
-    type: bool
-    default: true
-    label_en: Enable strategy discovery & evolution
-    label_zh: 啟用策略自學演化循環
-    help_en: Allow background discovery and evolution cycles to test, optimize, and promote trading strategy contracts.
-    help_zh: 允許背景排程定期進行全歷史回測、參數優化與策略晉級演化循環。
   - key: capital_rotation_enabled
     group: trading
     type: bool

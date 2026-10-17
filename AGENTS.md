@@ -47,12 +47,16 @@ end to end to a live eToro account and has filled trades; whether it earns a net
 
 The `TRADING_MODE=paper` brake was lifted on 2026-08-23. Paper mode is not a usable fallback: the eToro token
 has no demo permission (deliberate — there is no demo path), so `TRADING_MODE=paper` makes every broker call
-return `InsufficientPermissions` (a full stop, not a degraded mode). The `tradable_capital_usd` cap and
-`ai_trading_enabled` bound live risk; **a cap of 0 currently means "uncapped" in code — treat that as a bug
-(see governance plan P-1) until changed.**
+return `InsufficientPermissions` (a full stop, not a degraded mode). Live risk is bounded by
+`tradable_capital_pct` (share of the real account the system may deploy; **0 disables trading**),
+`tradable_capital_usd` (an optional extra USD ceiling; **0 means "no extra USD cap" — the percentage still
+binds**) and `ai_trading_enabled` (schema default false on a clean install; production runs it true only by
+an explicit operator setting). Do not read the schema defaults as the production state — query it.
 
 訂單路徑已接通實盤並已有成交；是否相對 SPY 賺得淨超額報酬**尚未被證明**。請以資料庫與 API 查證，勿信文字。
-`tradable_capital_usd=0` 目前在程式中代表「不設上限」，視為待修缺陷。
+實盤風險由三者界定：`tradable_capital_pct`（可動用帳戶比例，**0＝禁止交易**）、`tradable_capital_usd`
+（額外的美元上限，**0＝不另設美元上限，百分比仍然生效**）、`ai_trading_enabled`（乾淨安裝預設 false；
+正式環境由操作者明確設為 true）。設定檔預設值不等於正式環境狀態，請查詢實際值。
 
 **Agent counts refer to different subsystems — four numbers, all real**
 (verified against source 2026-08-23; canonical table in the wiki page

@@ -200,7 +200,7 @@ class FactorGeneticEvolutionEngine:
 
     @property
     def is_enabled(self) -> bool:
-        return self._get_setting_bool("enable_factor_genetic_evolution", True)
+        return self._get_setting_bool("enable_factor_genetic_evolution", False)
 
     @property
     def default_population_size(self) -> int:

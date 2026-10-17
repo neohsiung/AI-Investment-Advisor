@@ -1407,13 +1407,8 @@ def _synthetic_evolution_enabled(user_id: str) -> bool:
     keeps it off (fail-closed) and is logged at warning level.
     以合成資料調整實盤設定的演化迴圈總開關；預設關閉，讀取失敗亦維持關閉並以 warning 記錄。
     """
-    try:
-        from src.services.settings_service import SettingsService
-        val = SettingsService(user_id=user_id).get_setting("enable_autonomous_evolution_beat", False)
-        return val is True or str(val).lower() == "true"
-    except Exception as e:
-        logger.warning("enable_autonomous_evolution_beat unreadable for %s (%s); evolution stays off", user_id, e)
-        return False
+    from src.services.evolution_gate import synthetic_evolution_enabled
+    return synthetic_evolution_enabled(user_id)
 
 
 def _evolution_skipped(task_name: str, user_id: str) -> dict:
@@ -1457,7 +1452,7 @@ def run_factor_rotation_evolution(user_id: str = None, iterations: int = 30, for
         from src.services.factor_rotation_replay_engine import FactorRotationReplayEngine
 
         settings_svc = SettingsService(user_id=user_id)
-        enabled = settings_svc.get_setting("enable_tactical_factor_replay_tuning", True, user_id=user_id)
+        enabled = settings_svc.get_setting("enable_tactical_factor_replay_tuning", False, user_id=user_id)
         if not enabled and not force:
             logger.info("run_factor_rotation_evolution: Skipped because enable_tactical_factor_replay_tuning is disabled.")
             return {"status": "skipped", "reason": "disabled"}
@@ -1532,7 +1527,7 @@ def run_factor_genetic_evolution(
         from src.services.factor_rotation_replay_engine import FactorRotationReplayEngine
 
         settings_svc = SettingsService(user_id=user_id)
-        enabled = settings_svc.get_setting("enable_factor_genetic_evolution", True, user_id=user_id)
+        enabled = settings_svc.get_setting("enable_factor_genetic_evolution", False, user_id=user_id)
         if not enabled and not force:
             logger.info("run_factor_genetic_evolution: Skipped because enable_factor_genetic_evolution is disabled.")
             return {"status": "skipped", "reason": "disabled"}
