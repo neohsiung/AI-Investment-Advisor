@@ -3071,6 +3071,16 @@ settings:
     danger: true
     label_en: Emergency liquidation score
     label_zh: 緊急清倉分數
+  - key: sentinel_emergency_protocol_mode
+    group: sentinel
+    type: enum
+    enum: ["notify", "legacy"]
+    default: "notify"
+    danger: true
+    label_en: Emergency protocol mode
+    label_zh: 緊急協議模式
+    help_en: "notify = on an emergency condition, only send a notification for manual review; no orders are placed (default). legacy = old behaviour: SELL every holding and BUY the SQQQ hedge automatically."
+    help_zh: "notify＝偵測到緊急情況時只發通知供人工檢視，不下任何單（預設）；legacy＝舊行為：自動賣出所有持倉並買入 SQQQ 避險。"
   - key: emergency_hedge_amount
     group: sentinel
     type: float
