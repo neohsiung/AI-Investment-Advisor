@@ -22,6 +22,7 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
 from src.agents.skills.gap_detector import GapReport
+from src.utils.safe_path import resolve_within
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +69,8 @@ class SkillScaffolder:
         # Sanitize name
         raw_name = gap.suggested_skill_name.strip().lower().replace("-", "_").replace(" ", "_")
         clean_name = self._safe_skill_name(raw_name)
-        pending_dir = Path(self._pending_dir).resolve()
-        skill_dir_path = (pending_dir / clean_name).resolve()
-        if not skill_dir_path.is_relative_to(pending_dir):
-            raise ValueError("Path traversal attempt detected")
+        skill_dir = resolve_within(self._pending_dir, clean_name)
         skill_name = clean_name
-        skill_dir = str(skill_dir_path)
 
         # Create directory
         os.makedirs(skill_dir, exist_ok=True)
@@ -194,13 +191,8 @@ def {skill_name}(user_id: str, **kwargs) -> str:
         """
         try:
             safe_name = self._safe_skill_name(skill_name)
-            pending_dir = Path(self._pending_dir).resolve()
-            base_dir = Path(self._base_dir).resolve()
-            pending_path = (pending_dir / safe_name).resolve()
-            active_path = (base_dir / safe_name).resolve()
-            if not pending_path.is_relative_to(pending_dir) or not active_path.is_relative_to(base_dir):
-                logger.error("SkillScaffolder: Path traversal attempt: %s", skill_name)
-                return False
+            pending_path = Path(resolve_within(self._pending_dir, safe_name))
+            active_path = Path(resolve_within(self._base_dir, safe_name))
         except ValueError as exc:
             logger.error("SkillScaffolder: %s", exc)
             return False
@@ -232,11 +224,7 @@ def {skill_name}(user_id: str, **kwargs) -> str:
         """
         try:
             safe_name = self._safe_skill_name(skill_name)
-            pending_dir = Path(self._pending_dir).resolve()
-            pending_path = (pending_dir / safe_name).resolve()
-            if not pending_path.is_relative_to(pending_dir):
-                logger.error("SkillScaffolder: Path traversal attempt: %s", skill_name)
-                return False
+            pending_path = Path(resolve_within(self._pending_dir, safe_name))
         except ValueError as exc:
             logger.error("SkillScaffolder: %s", exc)
             return False

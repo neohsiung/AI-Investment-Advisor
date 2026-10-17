@@ -94,7 +94,8 @@ class TransactionService:
             update_daily_snapshot(db_path=self.db_path, user_id=self.user_id)
             return True, f"已新增交易: {action} {quantity} {ticker} @ {price}"
         except Exception as e:
-            return False, f"交易新增失敗: {e}"
+            logger.error(f"Error adding manual trade: {e}", exc_info=True)
+            return False, "交易新增失敗，請檢查輸入數據是否正確。"
 
     def delete_transaction(self, transaction_id: str) -> Tuple[bool, str]:
         """

@@ -54,7 +54,8 @@ def test_add_manual_trade(mock_repo):
         mock_repo.add.side_effect = Exception("DB Error")
         success, msg = service.add_manual_trade("AAPL", "2023-01-01", "BUY", 10, 150, 5)
         assert success is False
-        assert "DB Error" in msg
+        assert "DB Error" not in msg  # internals stay in the server log
+        assert "交易新增失敗" in msg
 
 def test_delete_transaction(mock_repo):
     with patch('src.services.transaction_service.update_daily_snapshot') as mock_update:

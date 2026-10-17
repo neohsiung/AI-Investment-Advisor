@@ -477,7 +477,7 @@ async def health():
         health_status["checks"]["database"] = "connected"
     except Exception as e:
         logger.error(f"Health check: Database failed: {e}")
-        health_status["checks"]["database"] = f"failed: {str(e)}"
+        health_status["checks"]["database"] = f"failed: {type(e).__name__}"
         health_status["status"] = "degraded"
 
     # 2. Check Redis
@@ -495,7 +495,7 @@ async def health():
         health_status["checks"]["redis"] = "connected"
     except Exception as e:
         logger.warning(f"Health check: Redis failed: {e}")
-        health_status["checks"]["redis"] = f"failed: {str(e)}"
+        health_status["checks"]["redis"] = f"failed: {type(e).__name__}"
         # Redis failure might be acceptable if cache is optional
         # health_status["status"] = "degraded" 
 

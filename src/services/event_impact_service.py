@@ -186,7 +186,7 @@ class EventImpactService:
 
         except Exception as e:
             logger.warning(f"EventImpactService: failed to compute micro bias for {ticker_upper}: {e}")
-            return 0.0, [{"_fallback_reason": str(e)}]
+            return 0.0, [{"_fallback_reason": type(e).__name__}]
 
     def get_macro_stress_bias(
         self,
@@ -240,7 +240,7 @@ class EventImpactService:
 
         except Exception as e:
             logger.warning(f"EventImpactService: failed to compute macro stress: {e}")
-            return 0.0, 0.0, [{"_fallback_reason": str(e)}]
+            return 0.0, 0.0, [{"_fallback_reason": type(e).__name__}]
 
     def dismiss_bias(self, impact_id: str) -> bool:
         """Dismiss an active bias manually."""
