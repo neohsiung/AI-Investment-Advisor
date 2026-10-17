@@ -34,6 +34,10 @@ Rules every AI coding agent must follow, whatever its capability level:
 5. **Touching any `config/*.yaml`: run `tests/unit/config` and `tests/invariants` before deploying** (a malformed
    settings schema once made the quality gate crash and evicted 7 of 8 active tickers).
 6. **Do not write numbers that drift (trade counts, costs, caps) into docs** — query the DB or the API instead.
+7. **Every development batch ends with a reader-ready technical document and a wiki synthesis** (or an explicit
+   "no wiki change needed" with the reason). Behaviour claims carry a verification command; see
+   `.agent/rules/documentation-standards.md` §1.6.
+   每批開發結束必須交付讀者可用的技術文件並統整 wiki（或明確聲明「無需更新」與理由）；行為描述須附驗證指令。
 <!-- MISSION:END -->
 
 **Current capability (stated honestly; re-verify from the DB, do not trust this text).** The order path is wired
