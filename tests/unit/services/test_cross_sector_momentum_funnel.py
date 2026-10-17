@@ -282,7 +282,7 @@ class TestWorkflowDeduplication:
 
         # Mock StaggeredDipBuyingService returning active pending orders
         with patch("src.services.staggered_dip_buying_service.StaggeredDipBuyingService") as mock_staggered_cls, \
-             patch("src.utils.market_clock.MarketClock.is_market_open", return_value=True):
+             patch("src.infrastructure.tasks.is_market_open_today", return_value=True):
             instance = mock_staggered_cls.return_value
             instance.get_active_staggered_orders = AsyncMock(return_value=[
                 {"ticker": "NVDA", "status": "PENDING", "limit_price": 110.0, "broker_order_id": "B-1"}
@@ -300,7 +300,7 @@ class TestWorkflowDeduplication:
 
         with patch("src.services.staggered_dip_buying_service.StaggeredDipBuyingService") as mock_staggered_cls, \
              patch("src.services.batch_cash_deployment_service.BatchCashDeploymentService") as mock_batch_cls, \
-             patch("src.utils.market_clock.MarketClock.is_market_open", return_value=True):
+             patch("src.infrastructure.tasks.is_market_open_today", return_value=True):
             instance = mock_staggered_cls.return_value
             instance.get_active_staggered_orders = AsyncMock(return_value=[
                 {"ticker": "NVDA", "status": "PENDING", "limit_price": 110.0, "broker_order_id": None}
