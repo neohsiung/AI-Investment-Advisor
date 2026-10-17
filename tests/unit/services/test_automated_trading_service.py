@@ -639,7 +639,9 @@ async def test_dynamic_kelly_sizing_scales_quantity_on_excess_cash(test_svc, moc
             user_id=user_id,
             ticker="NVDA",
             action="BUY",
-            quantity=None,  # 未指定固定下單金額，觸發動態配置
+            # WP5c-a: quantity=None now fails closed (it used to silently become 1.0 and rely on
+            # Kelly to inflate it). Pass the symbolic $100 explicitly. / 數量不可再為 None。
+            quantity=100.0,
             confidence_score=9.0,
             rationale="High conviction AI chip trend with excess cash",
         )

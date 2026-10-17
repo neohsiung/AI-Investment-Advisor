@@ -182,7 +182,9 @@ async def test_execute_action_close_pos():
     """The 1-tap close goes through the single execution service (risk gateway + ledger), never straight to the broker."""
     hub = ActionableAlertHubService(user_id="test_user_p3")
 
-    with patch("src.services.automated_trading_service.AutomatedTradingService") as MockAuto:
+    with patch("src.services.automated_trading_service.AutomatedTradingService") as MockAuto, \
+         patch("src.services.transaction_service.TransactionService") as MockTx:
+        MockTx.return_value.get_holdings_map.return_value = {"AMD": {"quantity": 0.29076, "avg_price": 100.0}}
         auto = MagicMock()
         auto.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
         MockAuto.return_value = auto
@@ -192,6 +194,39 @@ async def test_execute_action_close_pos():
         assert "AMD" in res["message"]
         kwargs = auto.evaluate_and_execute_trade.call_args.kwargs
         assert kwargs["ticker"] == "AMD" and kwargs["action"] == "SELL"
+        # The close carries the ACTUAL holding (fractional units), never an arbitrary default.
+        assert kwargs["quantity"] == pytest.approx(0.29076)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("holdings", [{}, {"AMD": {"quantity": 0.0}}, {"AMD": {"quantity": -1.0}}])
+async def test_close_pos_without_a_position_places_no_order_and_says_so(holdings):
+    hub = ActionableAlertHubService(user_id="test_user_p3")
+    with patch("src.services.automated_trading_service.AutomatedTradingService") as MockAuto, \
+         patch("src.services.transaction_service.TransactionService") as MockTx:
+        MockTx.return_value.get_holdings_map.return_value = holdings
+        auto = MagicMock()
+        auto.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
+        MockAuto.return_value = auto
+        res = await hub.execute_action("close_pos", {"ticker": "AMD"})
+        assert res["ok"] is False and "AMD" in res["message"]
+        auto.evaluate_and_execute_trade.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["error", "blocked", "skipped", "rejected_or_timeout"])
+async def test_close_pos_reports_failure_when_the_executor_did_not_place_the_order(status):
+    """A non-placed order must not be reported to the operator as 'close order sent'."""
+    hub = ActionableAlertHubService(user_id="test_user_p3")
+    with patch("src.services.automated_trading_service.AutomatedTradingService") as MockAuto, \
+         patch("src.services.transaction_service.TransactionService") as MockTx:
+        MockTx.return_value.get_holdings_map.return_value = {"AMD": {"quantity": 2.5}}
+        auto = MagicMock()
+        auto.evaluate_and_execute_trade = AsyncMock(return_value={"status": status, "reason": "x"})
+        MockAuto.return_value = auto
+        res = await hub.execute_action("close_pos", {"ticker": "AMD"})
+        assert res["ok"] is False
+        assert status in res["message"]
 
 
 @pytest.mark.asyncio
