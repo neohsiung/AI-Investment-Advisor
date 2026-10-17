@@ -1344,6 +1344,16 @@ class EtoroService(IBroker):
             if pos_sig in existing_sigs:
                 continue
 
+            # Race guard: the order path may have written its own BUY after our snapshot above was read.
+            # 競態防護：下單路徑可能在上方快照之後才寫入自己的買單紀錄，寫入回補列前再以新查詢確認一次。
+            try:
+                if self.transaction_repo.has_matching_buy(user_id, pos.symbol, float(pos.quantity), open_date_str):
+                    existing_sigs.add(pos_sig)
+                    continue
+            except Exception as e:
+                logger.warning(f"Backfill race check failed for {pos.symbol}: {e}; skipping backfill this round")
+                continue
+
             logger.info(
                 f"Backfilling Position: Missing BUY for {pos.symbol}, "
                 f"qty={pos.quantity}, price={pos.open_price}, date={open_date_str}, pos_id={pos_id_str}"

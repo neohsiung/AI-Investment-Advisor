@@ -80,8 +80,13 @@ class OpportunityCostService:
     機會成本決策引擎：計算資本置換的邊際效用與機會成本門檻。
     """
 
-    DEFAULT_SLIPPAGE_PCT = 0.0010     # 0.10% per leg
-    DEFAULT_COMMISSION_PCT = 0.0005   # 0.05% per leg
+    # Round-trip friction used for swap decisions, in percent. The old 0.30% (0.10% slippage + 0.05% commission per
+    # leg) was an unmeasured guess; a conservative 1.0% is the default until measured fills justify a lower value.
+    # Overridable via setting `rotation_roundtrip_friction_pct`. 換庫決策用的來回摩擦（%）：舊的 0.30% 是未經量測的猜測，
+    # 在有實測成交資料前改採保守的 1.0%，可由設定 rotation_roundtrip_friction_pct 調整。
+    FALLBACK_ROUNDTRIP_FRICTION_PCT = 1.0
+    DEFAULT_SLIPPAGE_PCT = 0.0025     # 0.25% per leg
+    DEFAULT_COMMISSION_PCT = 0.0025   # 0.25% per leg (all-in cost allowance incl. spread)
     DEFAULT_MULTIPLIER = 2.5          # 2.5x friction multiplier
     DEFAULT_HURDLE_RATE = 0.010       # 1.0% excess hurdle rate
 
@@ -98,10 +103,24 @@ class OpportunityCostService:
         self.min_score_delta = min_score_delta
         self.fee_pct = fee_pct
         self.slippage_pct = slippage_pct
-        # Two-way roundtrip friction hurdle in score points (~0.3 score penalty for 0.3% roundtrip)
-        self.friction_hurdle_score = (fee_pct + slippage_pct) * 2 * 100.0
         self.settings_service = settings_service
         self.slippage_compensator = slippage_compensator
+        # Two-way roundtrip friction hurdle in score points (1 point per 1% round trip)
+        self.friction_hurdle_score = self._configured_roundtrip_pct()
+
+    def _configured_roundtrip_pct(self) -> float:
+        """Round-trip friction in percent from `rotation_roundtrip_friction_pct`; never lower than 0.
+        An unreadable setting falls back to the conservative default and says so (WARNING).
+        來回摩擦（%）；設定讀取失敗時退回保守預設並以 WARNING 記錄。"""
+        try:
+            svc = self.settings_service
+            if svc is None:
+                from src.services.settings_service import SettingsService
+                svc = SettingsService(user_id=self.user_id)
+            return max(0.0, float(svc.get_setting("rotation_roundtrip_friction_pct", self.FALLBACK_ROUNDTRIP_FRICTION_PCT)))
+        except Exception as e:
+            logger.warning(f"OpportunityCostService: friction setting unreadable ({e}); using {self.FALLBACK_ROUNDTRIP_FRICTION_PCT}%")
+            return self.FALLBACK_ROUNDTRIP_FRICTION_PCT
 
     def calculate_roundtrip_friction(
         self,

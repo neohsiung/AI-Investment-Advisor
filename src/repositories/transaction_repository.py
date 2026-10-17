@@ -561,6 +561,18 @@ class AlchemyTransactionRepository(BaseRepository, ITransactionRepository):
             query = text("SELECT DISTINCT source_file FROM transactions WHERE user_id = :uid AND source_file IS NOT NULL")
             rows = conn.execute(query, {"uid": user_id}).fetchall()
             return [r[0] for r in rows]
+    def has_matching_buy(self, user_id: str, ticker: str, quantity: float, trade_date: str, rel_tol: float = 0.01) -> bool:
+        """True when a BUY of ~`quantity` for `ticker` is already recorded on `trade_date` (any category except a
+        position-backfill row). Fresh query, so it sees rows written after a caller's earlier snapshot.
+        同日已有約略相同數量的買進紀錄（排除回補列）；以新查詢避開呼叫端舊快照的競態。"""
+        with self.engine.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT quantity FROM transactions WHERE user_id = :u AND ticker = :t AND action = 'BUY' "
+                "AND CAST(trade_date AS TEXT) LIKE :d AND (source_file IS NULL OR source_file NOT LIKE 'etoro_pos_%')"),
+                {"u": user_id, "t": ticker, "d": f"{str(trade_date)[:10]}%"}).fetchall()
+        q = float(quantity)
+        return any(abs(float(r[0] or 0.0) - q) <= abs(q) * rel_tol for r in rows)
+
     def set_cash_anchor(self, user_id: str, target_balance: float) -> float:
         """
         Make get_cash_balance(user) equal the broker cash by (re)writing the single anchor row.

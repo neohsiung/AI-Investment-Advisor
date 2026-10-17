@@ -53,3 +53,14 @@ def test_reconcile_cash_balance_uses_anchor(repo):
     _seed(repo)
     repo.reconcile_cash_balance("u", 777.0, "etoro")
     assert repo.get_cash_balance("u") == pytest.approx(777.0)
+
+
+def test_has_matching_buy_sees_system_order_but_not_backfill_rows(repo):
+    repo.add("u", "MSFT", "2026-10-16 13:37:16", "BUY", 0.18519, 540.0, 0, entry_category=ENTRY_CATEGORY_TRADE,
+             amount=100.0, source_file="eToro")
+    assert repo.has_matching_buy("u", "MSFT", 0.18520, "2026-10-16")             # within 1%
+    assert not repo.has_matching_buy("u", "MSFT", 0.50, "2026-10-16")            # different size
+    assert not repo.has_matching_buy("u", "MSFT", 0.18519, "2026-10-15")         # different day
+    repo.add("u", "AAPL", "2026-10-16", "BUY", 0.29, 343.0, 0, entry_category=ENTRY_CATEGORY_SYNC_ADJUSTMENT,
+             amount=100.0, source_file="etoro_pos_123")
+    assert not repo.has_matching_buy("u", "AAPL", 0.29, "2026-10-16")            # a backfill row is not a system order

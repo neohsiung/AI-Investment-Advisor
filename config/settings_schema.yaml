@@ -1391,6 +1391,16 @@ settings:
     label_zh: 研究分數最大有效天數
     help_en: Research older than this counts as unresearched (neutral score) when computing target allocations.
     help_zh: 超過此天數的研究分數在計算目標配置時視為未研究（中性分數）。
+  - key: rotation_roundtrip_friction_pct
+    group: trading
+    type: float
+    default: 1.0
+    min: 0.0
+    max: 5.0
+    label_en: Assumed round-trip trading friction (%)
+    label_zh: 假設的來回交易摩擦 (%)
+    help_en: Cost of selling one holding and buying another (spread + slippage + fees), in percent. Conservative default 1.0 until measured fills justify lowering it. Capital rotation must beat this plus its score hurdle.
+    help_zh: 賣出一檔再買入另一檔的成本（價差＋滑價＋手續費，%）。在有實測成交資料前採保守預設 1.0；換庫必須贏過此成本與評分門檻。
   - key: rotation_min_holding_days
     group: trading
     type: int
