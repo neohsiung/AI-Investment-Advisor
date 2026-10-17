@@ -62,9 +62,34 @@ def hardcoded_confidence_counts(files):
     return out
 
 
+# Matches set_setting(, settings_repo.set(, save_setting( / 涵蓋三種寫入實盤設定的寫法
+EVOLUTION_WRITE_RE = re.compile(r"set_setting\(|settings_repo\.set\(|save_setting\(")
+
+
 def evolution_files_calling_set_setting():
     out = set()
     for p in py_files():
-        if re.search(r"evolution|synthesis|canary", str(p)) and "set_setting(" in p.read_text(encoding="utf-8"):
+        if re.search(r"evolution|synthesis|canary", str(p)) and EVOLUTION_WRITE_RE.search(p.read_text(encoding="utf-8")):
             out.add(rel(p))
+    return out
+
+
+def executor_call_sites():
+    """{file: count} of AST Call nodes whose attribute is `evaluate_and_execute_trade` (docstrings/comments excluded).
+    以 AST 計算呼叫 `evaluate_and_execute_trade` 的 Call 節點（不含 docstring/註解）。"""
+    out = {}
+    for p in py_files():
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        n = sum(
+            1
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "evaluate_and_execute_trade"
+        )
+        if n:
+            out[rel(p)] = n
     return out
