@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from sqlalchemy import text
 
 from src.config.mission import load_mission
+from src.services.order_cap_policy import single_order_cap_usd
 from src.services.proposal_validator import ValidationContext, ValidationResult, validate
 
 logger = logging.getLogger(__name__)
@@ -206,7 +207,7 @@ async def _build_shared(user_id: str, need_sells: bool, settings_service: Any, d
         "holdings": holdings,
         "research": research,
         "max_age": float(settings_service.get_setting("universe_research_max_age_days")),
-        "per_order_cap": float(settings_service.get_setting("batch_deploy_max_order_usd")),
+        "per_order_cap": single_order_cap_usd(settings_service, None),
         "parking": _as_bool(settings_service.get_setting("benchmark_parking_enabled")),
         "sold_count": sold_count,
         "sold_amount": sold_amount,

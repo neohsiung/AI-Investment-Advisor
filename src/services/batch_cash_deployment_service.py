@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 import pytz
 
 from src.config.owner import resolve_user_id
+from src.services.order_cap_policy import single_order_cap_usd
 from src.utils.logger import setup_logger
 
 logger = setup_logger("BatchCashDeploymentService")
@@ -368,7 +369,7 @@ class BatchCashDeploymentService:
             active_tickers=active,
             holdings=holdings,
             total_equity=total_equity,
-            max_order_usd=self._setting_float("batch_deploy_max_order_usd", 100.0),
+            max_order_usd=single_order_cap_usd(self.settings_service, None),
             max_tickers=int(self._setting_float("batch_deploy_max_tickers", 3)),
             min_confidence=self._setting_float("batch_deploy_min_confidence", 5.5),
         )

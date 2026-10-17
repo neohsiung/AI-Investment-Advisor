@@ -77,6 +77,9 @@ class FinnhubPollService:
             return {"status": "disabled"}
         if str(self.settings.get_setting("event_llm_mode", "off") or "off").strip().lower() == "off":
             # Analysis is off: polling would only mark items seen without ever analysing them.
+            # Hidden coupling made visible: finnhub_poll_enabled is inert while event_llm_mode=off (once per run).
+            # 隱性耦合明示：event_llm_mode=off 時 finnhub_poll_enabled 不生效（每次執行僅一行）。
+            logger.info("FinnhubPollService: idle for %s - finnhub_poll_enabled is on but event_llm_mode=off", self.user_id)
             return {"status": "disabled", "reason": "event_llm_mode=off"}
         if not getattr(self.provider, "api_key", None):
             logger.warning("FinnhubPollService: no Finnhub API key configured")

@@ -1,0 +1,121 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Settings families — which switches / modes / caps belong together.
+# 設定家族註冊表——哪些開關、模式與上限屬於同一組。
+#
+# WHY: settings were added one work package at a time and overlapped (two evolution switches, three "mode"
+# keys with different vocabularies, a poll switch that silently did nothing, four places reading one cap).
+# This file makes the relationships explicit; tests/invariants/test_settings_families.py enforces it:
+#   * every member must exist in settings_schema.yaml, and a key belongs to at most one family;
+#   * a ratchet: a NEW schema key matching the switch/mode/cap pattern (see scripts/settings_inventory.py)
+#     must be registered here with a purpose and its relationship to its neighbours.
+#
+# This file is documentation + a test input. It is NOT read at runtime and changes no behaviour.
+# No key or value is renamed here (live DB rows exist). Quote "off"/"on" values (YAML 1.1 booleans).
+# ═══════════════════════════════════════════════════════════════════════════
+version: 1
+families:
+  - id: evolution_gate
+    purpose_en: One gate for loops that tune live settings or register strategies from synthetic data; off by default.
+    purpose_zh: 以合成資料調整實盤設定或註冊策略的演化迴圈，統一由單一閘門控管，預設關閉。
+    canonical: enable_autonomous_evolution_beat
+    members:
+      - enable_autonomous_evolution_beat
+      - auto_promote_synthesized_factors
+      - allow_synthesized_factor_live_exec
+    notes:
+      - "enable_autonomous_evolution_beat is the single gate; read through src/services/evolution_gate.synthetic_evolution_enabled (tasks.py and strategy_discovery_service share it). `force` never bypasses it."
+      - "The retired duplicate strategy_evolution_enabled (default true) no longer exists in the schema or in src/. Existing DB rows with that key are inert and were not touched."
+      - "auto_promote_synthesized_factors and allow_synthesized_factor_live_exec are separate downstream permissions; all three defaults must stay off (tested)."
+
+  - id: event_analysis
+    purpose_en: Whether and how much news/events are analysed by the LLM council, and how events are ingested.
+    purpose_zh: 新聞/事件是否、以及多少交由 LLM 議會分析，以及事件的取得方式。
+    canonical: event_llm_mode
+    members:
+      - event_llm_mode
+      - event_analysis_daily_cap
+      - finnhub_poll_enabled
+      - finnhub_poll_max_events
+    notes:
+      - "event_llm_mode vocabulary: off | held_only | on. It is the master switch for LLM spend on events."
+      - "finnhub_poll_enabled is inert when event_llm_mode=off (the poll idles, logs one INFO line per run, returns reason event_llm_mode=off)."
+      - "event_analysis_daily_cap bounds analysed events per US/Eastern day (held tickers double); 0 = unlimited. finnhub_poll_max_events bounds events dispatched per poll run."
+
+  - id: proposal_validator
+    purpose_en: How the deterministic trade-proposal validator relates to the executor on the event path.
+    purpose_zh: 事件路徑上，確定性交易提案驗證器與執行器的關係。
+    canonical: trade_proposal_mode
+    members:
+      - trade_proposal_mode
+    notes:
+      - "Vocabulary: off | shadow | enforce. shadow records proposals and counterfactual rows only and never alters executor arguments; enforce changes live money (needs ADR-003 and human approval)."
+      - "Sizing uses the single order cap (family order_caps) and mission promotion bounds."
+
+  - id: emergency_protocol
+    purpose_en: What the sentinel does on an emergency (score at or above the liquidation score).
+    purpose_zh: 哨兵遇到緊急事件（分數達緊急清倉門檻）時的處置方式。
+    canonical: sentinel_emergency_protocol_mode
+    members:
+      - sentinel_emergency_protocol_mode
+      - emergency_hedge_amount
+      - emergency_liquidation_score
+    notes:
+      - "Vocabulary: notify | legacy. notify (default) only alerts the operator and places no orders; legacy sells every holding and buys the SQQQ hedge automatically."
+      - "emergency_hedge_amount is only meaningful in legacy mode; emergency_liquidation_score is the trigger threshold for both."
+
+  - id: rotation
+    purpose_en: Capital rotation - selling the lowest-conviction holding to fund a clearly better candidate.
+    purpose_zh: 換庫——賣出信心最低的持倉以買進明顯更佳的候選標的。
+    canonical: capital_rotation_enabled
+    members:
+      - capital_rotation_enabled
+      - rotation_min_score_delta
+      - rotation_min_holding_days
+      - rotation_roundtrip_friction_pct
+      - rotation_friction_multiplier
+      - rotation_hurdle_rate
+    notes:
+      - "capital_rotation_enabled gates the others; when off none of the rotation_* guards are consulted."
+      - "A rotation buy is capped by the single order cap (family order_caps); the remainder stays cash."
+      - "rotation_min_holding_days: unknown holding age blocks the sell. 0 disables the check."
+
+  - id: parking
+    purpose_en: Parking idle cash in the benchmark ETF when no candidate qualifies.
+    purpose_zh: 無合格候選時，將閒置現金停泊於基準 ETF。
+    canonical: benchmark_parking_enabled
+    members:
+      - benchmark_parking_enabled
+      - benchmark_parking_max_order_usd
+      - benchmark_parking_min_gap_usd
+    notes:
+      - "benchmark_parking_max_order_usd (default 250) is intentionally larger than the single order cap and is human-approved; parking does not use order_cap_policy."
+
+  - id: order_caps
+    purpose_en: The per-order USD ceiling and ramp-in width shared by batch deployment, rotation buys and rebalance.
+    purpose_zh: 批次建倉、換庫買進與再平衡共用的單筆金額上限與逐步建倉檔數。
+    canonical: batch_deploy_max_order_usd
+    members:
+      - batch_deploy_max_order_usd
+      - batch_deploy_max_tickers
+    precedence:
+      - "1. mission bounds (config/mission.yaml: promotion.max_initial_live_weight_pct and budgets) - never exceeded"
+      - "2. tradable_capital_pct (share of account NAV; <= 0 disables trading) - family capital"
+      - "3. tradable_capital_usd (absolute cap; min with the pct result) - family capital"
+      - "4. single order cap = batch_deploy_max_order_usd, read ONLY via src/services/order_cap_policy.single_order_cap_usd"
+      - "Documented exception: benchmark_parking_max_order_usd (family parking) is its own, larger cap and does not go through the helper."
+    notes:
+      - "Readers of batch_deploy_max_order_usd: batch_cash_deployment_service, sentinel_service (rotation buys), confidence_rebalance_service, proposal_shadow_service - all via order_cap_policy (tested)."
+      - "An unreadable or non-positive value falls back to the schema default with a WARNING, never to a larger number."
+
+  - id: capital
+    purpose_en: How much of the account the system may size against, and the master auto-trading switch.
+    purpose_zh: 系統可用於部位計算的帳戶資金比例，以及自動交易總開關。
+    canonical: tradable_capital_pct
+    members:
+      - tradable_capital_pct
+      - tradable_capital_usd
+      - ai_trading_enabled
+    notes:
+      - "capital_policy.tradable_capital = min(NAV * pct / 100, tradable_capital_usd if configured, NAV). pct <= 0 disables trading."
+      - "ai_trading_enabled is pinned false on a clean install; it is independent of the caps and must be on for any automated order."
+      - "Known residue (governance plan P-1): a USD cap of 0 is still treated as uncapped by capital_policy._configured_cap."

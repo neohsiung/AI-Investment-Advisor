@@ -95,3 +95,17 @@ def test_event_budget_gate_caps_and_doubles_for_held():
 def test_poll_idle_when_event_llm_mode_off():
     res, wf = _run(_svc(mode="off"))
     assert res == {"status": "disabled", "reason": "event_llm_mode=off"} and not wf.called
+
+
+def test_poll_idle_logs_reason_once_at_info():
+    """The inert-because-event_llm_mode=off state must be visible in logs, once per run (no spam)."""
+    with patch("src.services.finnhub_poll_service.logger") as lg:
+        _run(_svc(mode="off"))
+    info_msgs = [c.args[0] % c.args[1:] if len(c.args) > 1 else c.args[0] for c in lg.info.call_args_list]
+    assert len(info_msgs) == 1 and "event_llm_mode" in info_msgs[0]
+
+
+def test_poll_disabled_switch_does_not_log():
+    with patch("src.services.finnhub_poll_service.logger") as lg:
+        _run(_svc(enabled=False))
+    assert not lg.info.called

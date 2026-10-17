@@ -147,7 +147,8 @@ class TestStrategyDiscoveryService:
             mock_notif = AsyncMock()
             mock_notif_factory.return_value = mock_notif
 
-            res = await discovery_service.run_evolution_cycle(user_id="u_test_evolution", force=True)
+            with patch("src.services.evolution_gate.synthetic_evolution_enabled", return_value=True):
+                res = await discovery_service.run_evolution_cycle(user_id="u_test_evolution", force=True)
             assert res["status"] == "success"
             assert res["scenarios_tested"] > 0
             assert "行動" in res["report"]
@@ -156,11 +157,29 @@ class TestStrategyDiscoveryService:
             assert mock_notif.notify_all.called
 
     @pytest.mark.asyncio
-    async def test_run_evolution_cycle_disabled_skip(self, discovery_service):
-        """Verify cycle skips when strategy_evolution_enabled is false and force is false."""
+    @pytest.mark.parametrize("force", [False, True])
+    async def test_run_evolution_cycle_gated_by_canonical_switch(self, discovery_service, force):
+        """The canonical gate (enable_autonomous_evolution_beat) is off: skipped, and force never bypasses it.
+        規範閘門關閉時一律跳過，force 不得繞過。"""
         from unittest.mock import patch
 
-        with patch("src.services.settings_service.SettingsService.get_setting", return_value="false"):
-            res = await discovery_service.run_evolution_cycle(user_id="u_test_skip", force=False)
-            assert res["status"] == "skipped"
+        with patch("src.services.evolution_gate.synthetic_evolution_enabled", return_value=False):
+            res = await discovery_service.run_evolution_cycle(user_id="u_test_skip", force=force)
+        assert res["status"] == "skipped"
+        assert res["reason"] == "synthetic_evolution_disabled"
 
+    @pytest.mark.asyncio
+    async def test_run_evolution_cycle_reads_canonical_setting(self, discovery_service):
+        """With no patching of the helper, the setting enable_autonomous_evolution_beat=false still skips under force."""
+        from unittest.mock import patch
+
+        with patch("src.services.settings_service.SettingsService.get_setting", return_value=False):
+            res = await discovery_service.run_evolution_cycle(user_id="u_test_skip2", force=True)
+        assert res["status"] == "skipped"
+
+    def test_legacy_switch_is_gone_from_discovery_service(self):
+        import inspect
+
+        import src.services.strategy_discovery_service as m
+
+        assert "strategy_evolution_enabled" not in inspect.getsource(m)
