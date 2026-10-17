@@ -25,11 +25,37 @@
 - **迭代紀錄 (Version History)**: 位於文件頂部，記錄最近 5 次重大變動（Date, Version, Description, Author）。
 - ** additive 原則**: 除非結構崩壞，否則更新應視為疊加與增量，嚴禁隨意重寫以保留歷史背景。
 
+### 1.2a 語言決議（2026-10-17，取代 1.2 的「英文先寫」要求）
+- **新文件以繁體中文全文撰寫，頂部附 3–5 行英文摘要（English summary）**，供外部讀者與 agent 快速定位。
+- 不再要求每份文件都有完整英文版（兩份全文會各自漂移）；既有雙語文件不強制重寫（維持 additive 原則）。
+- 程式碼註解與 commit 訊息仍維持英文＋繁體中文雙語。
+
 ### 1.3 視覺化與精簡原則 (Visual & Concise Rule) - **核心規則**
 - **Mermaid 優先 (Mermaid First)**: 若有方便說明的架構、狀態轉換、操作流程或組件關聯，**必須優先採用 Mermaid 圖表** (如 `graph TD`, `sequenceDiagram`, `classDiagram`) 進行表達。
 - **文字極簡化 (Text Minimalism)**: 文字應僅用於「小結 (Summaries)」與「關注重點 (Key Highlights)」。絕對避免長篇大論的文字堆砌 (Walls of Text)。
 - **現代化 Markdown 排版**: 盡可能善用 Markdown 的列表、GitHub-flavored alerts (`> [!NOTE]`, `> [!IMPORTANT]`) 與粗體標示，參考業界 Best Practice 進行排版以提升閱讀體驗。
 - **Surgical Additions**: 更新文件時請以局部填補取代全盤覆蓋，確保上下文一致性。
+
+### 1.6 技術文件交付與可讀性（每批開發必做）
+> 來源：decision-stack 的可遷移原則（`behavior-claims-are-run-not-reasoned`、`version-bump-needs-the-idea`、
+> `recipient-delta-defines-the-artifact`、`an-explanation-must-change-a-next-action`、`a-review-batch-names-what-to-read-first`）。
+
+**何時要寫**：每一批開發（一個 PR 或一組相關 PR）結束時，必須交付一份技術文件並同步 wiki；若確實不需要，PR 內寫「無需更新 wiki」與理由。
+
+**寫之前先回答**：這份文件的讀者是誰（維護者／審查者／未來的 agent）？他還缺什麼？只寫那幾項。
+
+**內容規則**
+1. **行為描述必須實際跑過，並附驗證指令。** 寫「在某情況下系統會怎樣」之前先執行一次，把指令放在驗證欄；跑不了就寫成推論並說明依據，不寫成直述句。
+2. **改既有文件時，開頭寫「這一版換掉了哪個想法」**，而不只是列改了哪幾節；版本沿革表記錄每一版要解的問題。
+3. **只放讀者需要知道且尚不知道的內容。** 查證過程、推論鏈、檔案清單留在對話或 commit，不進文件；自檢問句：「砍掉這段，讀者的下一個動作會不同嗎？」
+4. **「為什麼」只在會改變未來動作時才寫**，並落在提交說明、規範或原則庫；成因寫成規則或檢查，而不只是一段文字。
+5. **圖優先**：架構／狀態／時序／控制迴圈一律用 Mermaid；每張圖下方用一兩句話講「讀這張圖該注意什麼」。
+6. **不寫會漂移的數字**（交易筆數、成本、上限）；需要時寫查詢方式（API 或 SQL）。
+7. **一批文件的審查順序要先講**：這批的目的、先看哪一份、每份只列位址。
+
+**文件骨架（建議）**：英文摘要 3–5 行 → 這一版換掉的想法 → 一張總覽圖 → 行為表（情境／結果／驗證指令）→ 失效模式與回滾 → 相關頁面連結。
+
+**Wiki 統整清單（每批結束檢查）**：新增或修改的頁面是否已在 `Home.md`、`_Sidebar.md` 連結？`verify_wiki_links.py` 通過？wiki 是獨立 git repo，需另行 commit。
 
 ### 1.5 本地專屬文件標準 (Local-Only Document Standard)
 - 當使用者要求「產出文檔但不要放到 GitHub 上」或標記為「Local-Only」時：

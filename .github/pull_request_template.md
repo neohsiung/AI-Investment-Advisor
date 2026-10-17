@@ -6,6 +6,12 @@
 ## 對 `config/mission.yaml` 哪個指標有何預期影響？如何量測？ / Mission impact & how it is measured
 <!-- Required for R2/R3. "No measurable impact" is a valid answer only for R0/R1. -->
 
+## 驗證指令 / Verification
+<!-- 每個「系統在某情況下會怎樣」的描述都要有可重跑的指令。跑不了的寫成推論並說明依據。 -->
+
+## Wiki 統整 / Wiki synthesis
+<!-- 列出新增或更新的 wiki 頁面；若無需更新，寫「無需更新」與理由。 -->
+
 ## 回滾方式 / Rollback
 
 ## 檢查清單 / Checklist
