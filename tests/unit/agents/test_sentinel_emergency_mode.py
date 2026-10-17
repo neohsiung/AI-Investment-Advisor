@@ -110,3 +110,18 @@ def test_schema_default_is_notify():
     e = found[0]
     assert e["type"] == "enum" and e["enum"] == ["notify", "legacy"] and e["default"] == "notify"
     assert e["label_en"] and e["label_zh"]
+
+
+@pytest.mark.anyio
+async def test_notify_mode_logs_the_rationale_redacted_never_in_clear_text():
+    """CodeQL py/clear-text-logging-sensitive-data (#165): the rationale is free text and may carry a token."""
+    svc = _make("notify")
+    auto = AsyncMock()
+    svc._dispatch_notifications_direct = AsyncMock()
+    secret = "Bearer abcdefghijklmnop1234567890"
+    with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=auto), \
+         patch("src.services.sentinel_service.logger") as log:
+        await svc._trigger_emergency_protocol("user123", f"VIX spike; Authorization: {secret}")
+    logged = " ".join(str(c) for c in log.warning.call_args_list)
+    assert "abcdefghijklmnop1234567890" not in logged
+    assert "VIX spike" in logged            # the useful part is still logged

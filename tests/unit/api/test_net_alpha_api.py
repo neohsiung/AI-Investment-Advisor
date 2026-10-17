@@ -36,4 +36,4 @@ def test_net_alpha_surfaces_failure_as_500():
         svc_cls.return_value.calculate_complete_report = AsyncMock(side_effect=RuntimeError("boom"))
         resp = client.get("/api/v1/net-alpha")
     assert resp.status_code == 500
-    assert "boom" in resp.json()["detail"]
+    assert "boom" not in resp.json()["detail"]      # CodeQL py/stack-trace-exposure: no exception text to the client

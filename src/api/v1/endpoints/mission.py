@@ -21,7 +21,9 @@ async def get_mission_status(user_id: str = Depends(get_current_user_id)) -> Dic
         return {"status": "success", "data": MissionWatchdogService(user_id=user_id).evaluate()}
     except Exception as e:
         logger.error(f"get_mission_status failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Generic detail: the cause is in the log above, never echoed to the client (CodeQL py/stack-trace-exposure).
+        # 對外只回通用訊息；原因已記錄在上方日誌。
+        raise HTTPException(status_code=500, detail="Mission API request failed")
 
 
 @router.get("/parking-plan")
@@ -34,7 +36,9 @@ async def get_parking_plan(user_id: str = Depends(get_current_user_id)) -> Dict[
         return {"status": "success", "data": await BenchmarkParkingService(user_id=user_id).build_plan()}
     except Exception as e:
         logger.error(f"get_parking_plan failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Generic detail: the cause is in the log above, never echoed to the client (CodeQL py/stack-trace-exposure).
+        # 對外只回通用訊息；原因已記錄在上方日誌。
+        raise HTTPException(status_code=500, detail="Mission API request failed")
 
 
 @router.get("/strategies")
@@ -48,4 +52,6 @@ async def get_strategy_trials(user_id: str = Depends(get_current_user_id)) -> Di
         return {"status": "success", "data": {"n_trials_total": lab.trial_count(), "trials": lab.list_trials()}}
     except Exception as e:
         logger.error(f"get_strategy_trials failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Generic detail: the cause is in the log above, never echoed to the client (CodeQL py/stack-trace-exposure).
+        # 對外只回通用訊息；原因已記錄在上方日誌。
+        raise HTTPException(status_code=500, detail="Mission API request failed")
