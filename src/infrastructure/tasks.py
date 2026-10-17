@@ -809,7 +809,7 @@ def run_strategy_lab():
         res = StrategyLabService().run(prices, benchmark=benchmark)
         logger.info("run_strategy_lab: N=%s variants=%s shadow_candidates=%s",
                     res["n_trials_total"], res["variants_evaluated"], len(res["shadow_candidates"]))
-        return {k: res[k] for k in ("n_trials_total", "variants_evaluated", "shadow_candidates")}
+        return {k: res[k] for k in ("n_trials_total", "variants_evaluated", "shadow_candidates", "trials_deferred", "cap_reached")}
     except Exception as e:
         logger.error(f"run_strategy_lab failed: {e}", exc_info=True)
         return f"Error: {str(e)}"

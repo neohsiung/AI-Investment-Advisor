@@ -63,3 +63,49 @@ def test_failures_are_recorded_not_hidden(engine):
     bad = {"momentum_tilt": {"fn": lambda p, **k: (_ for _ in ()).throw(RuntimeError("boom")), "grid": {"top_k": [1]}}}
     r = StrategyLabService(engine=engine, families=bad).run(_panel())
     assert r["results"][0]["status"] == "error" and "boom" in r["results"][0]["error"]
+
+
+# ── WP8a: quarterly trial budget (mission.budgets.max_hypothesis_trials_per_quarter) ──────────────────────────────
+def test_quarter_bounds_are_calendar_quarters_in_utc():
+    from datetime import datetime, timezone
+    from src.services.strategy_lab_service import quarter_bounds
+    s, e = quarter_bounds(datetime(2026, 11, 20, tzinfo=timezone.utc))
+    assert (s, e) == (datetime(2026, 10, 1, tzinfo=timezone.utc), datetime(2027, 1, 1, tzinfo=timezone.utc))
+    s, e = quarter_bounds(datetime(2026, 12, 31, 23, 59, tzinfo=timezone.utc))
+    assert e == datetime(2027, 1, 1, tzinfo=timezone.utc)
+
+
+def test_new_trials_stop_at_the_quarterly_cap_and_are_reported(engine):
+    lab = StrategyLabService(engine=engine, families=FAMILIES, max_new_trials_per_quarter=3)
+    r = lab.run(_panel())                                   # grid has 4 variants, budget 3
+    assert r["variants_evaluated"] == 3
+    assert r["trials_deferred"] == 1 and r["cap_reached"] is True
+    assert lab.trial_count() == 3                           # the 4th was NOT registered (N is not inflated)
+
+
+def test_the_cap_never_blocks_re_evaluating_existing_trials(engine):
+    StrategyLabService(engine=engine, families=FAMILIES, max_new_trials_per_quarter=4).run(_panel())
+    again = StrategyLabService(engine=engine, families=FAMILIES, max_new_trials_per_quarter=1).run(_panel())
+    assert again["variants_evaluated"] == 4 and again["cap_reached"] is False and again["trials_deferred"] == 0
+
+
+def test_an_earlier_quarters_trials_do_not_use_this_quarters_budget(engine):
+    lab = StrategyLabService(engine=engine, families=FAMILIES, max_new_trials_per_quarter=4)
+    lab.run(_panel())
+    with engine.begin() as c:                               # pretend all four were first seen last year
+        c.execute(text("UPDATE strategy_trials SET first_eval_at = '2025-01-15 00:00:00'"))
+    assert lab.quarter_trial_count() == 0
+
+
+def test_cap_defaults_to_the_mission_budget(engine):
+    from src.config.mission import load_mission
+    lab = StrategyLabService(engine=engine, families=FAMILIES)
+    assert lab.max_new_trials_per_quarter == load_mission().budgets.max_hypothesis_trials_per_quarter
+
+
+def test_cap_reached_is_logged_as_a_warning(engine):
+    from unittest.mock import patch
+    lab = StrategyLabService(engine=engine, families=FAMILIES, max_new_trials_per_quarter=1)
+    with patch("src.services.strategy_lab_service.logger") as log:
+        lab.run(_panel())
+    assert any("cap" in str(c.args[0]).lower() for c in log.warning.call_args_list)
