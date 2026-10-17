@@ -208,6 +208,7 @@ class AdaptiveCouncilMetaLearningService:
                     FROM decision_outcomes
                     WHERE user_id = :user_id
                       AND resolved_at IS NOT NULL
+                      AND NOT is_counterfactual
                     ORDER BY resolved_at DESC
                     LIMIT 200
                 """)

@@ -339,6 +339,7 @@ class CouncilDebateMemoryService:
                            lesson, resolved_at
                     FROM decision_outcomes
                     WHERE session_id IN :sids AND user_id = :uid
+                      AND NOT is_counterfactual
                     ORDER BY decided_at DESC
                 """)
                 rows = conn.execute(q, {"sids": tuple(session_ids), "uid": self.user_id}).fetchall()

@@ -383,6 +383,7 @@ class TradingProtectionsService:
                 SELECT alpha_pct FROM decision_outcomes
                 WHERE user_id = :user_id AND resolved_at IS NOT NULL
                   AND alpha_pct IS NOT NULL
+                  AND NOT is_counterfactual
                   AND UPPER(signal) IN :signals
                   AND resolved_at > :reset_at
                 ORDER BY resolved_at DESC LIMIT :n
@@ -393,6 +394,7 @@ class TradingProtectionsService:
                 SELECT alpha_pct FROM decision_outcomes
                 WHERE user_id = :user_id AND resolved_at IS NOT NULL
                   AND alpha_pct IS NOT NULL
+                  AND NOT is_counterfactual
                   AND UPPER(signal) IN :signals
                 ORDER BY resolved_at DESC LIMIT :n
             """).bindparams(bindparam("signals", expanding=True))
@@ -419,6 +421,7 @@ class TradingProtectionsService:
             SELECT alpha_pct, resolved_at FROM decision_outcomes
             WHERE user_id = :user_id AND ticker = :ticker AND resolved_at IS NOT NULL
               AND alpha_pct IS NOT NULL
+              AND NOT is_counterfactual
               AND UPPER(signal) IN :signals
             ORDER BY resolved_at DESC LIMIT 1
         """).bindparams(bindparam("signals", expanding=True))
@@ -463,6 +466,7 @@ class TradingProtectionsService:
                 SELECT alpha_pct FROM decision_outcomes
                 WHERE user_id = :user_id AND resolved_at IS NOT NULL
                   AND alpha_pct IS NOT NULL
+                  AND NOT is_counterfactual
                   AND UPPER(signal) IN :signals
                   AND resolved_at > :reset_at
                 ORDER BY resolved_at DESC LIMIT :n
@@ -473,6 +477,7 @@ class TradingProtectionsService:
                 SELECT alpha_pct FROM decision_outcomes
                 WHERE user_id = :user_id AND resolved_at IS NOT NULL
                   AND alpha_pct IS NOT NULL
+                  AND NOT is_counterfactual
                   AND UPPER(signal) IN :signals
                 ORDER BY resolved_at DESC LIMIT :n
             """).bindparams(bindparam("signals", expanding=True))

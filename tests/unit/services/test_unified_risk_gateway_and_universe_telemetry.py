@@ -36,7 +36,8 @@ def mock_db_engine():
                 signal TEXT,
                 alpha_pct REAL,
                 resolved_at TIMESTAMP,
-                created_at TIMESTAMP
+                created_at TIMESTAMP,
+                is_counterfactual INTEGER NOT NULL DEFAULT 0
             )
         """))
         conn.commit()
