@@ -35,6 +35,15 @@ FAMILIES: Dict[str, Dict[str, Any]] = {
 }
 
 
+def quarter_bounds(now: Optional[datetime] = None) -> tuple:
+    """[start, end) of the calendar quarter containing `now` (UTC). / 包含 now 的日曆季（UTC）半開區間。"""
+    now = now or datetime.now(timezone.utc)
+    q0 = ((now.month - 1) // 3) * 3 + 1
+    start = datetime(now.year, q0, 1, tzinfo=timezone.utc)
+    end = datetime(now.year + 1, 1, 1, tzinfo=timezone.utc) if q0 == 10 else datetime(now.year, q0 + 3, 1, tzinfo=timezone.utc)
+    return start, end
+
+
 def params_hash(family: str, params: Dict[str, Any]) -> str:
     return hashlib.sha256(f"{family}|{json.dumps(params, sort_keys=True)}".encode()).hexdigest()[:32]
 
@@ -45,17 +54,34 @@ def expand_grid(grid: Dict[str, List[Any]]) -> List[Dict[str, Any]]:
 
 
 class StrategyLabService:
-    def __init__(self, engine: Any = None, families: Optional[Dict[str, Dict[str, Any]]] = None):
+    def __init__(self, engine: Any = None, families: Optional[Dict[str, Dict[str, Any]]] = None,
+                 max_new_trials_per_quarter: Optional[int] = None):
         if engine is None:
             from src.data.database import get_db_engine
             engine = get_db_engine()
         self.engine = engine
         self.families = families or FAMILIES
+        if max_new_trials_per_quarter is None:
+            # Single source of truth: mission.yaml budgets (never copied here). / 單一真相：mission.yaml。
+            from src.config.mission import load_mission
+            max_new_trials_per_quarter = load_mission().budgets.max_hypothesis_trials_per_quarter
+        self.max_new_trials_per_quarter = int(max_new_trials_per_quarter)
 
     # ── ledger ────────────────────────────────────────────────────────────────
     def trial_count(self) -> int:
         with self.engine.connect() as c:
             return int(c.execute(text("SELECT COUNT(*) FROM strategy_trials")).scalar() or 0)
+
+    def quarter_trial_count(self, now: Optional[datetime] = None) -> int:
+        """Trials FIRST seen in the current calendar quarter (re-evaluations do not count). / 本季首次出現的試驗數。"""
+        start, end = quarter_bounds(now)
+        with self.engine.connect() as c:
+            return int(c.execute(text("SELECT COUNT(*) FROM strategy_trials WHERE first_eval_at >= :s AND first_eval_at < :e"),
+                                 {"s": start.replace(tzinfo=None), "e": end.replace(tzinfo=None)}).scalar() or 0)
+
+    def _is_registered(self, h: str) -> bool:
+        with self.engine.connect() as c:
+            return c.execute(text("SELECT 1 FROM strategy_trials WHERE params_hash = :h"), {"h": h}).fetchone() is not None
 
     def _register(self, h: str, family: str, params: Dict[str, Any]) -> bool:
         """Insert the trial if new. Returns True when it is a NEW trial (N grows). / 新試驗回傳 True（N 增加）。"""
@@ -79,11 +105,24 @@ class StrategyLabService:
         # Register ALL variants first so N reflects the whole search space before any verdict is computed.
         # 先登記全部變體，讓 N 在任何判定之前就涵蓋整個搜尋空間。
         plan = []
+        deferred = 0
+        budget_left = max(0, self.max_new_trials_per_quarter - self.quarter_trial_count())
         for fam, spec in self.families.items():
             for params in expand_grid(spec["grid"]):
                 h = params_hash(fam, params)
+                if not self._is_registered(h):
+                    # A NEW trial: it spends this quarter's budget. Over budget => not registered, not evaluated
+                    # (so N is not inflated by trials we never look at) and reported loudly.
+                    # 新試驗會消耗本季預算；超額者不登記也不評估（N 不被灌水），並明確回報。
+                    if budget_left <= 0:
+                        deferred += 1
+                        continue
+                    budget_left -= 1
                 self._register(h, fam, params)
                 plan.append((fam, spec["fn"], params, h))
+        if deferred:
+            logger.warning("StrategyLab: quarterly trial cap (%d) reached; %d new variants deferred to next quarter",
+                           self.max_new_trials_per_quarter, deferred)
         n_trials = self.trial_count()
 
         results, promotable = [], []
@@ -105,7 +144,8 @@ class StrategyLabService:
             if status == "shadow_candidate":
                 promotable.append(row)
         logger.info("StrategyLab: %d variants, N=%d, %d shadow candidates", len(plan), n_trials, len(promotable))
-        return {"n_trials_total": n_trials, "variants_evaluated": len(plan), "shadow_candidates": promotable, "results": results}
+        return {"n_trials_total": n_trials, "variants_evaluated": len(plan), "shadow_candidates": promotable, "results": results,
+                "trials_deferred": deferred, "cap_reached": deferred > 0}
 
     def list_trials(self) -> List[Dict[str, Any]]:
         with self.engine.connect() as c:
