@@ -12,6 +12,10 @@ adr:
     date: 2026-10-16
     decision: "Primary objective reset from a fixed 10%/yr excess return to benchmark-relative, evidence-gated active trading; 10% kept as an aspiration."
     reason: "Opus research: 10% net excess is not statistically/economically achievable at ~$1.7k; baseline is SPY."
+  - id: ADR-002
+    date: 2026-10-17
+    decision: "Enable benchmark parking (idle cash ramps into SPY at leverage 1, buy-only, banded, per-run capped); `default_allocation: benchmark` is now operative instead of aspirational."
+    reason: "Idle cash is a standing bet against the benchmark. eToro read check: SPY spread ~0.004%, leverage-1 long is a plain holding (no CFD overnight fees), fractional, min $10. UNVERIFIED: per-order fee and dividend withholding for a Taiwan tax resident (est. ~0.4%/yr drag). Operator approved 2026-10-17; rollback = benchmark_parking_enabled=false."
 
 objective:
   benchmark: SPY
