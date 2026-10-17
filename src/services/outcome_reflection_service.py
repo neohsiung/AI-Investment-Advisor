@@ -30,6 +30,7 @@ from sqlalchemy import text
 
 from src.data.database import get_db_engine
 from src.config.owner import resolve_user_id
+from src.services.signed_alpha import direction_of_signal, signed_alpha
 
 logger = logging.getLogger(__name__)
 
@@ -115,20 +116,34 @@ class OutcomeReflectionService:
                 failed += 1
         return {"checked": len(rows), "resolved": resolved, "skipped": skipped, "failed": failed}
 
+    @staticmethod
+    def _direction_for(signal: Optional[str]) -> str:
+        """BUY/SELL for the signal. HOLD/NEUTRAL keep the legacy long-relative
+        reading (a hold is exposure kept) as an explicit, documented choice;
+        any other unknown signal raises and the row stays pending.
+        HOLD 沿用原本的多方視角（明確選擇）；其他未知訊號 raise。"""
+        if str(signal or "").strip().upper() in ("HOLD", "NEUTRAL"):
+            return "BUY"
+        return direction_of_signal(signal)
+
     def _fetch_due_pending(self, max_batch: int) -> List[Dict[str, Any]]:
         with self.engine.connect() as conn:
             result = conn.execute(text("""
-                SELECT id, user_id, agent_name, ticker, signal, price_at_decision, decided_at, horizon_days
+                SELECT id, user_id, agent_name, ticker, signal, price_at_decision, decided_at,
+                       horizon_days, proposal_id
                 FROM decision_outcomes
                 WHERE user_id = :user_id AND resolved_at IS NULL
-                  AND decided_at <= :cutoff
+                  AND decided_at + horizon_days * INTERVAL '1 day' <= NOW()
                 ORDER BY decided_at ASC
                 LIMIT :limit
             """), {
+                # Due-ness lives in SQL: 63-day rows must not occupy the LIMIT
+                # window while they are not yet due. NOTE: this reader
+                # deliberately includes counterfactual rows (they must be
+                # resolved too); see tests/invariants baseline.
+                # 到期判斷放在 SQL：未到期的 63 日列不得佔滿 LIMIT。此處刻意包含
+                # counterfactual 列（它們也要結算）。
                 "user_id": self.user_id,
-                # horizon_days varies per row; over-fetch with a generous cutoff
-                # (30d) and let _resolve_one re-check the row's own horizon.
-                "cutoff": datetime.now(timezone.utc) - timedelta(days=0),
                 "limit": max_batch,
             })
             return [dict(r._mapping) for r in result]
@@ -168,11 +183,23 @@ class OutcomeReflectionService:
         benchmark_pct = (benchmark_now - benchmark_then) / benchmark_then * 100.0
         alpha_pct = realized_pct - benchmark_pct
 
-        lesson = self._generate_lesson(ticker, row["signal"], realized_pct, benchmark_pct, alpha_pct)
+        # Success/failure is judged on the direction-signed alpha: a SELL is
+        # right when the price falls. The stored alpha_pct column stays the raw
+        # realized - benchmark (readers such as the blindspot service apply the
+        # signal direction themselves).
+        # 成敗以「方向校正後」的 alpha 判定；資料庫欄位仍存原始 alpha。
+        direction = self._direction_for(row["signal"])
+        scored_alpha = signed_alpha(alpha_pct, direction)
 
-        if alpha_pct < 0:
+        if row.get("proposal_id"):
+            # Counterfactual / proposal rows never spend LLM tokens.
+            lesson = self._fallback_lesson(ticker, row["signal"], scored_alpha)
+        else:
+            lesson = self._generate_lesson(ticker, row["signal"], realized_pct, benchmark_pct, scored_alpha)
+
+        if scored_alpha < 0 and not row.get("proposal_id"):
             agent_name = row.get("agent_name") or "CIO"
-            self._distill_failure(agent_name, ticker, row["signal"], realized_pct, benchmark_pct, alpha_pct, decision_id=row.get("id"))
+            self._distill_failure(agent_name, ticker, row["signal"], realized_pct, benchmark_pct, scored_alpha, decision_id=row.get("id"))
 
         # B-P2.1: EWMA-update the score of every rule cited for this
         # decision — zero extra LLM cost (pure SQL), gives per-rule alpha
@@ -180,7 +207,7 @@ class OutcomeReflectionService:
         if row.get("id"):
             try:
                 from src.services.rule_lifecycle_service import RuleLifecycleService
-                RuleLifecycleService(user_id=self.user_id).backfill_score(row["id"], alpha_pct)
+                RuleLifecycleService(user_id=self.user_id).backfill_score(row["id"], alpha_pct, direction)
             except Exception as score_e:
                 # Per-rule alpha attribution is how rules earn or lose their
                 # score; silently skipping it freezes every rule's weight.
@@ -461,6 +488,7 @@ class OutcomeReflectionService:
                         SELECT ticker, signal, alpha_pct, lesson, decided_at
                         FROM decision_outcomes
                         WHERE user_id = :user_id AND ticker = :ticker AND resolved_at IS NOT NULL
+                          AND NOT is_counterfactual
                         ORDER BY decided_at DESC LIMIT :limit
                     """), {"user_id": self.user_id, "ticker": ticker, "limit": limit}).fetchall()
                     same_ticker = [dict(r._mapping) for r in result]
@@ -470,6 +498,7 @@ class OutcomeReflectionService:
                     SELECT ticker, signal, alpha_pct, lesson, decided_at
                     FROM decision_outcomes
                     WHERE user_id = :user_id AND resolved_at IS NOT NULL
+                      AND NOT is_counterfactual
                 """
                 params = {"user_id": self.user_id, "limit": limit}
                 if ticker:

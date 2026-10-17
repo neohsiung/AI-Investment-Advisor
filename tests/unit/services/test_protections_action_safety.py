@@ -101,7 +101,8 @@ class TestNullAlphaDoesNotBlockBuy:
             conn.execute(text("""
                 CREATE TABLE decision_outcomes (
                     id INTEGER PRIMARY KEY, user_id TEXT, ticker TEXT,
-                    signal TEXT, alpha_pct REAL, resolved_at TIMESTAMP
+                    signal TEXT, alpha_pct REAL, resolved_at TIMESTAMP,
+                    is_counterfactual INTEGER NOT NULL DEFAULT 0
                 )
             """))
             for i, a in enumerate(alphas):

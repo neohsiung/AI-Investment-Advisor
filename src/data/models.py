@@ -815,9 +815,48 @@ class DecisionOutcome(Base):
     lesson = Column(Text)
     created_at = Column(DateTime(timezone=True), nullable=False,
                         server_default=func.current_timestamp())
+    # alembic 027: proposal ledger link + counterfactual marker.
+    proposal_id = Column(String)
+    strategy_id = Column(String)
+    source = Column(String)
+    is_counterfactual = Column(Boolean, nullable=False, server_default=text('false'))
 
     __table_args__ = (
         Index('ix_decision_outcomes_pending', 'resolved_at', 'decided_at'),
+    )
+
+
+class TradeProposal(Base):
+    """`trade_proposals` — alembic 027. Every proposed trade, whether or not it executes."""
+    __tablename__ = 'trade_proposals'
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
+    source = Column(String(16), nullable=False)
+    strategy_id = Column(String)
+    ticker = Column(String, nullable=False)
+    direction = Column(String(4), nullable=False)
+    rationale_text = Column(Text)
+    evidence = Column(Text)  # JSON text
+    llm_model = Column(String)
+    mode = Column(String(8), nullable=False, server_default=text("'shadow'"))
+    status = Column(String(16), nullable=False, server_default=text("'proposed'"))
+    reject_reason = Column(Text)
+    sized_amount_usd = Column(Numeric(18, 4))
+    validator_version = Column(String(32))
+    idempotency_key = Column(String(128), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("source IN ('event', 'strategy', 'rotation', 'parking', 'manual', 'safety')",
+                        name='ck_trade_proposals_source'),
+        CheckConstraint("direction IN ('BUY', 'SELL')", name='ck_trade_proposals_direction'),
+        CheckConstraint("mode IN ('shadow', 'enforce')", name='ck_trade_proposals_mode'),
+        CheckConstraint("status IN ('proposed', 'rejected', 'approved', 'submitting', "
+                        "'executed', 'exec_failed', 'expired')", name='ck_trade_proposals_status'),
+        UniqueConstraint('user_id', 'source', 'ticker', 'direction', 'idempotency_key',
+                         name='uq_trade_proposals_idempotency'),
+        Index('ix_trade_proposals_user_created', 'user_id', 'created_at'),
     )
 
 

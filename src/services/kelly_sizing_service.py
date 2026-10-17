@@ -281,6 +281,13 @@ class KellySizingService:
                     since=cutoff_date,
                 )
                 for r in records:
+                    # Counterfactual (shadow-proposal) outcomes never size live trades.
+                    # 反事實（影子提案）結果不得用於實盤倉位計算。
+                    cf = getattr(r, "is_counterfactual", None)
+                    if cf is None and isinstance(r, dict):
+                        cf = r.get("is_counterfactual")
+                    if cf:
+                        continue
                     pnl = getattr(r, "pnl", None) or (r.get("pnl") if isinstance(r, dict) else None)
                     pnl_pct = getattr(r, "pnl_pct", None) or (r.get("pnl_pct") if isinstance(r, dict) else None)
                     trades.append({"pnl": pnl, "pnl_pct": pnl_pct})

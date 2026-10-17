@@ -9,6 +9,8 @@ def mock_settings():
     def mock_get(key, default=None, user_id=None):
         if key == "emergency_liquidation_score": return 10
         if key == "auto_hedge_score": return 5
+        # WP5b: default is now notify; this test exercises the legacy order path.
+        if key == "sentinel_emergency_protocol_mode": return "legacy"
         return default
     svc.get_setting.side_effect = mock_get
     return svc

@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 from src.config.owner import resolve_user_id
+from src.services.signed_alpha import signed_alpha
 
 logger = logging.getLogger(__name__)
 
@@ -126,12 +127,18 @@ class RuleLifecycleService:
 
     # ── Scoring (called from OutcomeReflectionService on resolution) ────
 
-    def backfill_score(self, decision_id: str, alpha_pct: float) -> int:
+    def backfill_score(self, decision_id: str, alpha_pct: float, direction: str) -> int:
         """
         Pure-SQL EWMA update: every rule cited for this decision gets
-        score = (1-EWMA_ALPHA)*old_score + EWMA_ALPHA*alpha_pct. Also
+        score = (1-EWMA_ALPHA)*old_score + EWMA_ALPHA*signed_alpha. Also
         backfills rule_citations.alpha_pct for audit. Returns rows updated.
+
+        `alpha_pct` is the raw realized - benchmark; `direction` (BUY|SELL)
+        orients it so a profitable SELL raises rule scores. Unknown direction
+        raises ValueError (never defaulted).
+        `alpha_pct` 為原始 alpha，依 direction 校正正負；未知方向直接 raise。
         """
+        alpha_pct = signed_alpha(alpha_pct, direction)
         try:
             with self._engine().begin() as conn:
                 conn.execute(
@@ -436,6 +443,7 @@ class RuleLifecycleService:
                           AND id != :exclude_id
                           AND resolved_at IS NOT NULL
                           AND alpha_pct IS NOT NULL
+                          AND NOT is_counterfactual
                         ORDER BY CASE WHEN agent_name = :agent_name THEN 1 ELSE 0 END DESC, resolved_at DESC
                         LIMIT :limit
                     """),

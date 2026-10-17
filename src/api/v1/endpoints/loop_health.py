@@ -55,7 +55,7 @@ def _learning_metrics(conn, user_id: str) -> Dict[str, Any]:
             SELECT
                 COUNT(*) AS total,
                 COUNT(*) FILTER (WHERE resolved_at IS NOT NULL) AS resolved
-            FROM decision_outcomes WHERE user_id = :uid
+            FROM decision_outcomes WHERE user_id = :uid AND NOT is_counterfactual
         """),
         {"uid": user_id},
     ).fetchone()

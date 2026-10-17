@@ -81,7 +81,7 @@ class TestScoreBackfill:
         svc = RuleLifecycleService(user_id="u1")
 
         with patch("src.data.database.get_db_engine", return_value=engine):
-            updated = svc.backfill_score("dec-1", alpha_pct=-3.5)
+            updated = svc.backfill_score("dec-1", alpha_pct=-3.5, direction="BUY")
 
         assert updated == 2
         calls = conn.execute.call_args_list
@@ -96,8 +96,22 @@ class TestScoreBackfill:
     def test_backfill_score_swallows_db_errors(self):
         svc = RuleLifecycleService(user_id="u1")
         with patch("src.data.database.get_db_engine", side_effect=Exception("db down")):
-            result = svc.backfill_score("dec-1", -3.5)
+            result = svc.backfill_score("dec-1", -3.5, "BUY")
         assert result == 0
+
+    def test_backfill_score_sell_scores_positive_when_price_fell(self, mock_engine):
+        engine, conn = mock_engine
+        conn.execute.return_value.rowcount = 1
+        svc = RuleLifecycleService(user_id="u1")
+        with patch("src.data.database.get_db_engine", return_value=engine):
+            # raw alpha -4 on a SELL == the call was right: score gets +4
+            svc.backfill_score("dec-1", alpha_pct=-4.0, direction="SELL")
+        assert conn.execute.call_args_list[1][0][1]["alpha"] == 4.0
+
+    def test_backfill_score_unknown_direction_raises(self):
+        import pytest
+        with pytest.raises(ValueError):
+            RuleLifecycleService(user_id="u1").backfill_score("dec-1", 1.0, "HOLD")
 
 
 class TestExpiry:
