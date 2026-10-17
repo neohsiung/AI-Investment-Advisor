@@ -10,6 +10,7 @@
 
 ## 檢查清單 / Checklist
 - [ ] `pytest tests/invariants tests/unit/config tests/unit/deploy` 通過
+- [ ] `scripts/ci_local.sh` 通過（Alembic upgrade+check、Bandit、wiki 連結；新增資料表時必跑）
 - [ ] 未新增寫死分數、未新增繞過 executor 的下單呼叫、未新增 `exec`
 - [ ] 若修改 mission.yaml：已新增 ADR 條目
 - [ ] 文件未寫入會漂移的數字（交易筆數、成本、上限）
