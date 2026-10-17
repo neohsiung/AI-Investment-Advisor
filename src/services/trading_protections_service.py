@@ -50,8 +50,14 @@ _SETTING_DEFAULTS = {
     "protection_sell_churn_max_round_trips": SELL_CHURN_MAX_ROUND_TRIPS,
     "protection_flip_flop_lockout_enabled": True,
     "protection_flip_flop_cooldown_hours": 24.0,
+    # One alert per (rule, ticker) per window; the same breach re-evaluated every few minutes must not re-email.
+    # 同一規則＋標的在視窗內只通知一次；每幾分鐘重評同一個違規不得重複寄信。
+    "protection_alert_dedupe_hours": 24.0,
     "protection_lockout_reset_at": None,
 }
+
+# In-process fallback for the alert window when Redis is unavailable. / Redis 不可用時的行程內備援視窗。
+_LOCAL_ALERT_SEEN: dict = {}
 
 # `decision_outcomes.signal` carries a FIVE-value scale (structured.Rating:
 # STRONG_BUY | BUY | HOLD | SELL | STRONG_SELL), so filtering on `= 'BUY'`
@@ -142,7 +148,7 @@ class TradingProtectionsService:
         self._cfg = cfg
         return cfg
 
-    def check(self, ticker: str, action: str, strategy_name: Optional[str] = None) -> Optional[str]:
+    def check(self, ticker: str, action: str, strategy_name: Optional[str] = None, notify: bool = True) -> Optional[str]:
         """
         Returns None if the trade may proceed, or a human-readable block
         reason string if a protection rule fires. Both BUY and SELL are gated
@@ -187,7 +193,8 @@ class TradingProtectionsService:
         try:
             flip_flop_reason = self._check_flip_flop_lockout(ticker, side, strategy_name=strategy_name)
             if flip_flop_reason:
-                self._dispatch_protection_alert_safely(flip_flop_reason, ticker)
+                if notify:
+                    self._dispatch_protection_alert_safely(flip_flop_reason, ticker)
                 return flip_flop_reason
         except Exception as exc:
             logger.error("TradingProtectionsService: Flip-flop lockout check error: %s", exc)
@@ -199,7 +206,7 @@ class TradingProtectionsService:
                 or self._check_ticker_cooldown(ticker)
                 or self._check_consecutive_loss_lockout()
             )
-            if reason:
+            if reason and notify:
                 self._dispatch_protection_alert_safely(reason, ticker)
             return reason
         except Exception as exc:
@@ -513,29 +520,61 @@ class TradingProtectionsService:
         )
         return now_iso
 
+    @staticmethod
+    def _rule_name_for(reason: str) -> str:
+        low = reason.lower()
+        if "drawdown" in low or "alpha" in low:
+            return "全域回撤停機"
+        if "consecutive" in low or "loss" in low:
+            return "連續虧損鎖定"
+        if "cooldown" in low:
+            return "個股冷卻"
+        return "交易保護停機"
+
+    def _first_alert_in_window(self, rule_name: str, ticker: str) -> bool:
+        """True only for the first alert of (rule, ticker) inside the dedupe window (Redis NX, in-process fallback).
+        視窗內同一（規則, 標的）只有第一次回 True；Redis 不可用時退回行程內計時。"""
+        import time
+        hours = float(self._load_config().get("protection_alert_dedupe_hours", 24.0) or 0)
+        if hours <= 0:
+            return True  # dedupe disabled
+        key = f"protection_alert:{self.user_id}:{rule_name}:{(ticker or '').upper()}"
+        ttl = int(hours * 3600)
+        try:
+            from src.infrastructure.cache.redis_client import get_redis_sync
+            return bool(get_redis_sync().set(key, "1", ex=ttl, nx=True))
+        except Exception as exc:
+            logger.warning("TradingProtectionsService: alert dedupe via Redis unavailable (%s); using in-process window", exc)
+            now = time.monotonic()
+            last = _LOCAL_ALERT_SEEN.get(key)
+            if last is not None and now - last < ttl:
+                return False
+            _LOCAL_ALERT_SEEN[key] = now
+            return True
+
     def _dispatch_protection_alert_safely(self, reason: str, ticker: str) -> None:
-        """Fire-and-forget actionable alert dispatch on protection breach."""
+        """Fire-and-forget actionable alert dispatch on protection breach, at most once per (rule, ticker) window."""
         try:
             import asyncio
             from src.services.actionable_alert_service import ActionableAlertHubService
-            hub = ActionableAlertHubService(user_id=self.user_id)
-            rule_name = (
-                "全域回撤停機" if "drawdown" in reason.lower() or "alpha" in reason.lower() else (
-                    "連續虧損鎖定" if "consecutive" in reason.lower() or "loss" in reason.lower() else (
-                        "個股冷卻" if "cooldown" in reason.lower() else "交易保護停機"
-                    )
-                )
-            )
+            rule_name = self._rule_name_for(reason)
             try:
                 loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(hub.dispatch_protection_breached_alert(
-                        rule_name=rule_name,
-                        reason=reason,
-                        ticker=ticker,
-                    ))
+                can_schedule = loop.is_running()
             except Exception as loop_err:
                 logger.debug("TradingProtectionsService: could not schedule alert on loop: %s", loop_err)
+                return
+            if not can_schedule:
+                return  # nothing would be sent; do not burn the dedupe window for an alert that never goes out
+            if not self._first_alert_in_window(rule_name, ticker):
+                logger.debug("TradingProtectionsService: duplicate %s alert for %s suppressed", rule_name, ticker)
+                return
+            hub = ActionableAlertHubService(user_id=self.user_id)
+            asyncio.create_task(hub.dispatch_protection_breached_alert(
+                rule_name=rule_name,
+                reason=reason,
+                ticker=ticker,
+            ))
         except Exception as e:
             logger.debug("TradingProtectionsService: alert dispatch skipped: %s", e)
 

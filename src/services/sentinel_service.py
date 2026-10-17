@@ -4540,7 +4540,7 @@ class SentinelService:
 
                 # Filter out candidate if it is currently locked out or in cooldown
                 if protections_svc:
-                    prot_reason = protections_svc.check(ticker=cand_ticker, action="BUY", strategy_name="capital_rotation")
+                    prot_reason = protections_svc.check(ticker=cand_ticker, action="BUY", strategy_name="capital_rotation", notify=False)
                     if prot_reason:
                         logger.info(
                             f"[Capital Rotation] Candidate {cand_ticker} disqualified by TradingProtections: {prot_reason}"
