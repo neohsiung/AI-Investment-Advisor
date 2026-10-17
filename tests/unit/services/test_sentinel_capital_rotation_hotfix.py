@@ -76,7 +76,7 @@ async def test_rotation_candidate_disqualified_by_trading_protections(mock_senti
 
     with patch("src.services.trading_protections_service.TradingProtectionsService.check") as mock_check:
         # Simulate NVDA is blocked by 24h flip-flop lockout
-        mock_check.side_effect = lambda ticker, action, strategy_name: (
+        mock_check.side_effect = lambda ticker, action, strategy_name, **kw: (
             "NVDA 24h Flip-Flop Lockout: Blocked BUY" if ticker == "NVDA" else None
         )
 
