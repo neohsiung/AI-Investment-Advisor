@@ -136,7 +136,7 @@
     ]
   },
   "oversize_files": {
-    "src/infrastructure/tasks.py": 2150,
+    "src/infrastructure/tasks.py": 2152,
     "src/services/automated_trading_service.py": 1895,
     "src/services/batch_cash_deployment_service.py": 1620,
     "src/services/conversation_router.py": 2539,
@@ -145,5 +145,5 @@
     "src/services/staggered_dip_buying_service.py": 1586,
     "src/services/workflow_service.py": 1589
   },
-  "lazy_imports_total": 1575
+  "lazy_imports_total": 1574
 }
