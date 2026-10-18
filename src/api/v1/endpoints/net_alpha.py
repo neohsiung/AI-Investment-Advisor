@@ -32,4 +32,6 @@ async def get_net_alpha(
         return {"status": "success", "data": report.to_dict()}
     except Exception as e:
         logger.error(f"get_net_alpha failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Generic detail: the cause is in the log above, never echoed to the client (CodeQL py/stack-trace-exposure).
+        # 對外只回通用訊息；原因已記錄在上方日誌。
+        raise HTTPException(status_code=500, detail="Net alpha report failed")
