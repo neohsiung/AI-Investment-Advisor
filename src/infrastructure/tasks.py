@@ -800,13 +800,15 @@ def run_strategy_lab():
         from src.evaluation.data import load_price_panel
         from src.services.market_data_service import MarketDataService
         from src.services.strategy_lab_service import StrategyLabService
-        from src.services.universe_lifecycle_service import DEFAULT_CANDIDATE_POOL
 
         benchmark = load_mission().objective.benchmark
         from src.config.owner import resolve_user_id
         uid = resolve_user_id(None)  # single owner; the stack sets no PRIMARY_USER_ID / 單一擁有者，部署未設環境變數
-        prices = load_price_panel(MarketDataService(user_id=uid), DEFAULT_CANDIDATE_POOL, days=2600, benchmark=benchmark)
-        res = StrategyLabService().run(prices, benchmark=benchmark)
+        # Fixed ETF universe from config/evaluation.yaml, not today's large-cap winners (survivorship bias).
+        # 固定 ETF 宇宙（config/evaluation.yaml），不是今天的大型股贏家（存活者偏誤）。
+        lab = StrategyLabService()
+        prices = load_price_panel(MarketDataService(user_id=uid), lab.universe, days=2600, benchmark=benchmark)
+        res = lab.run(prices, benchmark=benchmark)
         logger.info("run_strategy_lab: N=%s variants=%s shadow_candidates=%s",
                     res["n_trials_total"], res["variants_evaluated"], len(res["shadow_candidates"]))
         return {k: res[k] for k in ("n_trials_total", "variants_evaluated", "shadow_candidates", "trials_deferred", "cap_reached")}
