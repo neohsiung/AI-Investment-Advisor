@@ -1,0 +1,45 @@
+# Evaluation inputs for the offline strategy lab (promotion evidence). NOT a trading setting.
+# 離線策略實驗室（晉升證據）的評估輸入；不是交易設定。
+#
+# Rules / 規則:
+#   * Promotion thresholds (DSR, t-stat) live in config/mission.yaml; this file only holds the cost model and universe.
+#   * A variant is promotable only if it passes at EVERY multiplier below (the lab enforces it; the loader requires 1x and >=2x).
+#   * Changing the universe or the multipliers creates NEW trials in the multiple-testing ledger (N grows) by design.
+#   * Validated by src/config/evaluation.py (pydantic); tests/unit/config/test_evaluation_config.py.
+version: 1
+
+# One-way cost in basis points of traded notional, applied to every weight change (spread + slippage + any fee).
+# UNVERIFIED: the eToro per-trade fee and slippage for a Taiwan-resident account have not been measured.
+# 10 bps/side is the pre-M-A1 value, kept as a deliberately conservative default for liquid US ETFs
+# (observed SPY spread ~0.4 bps, mission ADR-002). TODO: replace by a measured number from the broker ledger
+# (transactions fees / fills vs mid) and flip cost_basis_status to `measured` with a note on how it was derived.
+# 單邊成本（基點）：eToro 單筆手續費與滑價尚未實測；沿用 10 bps 作為保守預設，待由券商帳本實測後替換。
+cost_bps_per_side: 10.0
+cost_basis_status: unverified_conservative_default   # unverified_conservative_default | measured
+cost_basis_note: "pre-M-A1 default carried over; no measured eToro fee yet"
+
+# Cost stress levels: the lab evaluates every variant at each multiplier x cost_bps_per_side. Must include 1.0 and >= 2.0.
+cost_multipliers: [1.0, 2.0]
+
+# Fixed ex-ante ETF universe (sector, size, region, rates, commodities). Chosen for liquidity and long history,
+# never by trailing performance, so today's winners cannot leak in (survivorship bias). The benchmark is added by the loader.
+# 事前固定的 ETF 宇宙（板塊、規模、地區、利率、商品）：依流動性與歷史長度選取，不依過往績效，避免存活者偏誤。
+etf_universe:
+  - QQQ   # Nasdaq-100
+  - IWM   # Russell 2000
+  - EFA   # developed ex-US
+  - EEM   # emerging markets
+  - XLK   # technology
+  - XLF   # financials
+  - XLV   # health care
+  - XLE   # energy
+  - XLY   # consumer discretionary
+  - XLP   # consumer staples
+  - XLI   # industrials
+  - XLB   # materials
+  - XLU   # utilities
+  - TLT   # long Treasuries
+  - IEF   # intermediate Treasuries
+  - LQD   # investment-grade credit
+  - GLD   # gold
+  - VNQ   # US real estate
