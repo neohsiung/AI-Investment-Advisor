@@ -1,0 +1,149 @@
+{
+  "max_lines": 1500,
+  "violating_edges": {
+    "src/config/owner.py": [
+      "shared->adapters:src.data.database",
+      "shared->adapters:src.repositories.user_repository"
+    ],
+    "src/config/rss_config.py": [
+      "shared->application:src.services.settings_service"
+    ],
+    "src/data/providers/__init__.py": [
+      "adapters->application:src.plugins.registry"
+    ],
+    "src/data/providers/alpha_vantage_provider.py": [
+      "adapters->application:src.services.settings_service"
+    ],
+    "src/data/providers/financialdata_provider.py": [
+      "adapters->application:src.services.settings_service"
+    ],
+    "src/data/providers/finnhub_provider.py": [
+      "adapters->application:src.services.settings_service"
+    ],
+    "src/data/providers/fmp_provider.py": [
+      "adapters->application:src.services.settings_service"
+    ],
+    "src/data/providers/fred_provider.py": [
+      "adapters->application:src.services.fred_service"
+    ],
+    "src/data/providers/polygon_provider.py": [
+      "adapters->application:src.services.settings_service"
+    ],
+    "src/data/providers/readwise_provider.py": [
+      "adapters->application:src.services.settings_service"
+    ],
+    "src/data/providers/tiingo_provider.py": [
+      "adapters->application:src.services.settings_service"
+    ],
+    "src/data/providers/yfinance_provider.py": [
+      "adapters->application:src.services.settings_service"
+    ],
+    "src/domain/dynamic_strategy_contract.py": [
+      "domain->application:src.services.code_synthesis.factor_synthesizer"
+    ],
+    "src/infrastructure/agent_llm_provider.py": [
+      "infrastructure->application:src.agents.factory"
+    ],
+    "src/infrastructure/celery_app.py": [
+      "infrastructure->entrypoints:src.infrastructure.tasks"
+    ],
+    "src/infrastructure/channels/channel_factory.py": [
+      "infrastructure->application:src.plugins.registry"
+    ],
+    "src/infrastructure/channels/telegram_adapter.py": [
+      "infrastructure->application:src.services.llm_credential_cipher",
+      "infrastructure->application:src.services.notification_filters"
+    ],
+    "src/infrastructure/llm/budget_aware_model_router.py": [
+      "infrastructure->application:src.services.hard_token_budget_guard_service",
+      "infrastructure->application:src.services.llm_agent_override_service",
+      "infrastructure->application:src.services.settings_service",
+      "infrastructure->application:src.services.token_logger_service"
+    ],
+    "src/infrastructure/llm/llm_config_chain.py": [
+      "infrastructure->application:src.services.llm_credential_cipher"
+    ],
+    "src/infrastructure/memory/channel_memory_manager.py": [
+      "infrastructure->application:src.agents.factory"
+    ],
+    "src/infrastructure/memory/cognitive_memory.py": [
+      "infrastructure->application:src.services.settings_service",
+      "infrastructure->application:src.services.token_logger_service"
+    ],
+    "src/infrastructure/memory/mem0_integration.py": [
+      "infrastructure->application:src.services.settings_service"
+    ],
+    "src/infrastructure/messaging/channel_gateway.py": [
+      "infrastructure->application:src.agents.conversation_agent",
+      "infrastructure->application:src.agents.persona.persona_provider",
+      "infrastructure->application:src.services.cognitive_memory_manager",
+      "infrastructure->application:src.services.notification_service"
+    ],
+    "src/infrastructure/nlp/intent_classifier.py": [
+      "infrastructure->application:src.agents.factory"
+    ],
+    "src/infrastructure/risk_manager.py": [
+      "infrastructure->application:src.services.market_data_service",
+      "infrastructure->application:src.services.strategy_registry"
+    ],
+    "src/infrastructure/streams/polygon_stream_client.py": [
+      "infrastructure->application:src.services.settings_service"
+    ],
+    "src/infrastructure/workflow/nodes/portfolio.py": [
+      "infrastructure->application:src.agents.structured",
+      "infrastructure->application:src.services.market_data_service",
+      "infrastructure->application:src.services.rule_lifecycle_service"
+    ],
+    "src/infrastructure/workflow/stages.py": [
+      "infrastructure->application:src.services.market_data_service",
+      "infrastructure->application:src.services.workflow_service"
+    ],
+    "src/repositories/memory_repository.py": [
+      "adapters->application:src.agents.registry"
+    ],
+    "src/repositories/transaction_repository.py": [
+      "adapters->application:src.services.market_data_service"
+    ],
+    "src/repositories/user_repository.py": [
+      "adapters->application:src.services.llm_onboarding_service"
+    ],
+    "src/services/batch_cash_deployment_service.py": [
+      "application->entrypoints:src.infrastructure.tasks"
+    ],
+    "src/services/conversation_router.py": [
+      "application->entrypoints:src.infrastructure.tasks"
+    ],
+    "src/services/dashboard_router.py": [
+      "application->entrypoints:src.infrastructure.tasks"
+    ],
+    "src/services/etoro_service.py": [
+      "application->entrypoints:src.api.v1.exceptions"
+    ],
+    "src/services/portfolio_aggregator_service.py": [
+      "application->entrypoints:src.api.v1.exceptions"
+    ],
+    "src/services/scheduler_service.py": [
+      "application->entrypoints:src.infrastructure.tasks"
+    ],
+    "src/services/sentinel_service.py": [
+      "application->entrypoints:src.api.v1.exceptions"
+    ],
+    "src/utils/cache.py": [
+      "shared->infrastructure:src.infrastructure.cache.redis_client"
+    ],
+    "src/utils/time_utils.py": [
+      "shared->adapters:src.data.database"
+    ]
+  },
+  "oversize_files": {
+    "src/infrastructure/tasks.py": 2150,
+    "src/services/automated_trading_service.py": 1895,
+    "src/services/batch_cash_deployment_service.py": 1620,
+    "src/services/conversation_router.py": 2539,
+    "src/services/etoro_service.py": 1504,
+    "src/services/sentinel_service.py": 5004,
+    "src/services/staggered_dip_buying_service.py": 1586,
+    "src/services/workflow_service.py": 1589
+  },
+  "lazy_imports_total": 1575
+}
