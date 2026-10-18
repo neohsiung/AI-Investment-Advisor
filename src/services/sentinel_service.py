@@ -2472,7 +2472,7 @@ class SentinelService:
         if mode == "notify":
             logger.warning(
                 "Sentinel: emergency condition detected; mode=notify, NO orders placed. "
-                f"Rationale: {redact_secrets(rationale)[:200]}"
+                f"(rationale omitted from logs, {len(rationale or '')} chars; it is in the notification)"
             )
             try:
                 await self._dispatch_notifications_direct(

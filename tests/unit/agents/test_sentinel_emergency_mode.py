@@ -113,7 +113,7 @@ def test_schema_default_is_notify():
 
 
 @pytest.mark.anyio
-async def test_notify_mode_logs_the_rationale_redacted_never_in_clear_text():
+async def test_notify_mode_never_logs_the_free_text_rationale():
     """CodeQL py/clear-text-logging-sensitive-data (#165): the rationale is free text and may carry a token."""
     svc = _make("notify")
     auto = AsyncMock()
@@ -124,4 +124,5 @@ async def test_notify_mode_logs_the_rationale_redacted_never_in_clear_text():
         await svc._trigger_emergency_protocol("user123", f"VIX spike; Authorization: {secret}")
     logged = " ".join(str(c) for c in log.warning.call_args_list)
     assert "abcdefghijklmnop1234567890" not in logged
-    assert "VIX spike" in logged            # the useful part is still logged
+    assert "VIX spike" not in logged        # free text is not logged at all (CodeQL does not treat redact_secrets as a sanitizer)
+    assert "NO orders placed" in logged     # the fact of the emergency and the no-order outcome still are
