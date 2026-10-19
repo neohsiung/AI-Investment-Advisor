@@ -1,3 +1,5 @@
+<!-- 描述以繁體中文為主、英文為輔：頂部附 2–4 行 English summary；指令、路徑、識別名稱、錯誤訊息保持英文。見 .agent/rules/documentation-standards.md §1.2b -->
+
 ## 變更摘要 / Summary
 
 ## 風險等級 / Change-risk tier  (check one)
