@@ -62,6 +62,10 @@ class GEXExposureMetric:
     evaluated_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    # Set when the metric is NOT a real measurement (e.g. no option chain provider).
+    # Callers must treat a metric with a fallback_reason as "not applicable", never as a pass.
+    # 非真實量測時必填（例如無選擇權鏈來源）；呼叫端須視為「不適用」，不得當作通過。
+    fallback_reason: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -80,6 +84,7 @@ class GEXExposureMetric:
             "requires_protection": self.requires_protection,
             "rationale": self.rationale,
             "evaluated_at": self.evaluated_at,
+            "fallback_reason": self.fallback_reason,
         }
 
     @classmethod
@@ -100,6 +105,7 @@ class GEXExposureMetric:
             requires_protection=bool(data.get("requires_protection", False)),
             rationale=str(data.get("rationale", "")),
             evaluated_at=data.get("evaluated_at") or datetime.now(timezone.utc).isoformat(),
+            fallback_reason=data.get("fallback_reason"),
         )
 
 
@@ -110,6 +116,8 @@ class OptionGammaExposureGEXService:
     REGIME_NEGATIVE_GAMMA = "NEGATIVE_GAMMA_VOLATILITY_ACCELERATOR"
     REGIME_FLIP_WARNING = "ZERO_GAMMA_FLIP_WARNING"
     REGIME_OPEX_PIN = "OPEX_PIN_CONVERGENCE"
+    REGIME_UNAVAILABLE = "UNAVAILABLE_NO_OPTIONS_CHAIN"
+    FALLBACK_NO_CHAIN = "no_options_chain_provider"
 
     REDIS_CACHE_TTL_SECONDS = 300
     REDIS_KEY_PREFIX = "gex_service:metric"
@@ -151,12 +159,12 @@ class OptionGammaExposureGEXService:
 
     async def is_enabled(self) -> bool:
         """檢查是否啟用做市商淨伽馬暴露與釘盤預測"""
-        val = self._get_setting("enable_option_gamma_exposure_gex", True)
+        val = self._get_setting("enable_option_gamma_exposure_gex", False)
         if isinstance(val, bool):
             return val
         if isinstance(val, str):
             return val.lower() in ("true", "1", "yes")
-        return True
+        return False
 
     # -------------------------------------------------------------
     # 核心數學演算法：Black-Scholes-Merton 伽馬與 Dollar GEX 精算
@@ -344,56 +352,28 @@ class OptionGammaExposureGEXService:
         return round(spot * 1.15, 2)
 
     # -------------------------------------------------------------
-    # 選擇權鏈獲取或數理降級合成 (Fallback Synthetic Chain)
+    # 選擇權鏈獲取（僅真實來源；無來源回 None，絕不合成）
     # -------------------------------------------------------------
-    async def get_or_synthesize_options_chain(
+    async def get_options_chain(
         self,
         ticker: str,
-        spot: float,
-    ) -> List[Dict[str, Any]]:
+    ) -> Optional[List[Dict[str, Any]]]:
         """
-        獲取實盤選擇權鏈或基於市場資料合成具備流動性特徵之選擇權鏈。
+        Return a real option chain from the market-data provider, or None when no provider
+        can supply one. Never fabricates a chain.
+        回傳真實選擇權鏈；無來源時回 None，絕不合成。
         """
-        chain: List[Dict[str, Any]] = []
-
-        # 1. 嘗試從 MarketDataService 獲取真實選擇權資料
-        if self.market_data_service and hasattr(self.market_data_service, "get_options_chain"):
-            try:
-                raw_chain = await self.market_data_service.get_options_chain(ticker)
-                if raw_chain and isinstance(raw_chain, list) and len(raw_chain) >= 4:
-                    return raw_chain
-            except Exception as e:
-                logger.debug(f"Direct options chain fetch failed for {ticker}: {e}")
-
-        # 2. 數理第一原則：依據真實市價、VIX 與典型成交量分佈合成
-        vix_val = 20.0
-        if self.market_data_service and hasattr(self.market_data_service, "get_macro_data"):
-            try:
-                macro = self.market_data_service.get_macro_data()
-                vix_val = float(macro.get("market_indicators", {}).get("^VIX", 20.0) or 20.0)
-            except Exception:
-                pass
-
-        base_iv = max(0.15, min(0.85, vix_val / 100.0 * 1.1))
-        # Synthesize standard strikes across 80% ~ 120% of spot
-        strike_steps = [-0.15, -0.10, -0.05, -0.02, 0.0, 0.02, 0.05, 0.10, 0.15]
-        for step in strike_steps:
-            stk = round(spot * (1.0 + step), 1)
-            # Standard equity structure: Call OI exceeds Put OI near ATM, puts concentrate on downside wings
-            call_oi = max(50.0, 1500.0 * math.exp(-2.5 * abs(step)))
-            put_oi = max(50.0, 900.0 * math.exp(-3.5 * abs(step + 0.05)))
-            # Skew effect: IV higher on puts
-            call_iv = base_iv * (1.0 - 0.2 * step)
-            put_iv = base_iv * (1.0 - 0.4 * step)
-
-            # Front-month expiry (7 days)
-            chain.append({"type": "CALL", "strike": stk, "open_interest": call_oi, "implied_volatility": call_iv, "days_to_expiry": 7})
-            chain.append({"type": "PUT", "strike": stk, "open_interest": put_oi, "implied_volatility": put_iv, "days_to_expiry": 7})
-            # Monthly expiry (28 days)
-            chain.append({"type": "CALL", "strike": stk, "open_interest": call_oi * 1.5, "implied_volatility": call_iv * 0.98, "days_to_expiry": 28})
-            chain.append({"type": "PUT", "strike": stk, "open_interest": put_oi * 1.2, "implied_volatility": put_iv * 1.02, "days_to_expiry": 28})
-
-        return chain
+        provider = self.market_data_service
+        if provider is None or not hasattr(provider, "get_options_chain"):
+            return None
+        try:
+            raw_chain = await provider.get_options_chain(ticker)
+        except Exception as e:
+            logger.warning(f"Options chain fetch failed for {ticker}: {e}")
+            return None
+        if raw_chain and isinstance(raw_chain, list) and len(raw_chain) >= 4:
+            return raw_chain
+        return None
 
     # -------------------------------------------------------------
     # 診斷與體制判定 (Regime Evaluation)
@@ -408,7 +388,32 @@ class OptionGammaExposureGEXService:
         """
         sym = ticker.upper().strip()
 
-        # 1. 取得現貨市價
+        # 1. 取得真實選擇權鏈；無來源 → 標記不適用，不產生體制與數字
+        chain = await self.get_options_chain(sym)
+        if chain is None:
+            logger.warning(
+                f"GEX for {sym}: no options chain provider, result marked "
+                f"{self.FALLBACK_NO_CHAIN} (guard not applicable)"
+            )
+            return GEXExposureMetric(
+                ticker=sym,
+                spot_price=float(spot_price or 0.0),
+                net_gex=0.0,
+                call_gex=0.0,
+                put_gex=0.0,
+                zero_gamma_flip_point=0.0,
+                distance_to_flip_pct=0.0,
+                max_oi_pin_strike=0.0,
+                pinning_gravity_score=0.0,
+                days_to_opex=0,
+                regime=self.REGIME_UNAVAILABLE,
+                volatility_damping_multiplier=1.0,
+                requires_protection=False,
+                rationale="No real option chain available; GEX not measured.",
+                fallback_reason=self.FALLBACK_NO_CHAIN,
+            )
+
+        # 2. 取得現貨市價（鏈為真實時才需要）
         spot = spot_price or 0.0
         if spot <= 0:
             try:
@@ -417,19 +422,19 @@ class OptionGammaExposureGEXService:
                     cached_p = await r.get(f"market:price:{sym}")
                     if cached_p:
                         spot = float(cached_p)
-            except Exception:
-                pass
-
+            except Exception as e:
+                logger.warning(f"GEX spot price cache read failed for {sym}: {e}")
         if spot <= 0:
-            prior_price_map = {
-                "SPY": 580.0, "QQQ": 490.0, "NVDA": 135.0, "AAPL": 230.0,
-                "MSFT": 420.0, "TSM": 190.0, "META": 580.0, "AMD": 160.0,
-                "AMZN": 190.0, "GOOGL": 170.0, "TSLA": 220.0,
-            }
-            spot = prior_price_map.get(sym, 100.0)
-
-        # 2. 獲取選擇權鏈
-        chain = await self.get_or_synthesize_options_chain(sym, spot)
+            logger.warning(f"GEX for {sym}: no spot price, result marked no_spot_price")
+            return GEXExposureMetric(
+                ticker=sym, spot_price=0.0, net_gex=0.0, call_gex=0.0, put_gex=0.0,
+                zero_gamma_flip_point=0.0, distance_to_flip_pct=0.0, max_oi_pin_strike=0.0,
+                pinning_gravity_score=0.0, days_to_opex=0,
+                regime=self.REGIME_UNAVAILABLE, volatility_damping_multiplier=1.0,
+                requires_protection=False,
+                rationale="No spot price available; GEX not measured.",
+                fallback_reason="no_spot_price",
+            )
 
         # 3. 精算 GEX Profile
         profile = self.compute_aggregate_gex_profile(spot, chain)
@@ -517,6 +522,13 @@ class OptionGammaExposureGEXService:
         """
         格式化做市商淨伽馬暴露戰報，恪守 Telegram HTML 與 Email nl2br 規範。
         """
+        if metric.fallback_reason:
+            return (
+                f"<b>📊 做市商淨伽馬暴露 (GEX)</b>\n\n"
+                f"🎯 <b>標的代號</b>：<code>{metric.ticker}</code>\n"
+                f"⚪ <b>不適用</b>：無真實選擇權鏈來源，未產生體制或數值 "
+                f"(<code>{metric.fallback_reason}</code>)"
+            )
         regime_badges = {
             self.REGIME_POSITIVE_GAMMA: "🟢 正伽馬黏性穩定 (Sticky Damping)",
             self.REGIME_NEGATIVE_GAMMA: "🔴 負伽馬波動加速 (Volatility Accelerator)",

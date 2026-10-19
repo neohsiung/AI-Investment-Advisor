@@ -59,9 +59,19 @@ def test_spread_zscore_calculation():
 @pytest.mark.anyio
 async def test_evaluate_pairs_cointegration():
     """Verify full pairs evaluation and report generation."""
-    service = KalmanPairsCointegrationService(user_id="test_user")
+    # Real (non-synthetic) history so the full measurement and report path is exercised.
+    # 使用真實（非合成）歷史價，才會走完整量測與報表路徑。
+    from unittest.mock import MagicMock
+    md = MagicMock()
+
+    async def _hist(_t, days=60):
+        return [100.0 + i * 0.1 + (0.4 if i % 3 else -0.4) for i in range(40)]
+
+    md.get_historical_prices = _hist
+    service = KalmanPairsCointegrationService(user_id="test_user", market_data_service=md)
 
     metric = await service.evaluate_pairs_cointegration("NVDA", "AMD")
+    assert metric.fallback_reason is None
     assert metric.ticker_y == "NVDA"
     assert metric.ticker_x == "AMD"
     assert metric.regime in (

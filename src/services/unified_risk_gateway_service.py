@@ -304,26 +304,38 @@ class UnifiedRiskGatewayService:
                 gex_svc = OptionGammaExposureGEXService(user_id=self.user_id)
                 if await gex_svc.is_enabled():
                     gex_metric = await gex_svc.evaluate_ticker_gex(sym, spot_price=current_price)
-                    guard_details["gamma_exposure_gex"] = {
-                        "regime": gex_metric.regime,
-                        "net_gex": gex_metric.net_gex,
-                        "zero_gamma_flip_point": gex_metric.zero_gamma_flip_point,
-                        "distance_to_flip_pct": gex_metric.distance_to_flip_pct,
-                        "volatility_damping_multiplier": gex_metric.volatility_damping_multiplier,
-                        "requires_protection": gex_metric.requires_protection,
-                    }
-                    if gex_metric.regime == OptionGammaExposureGEXService.REGIME_NEGATIVE_GAMMA and gex_metric.distance_to_flip_pct < -0.05:
-                        reasons.append(
-                            f"[OptionGEX] Market maker negative gamma regime active (Net GEX=${gex_metric.net_gex/1e6:.2f}M, Spot < Flip ${gex_metric.zero_gamma_flip_point:.2f})"
+                    if gex_metric.fallback_reason:
+                        # Not a real measurement: mark as not applicable, never pass-with-numbers, never block.
+                        # 非真實量測：標記為不適用，不當作帶數字的通過，也不阻擋。
+                        guard_details["gamma_exposure_gex"] = {
+                            "status": "not_applicable",
+                            "fallback_reason": gex_metric.fallback_reason,
+                        }
+                        logger.warning(
+                            "UnifiedRiskGateway: Option GEX not applicable for %s (%s)",
+                            sym, gex_metric.fallback_reason,
                         )
-                        return RiskGatewayResult(
-                            allowed=False,
-                            severity=RiskSeverity.DEGRADED,
-                            primary_blocker="NegativeGammaVolatilityAccelerator",
-                            reasons=reasons,
-                            guard_details=guard_details,
-                            evaluated_at=now_iso,
-                        )
+                    else:
+                        guard_details["gamma_exposure_gex"] = {
+                            "regime": gex_metric.regime,
+                            "net_gex": gex_metric.net_gex,
+                            "zero_gamma_flip_point": gex_metric.zero_gamma_flip_point,
+                            "distance_to_flip_pct": gex_metric.distance_to_flip_pct,
+                            "volatility_damping_multiplier": gex_metric.volatility_damping_multiplier,
+                            "requires_protection": gex_metric.requires_protection,
+                        }
+                        if gex_metric.regime == OptionGammaExposureGEXService.REGIME_NEGATIVE_GAMMA and gex_metric.distance_to_flip_pct < -0.05:
+                            reasons.append(
+                                f"[OptionGEX] Market maker negative gamma regime active (Net GEX=${gex_metric.net_gex/1e6:.2f}M, Spot < Flip ${gex_metric.zero_gamma_flip_point:.2f})"
+                            )
+                            return RiskGatewayResult(
+                                allowed=False,
+                                severity=RiskSeverity.DEGRADED,
+                                primary_blocker="NegativeGammaVolatilityAccelerator",
+                                reasons=reasons,
+                                guard_details=guard_details,
+                                evaluated_at=now_iso,
+                            )
             except Exception as e:
                 self._guard_degraded(guard_details, "Option GEX", e)
 
@@ -338,25 +350,37 @@ class UnifiedRiskGatewayService:
                 if await pairs_svc.is_enabled():
                     pair_x = guard_details.get("paired_ticker") or ("SPY" if sym != "SPY" else "QQQ")
                     pairs_metric = await pairs_svc.evaluate_pairs_cointegration(sym, str(pair_x))
-                    guard_details["kalman_pairs"] = {
-                        "regime": pairs_metric.regime,
-                        "dynamic_beta": pairs_metric.dynamic_beta,
-                        "spread_zscore": pairs_metric.spread_zscore,
-                        "ou_half_life_days": pairs_metric.ou_half_life_days,
-                        "requires_circuit_breaker": pairs_metric.requires_circuit_breaker,
-                    }
-                    if pairs_metric.requires_circuit_breaker:
-                        reasons.append(
-                            f"[KalmanPairs] Structural break stop-loss triggered for pair {sym}/{pair_x} (Z={pairs_metric.spread_zscore:+.2f}σ, t1/2={pairs_metric.ou_half_life_days:.1f}d)"
+                    if pairs_metric.fallback_reason:
+                        # Synthetic series: not a measurement. Mark not applicable, never block.
+                        # 合成序列：非量測，標記為不適用，不阻擋。
+                        guard_details["kalman_pairs"] = {
+                            "status": "not_applicable",
+                            "fallback_reason": pairs_metric.fallback_reason,
+                        }
+                        logger.warning(
+                            "UnifiedRiskGateway: Kalman pairs not applicable for %s/%s (%s)",
+                            sym, pair_x, pairs_metric.fallback_reason,
                         )
-                        return RiskGatewayResult(
-                            allowed=False,
-                            severity=RiskSeverity.BLOCKED,
-                            primary_blocker="KalmanPairsStructuralBreak",
-                            reasons=reasons,
-                            guard_details=guard_details,
-                            evaluated_at=now_iso,
-                        )
+                    else:
+                        guard_details["kalman_pairs"] = {
+                            "regime": pairs_metric.regime,
+                            "dynamic_beta": pairs_metric.dynamic_beta,
+                            "spread_zscore": pairs_metric.spread_zscore,
+                            "ou_half_life_days": pairs_metric.ou_half_life_days,
+                            "requires_circuit_breaker": pairs_metric.requires_circuit_breaker,
+                        }
+                        if pairs_metric.requires_circuit_breaker:
+                            reasons.append(
+                                f"[KalmanPairs] Structural break stop-loss triggered for pair {sym}/{pair_x} (Z={pairs_metric.spread_zscore:+.2f}σ, t1/2={pairs_metric.ou_half_life_days:.1f}d)"
+                            )
+                            return RiskGatewayResult(
+                                allowed=False,
+                                severity=RiskSeverity.BLOCKED,
+                                primary_blocker="KalmanPairsStructuralBreak",
+                                reasons=reasons,
+                                guard_details=guard_details,
+                                evaluated_at=now_iso,
+                            )
         except Exception as e:
             self._guard_degraded(guard_details, "Kalman pairs", e)
 
