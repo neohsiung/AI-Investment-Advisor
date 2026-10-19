@@ -88,3 +88,20 @@ def test_clock_contract_scans_new_modules():
     ok = "def g(now=None):\n    return now or datetime.now()\n"
     assert len(violations_in_source(bad, "bad.py")) == 3
     assert violations_in_source(ok, "ok.py") == []
+
+
+def test_github_actions_url_does_not_depend_on_deleted_db_vars(monkeypatch):
+    """tests/conftest.py removes DB_HOST/USER/PASS/NAME; the Actions branch must still yield a local charter_e2e URL."""
+    from unittest import mock
+
+    from . import factories
+    for v in ("CHARTER_E2E_PG_URL", "DB_HOST", "DB_USER", "DB_PASS", "DB_NAME"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("DB_PORT", "5432")
+    conn = mock.MagicMock()
+    conn.__enter__.return_value.execute.return_value.fetchone.return_value = None
+    with mock.patch.object(factories, "create_engine") as ce:
+        ce.return_value.connect.return_value = conn
+        url = factories.resolve_pg_url()
+    assert url == "postgresql+psycopg2://postgres:postgres@localhost:5432/charter_e2e"

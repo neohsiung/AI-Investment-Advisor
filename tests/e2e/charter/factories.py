@@ -41,11 +41,12 @@ def resolve_pg_url() -> Optional[str]:
     explicit = os.getenv("CHARTER_E2E_PG_URL")
     if explicit:
         return validate_pg_url(explicit)
-    if os.getenv("GITHUB_ACTIONS") == "true" and os.getenv("DB_HOST"):
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        # tests/conftest.py deletes DB_HOST/DB_USER/DB_PASS/DB_NAME at collection, so do not read them: use the
+        # lab job's postgres service defaults (ci-cd.yml). DB_PORT survives. / 該 conftest 會刪掉 DB_*，改用 service 預設值。
         base = make_url("postgresql+psycopg2://").set(
-            username=os.getenv("DB_USER", "postgres"), password=os.getenv("DB_PASS", "postgres"),
-            host=os.getenv("DB_HOST"), port=int(os.getenv("DB_PORT", "5432")),
-            database=os.getenv("DB_NAME", "portfolio"))
+            username="postgres", password="postgres", host="localhost",
+            port=int(os.getenv("DB_PORT", "5432")), database="portfolio")
         validate_pg_url(base.render_as_string(hide_password=False))
         admin = create_engine(base, isolation_level="AUTOCOMMIT")
         with admin.connect() as c:
