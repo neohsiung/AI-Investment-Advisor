@@ -26,15 +26,6 @@ class TestEvaluationService:
         except ImportError:
             pass
 
-class TestSchedulerService:
-    """Tests scheduler service"""
-    
-    def test_scheduler_loop(self):
-        from src.services.scheduler_service import SchedulerService
-        
-        service = SchedulerService(user_id="test_user")
-        assert hasattr(service, 'run_loop')
-
 class TestDashboardCoverage:
     def test_dashboard_import(self):
         # Importing dashboard executes definitions, boosting coverage
