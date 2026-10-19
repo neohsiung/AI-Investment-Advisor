@@ -123,7 +123,7 @@ def test_unknown_key_marked_unavailable_not_empty(engine):
 
 
 def test_daily_zero_filled_skips_weekends_and_averages_same_day():
-    # Fri 2026-09-04, Mon 2026-09-07 (weekend skipped), Tue 2026-09-08 empty -> 0, Wed 2026-09-09 empty
+    # Fri 09-04 (two rows, averaged), Mon 09-07 empty -> 0 (weekend skipped), Tue 09-08
     arr = mbe.daily_zero_filled([(date(2026, 9, 4), 0.02), (date(2026, 9, 4), 0.04), (date(2026, 9, 8), 0.01)])
     assert arr.tolist() == pytest.approx([0.03, 0.0, 0.01])
 
