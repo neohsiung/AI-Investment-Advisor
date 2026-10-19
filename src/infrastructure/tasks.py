@@ -1552,14 +1552,14 @@ def run_factor_genetic_evolution(
 
         logger.info(
             f"run_factor_genetic_evolution completed for {user_id}: promotable={report.is_promotable}, "
-            f"applied={report.promoted_to_settings}, wfo={report.wfo_efficiency:.2f}, "
+            f"proposal={report.proposal_id}, wfo={report.wfo_efficiency:.2f}, "
             f"sharpe_oos={report.best_oos_metrics.sharpe:.2f}"
         )
         return {
             "status": "success",
             "run_id": report.run_id,
             "is_promotable": report.is_promotable,
-            "promoted_to_settings": report.promoted_to_settings,
+            "promoted_to_settings": report.promoted_to_settings, "proposal_id": report.proposal_id,
             "promotion_reason": report.promotion_reason,
             "wfo_efficiency": report.wfo_efficiency,
             "sharpe_improvement_pct": report.sharpe_improvement_pct,

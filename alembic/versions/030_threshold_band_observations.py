@@ -1,7 +1,7 @@
-"""029_threshold_band_observations: every signal near a threshold, with score and threshold in force (G1)
+"""030_threshold_band_observations: every signal near a threshold, with score and threshold in force (G1)
 
-Revision ID: 029_threshold_band_observations
-Revises: 027_trade_proposals
+Revision ID: 030_threshold_band_observations
+Revises: 029_parameter_proposals
 Create Date: 2026-10-19
 
 Additive only: one new table, no change to existing tables. Recording evidence for the parameter registry.
@@ -9,8 +9,8 @@ Additive only: one new table, no change to existing tables. Recording evidence f
 """
 from alembic import op
 
-revision = "029_threshold_band_observations"
-down_revision = "027_trade_proposals"
+revision = "030_threshold_band_observations"
+down_revision = "029_parameter_proposals"
 branch_labels = None
 depends_on = None
 
