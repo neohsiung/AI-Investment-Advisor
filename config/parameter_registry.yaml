@@ -1,31 +1,58 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Parameter registry — the pre-registered surface of thresholds a future Change Engine may adjust.
-# 參數登錄檔——未來變更引擎可調整之門檻的事先登記範圍。
+# 參數登錄檔——未來「變更引擎」可以調整的門檻，事先登記在這裡。
 #
 # WHY: operator requirement (2026-10-18): thresholds may be changed by the system, but only when the change is
 # meaningful, verified, and a trend has formed. Registering bounds, a discrete grid (which caps the number of
 # trials N for multiple-testing correction), a rollback value and the evidence metric BEFORE any change is what
 # makes "verified" checkable. Approved once through ADR-003; editing this file stays R3.
+# 為什麼：操作者要求門檻可由系統自行調整，但必須「有意義、經驗證、趨勢成形」才動。
+#   驗證標準要在第一次調整「之前」就固定，才查得出來。所以每個參數先登記：
+#   範圍（bounds）、離散格點（grid，格點數就是多重檢定的試驗次數 N 的上限）、回滾值、證據指標。
+#   本檔經 ADR-003 由人簽核一次；之後修改本檔仍屬 R3（需人工核准）。
 #
 # THIS FILE IS NOT READ AT RUNTIME YET (G0). Nothing here changes behaviour. G2 adds the single reader.
 # tests/invariants/test_parameter_registry.py enforces the shape.
+# 目前沒有任何執行中的程式讀這個檔案（G0 階段），所以不會改變任何行為；
+#   G2 才會加上唯一讀取點。檔案格式由 tests/invariants/test_parameter_registry.py 強制檢查。
 #
-# Fields: class A reversible-cheap | B sizing/selectivity | C safety/capital exposure | D mechanism that judges
-# changes (never self-loosens). risk_direction +1 = larger value, larger risk; -1 = the reverse.
-# policy: adaptive (bidirectional inside the grid, on evidence) | tighten_only | frozen.
-# grid: ascending discrete candidates; must contain rollback_value (= schema default) and never a special value.
-# mission-store entries are PATHS into config/mission.yaml — never copy its numbers here.
+# Fields / 欄位說明：
+#   key              setting name, or a mission path label / 設定鍵；mission 類則是路徑名稱
+#   store            settings = settings_schema.yaml key; mission = a PATH into config/mission.yaml (never copy numbers)
+#                    settings＝設定檔鍵；mission＝指向 config/mission.yaml 的「路徑」，不複製數字
+#   class            A reversible-cheap | B sizing/selectivity | C safety/capital exposure | D mechanism that judges changes
+#                    A 可逆、成本低｜B 影響部位大小或選擇性｜C 影響安全或資本曝險｜D 判斷變更的機制本身（永不自行放寬）
+#   risk_direction   +1 = larger value, larger risk; -1 = smaller value, larger risk. "Loosening" = moving this way.
+#                    +1＝值越大風險越大；-1＝值越小風險越大。「放寬」＝往這個方向移動
+#   policy           adaptive = may move both ways inside the grid, on evidence
+#                    tighten_only = may only move toward less risk; frozen = never moves
+#                    adaptive＝有證據時可在格點內雙向移動；tighten_only＝只能往更保守的方向；frozen＝不動
+#   rollback_value   must equal the schema default, so any change can be undone / 必須等於 schema 預設值，任何變更都能退回
+#   special_values   values with a different meaning (e.g. 0 = unlimited / disabled / stop). A step must never land on
+#                    or cross one. / 有特殊意義的值（例如 0＝不設限／關閉／停止），一步調整不得落在或跨過它
+#   bounds           the range the engine may move within / 引擎可移動的範圍
+#   grid             ascending discrete candidates; must contain rollback_value and no special value; at most one grid
+#                    step per change / 遞增的離散候選值；須含回滾值、不含特殊值；每次最多動一格
+#   cooldown_days    minimum days between changes of this parameter (>= 63 so the long horizon can be observed)
+#                    同一參數兩次變更之間的最短間隔（不得短於 63 天，才看得到長期結果）
+#   evidence         metric = what is measured; horizons_days = 5 and 63; min_n = minimum settled decisions (>= 30);
+#                    counterfactual_source = where the "what if the threshold were different" rows come from
+#                    metric＝量什麼；horizons_days＝看 5 日與 63 日；min_n＝至少幾筆已結算決策（≥30）；
+#                    counterfactual_source＝「若門檻不同會怎樣」的反事實資料來源
+#   untestable_reason  required when policy is not adaptive: why no outcome metric can validate a change
+#                    政策不是 adaptive 時必填：為什麼沒有可驗證的結果指標
 # ═══════════════════════════════════════════════════════════════════════════
 version: 1
 parameters:
+  # ── 每日完整事件分析上限：控制 LLM 花費。0 代表不設限，所以特殊值 [0] 不可跨入。
   - key: event_analysis_daily_cap
     store: settings
     class: A
-    risk_direction: 1          # more analyses per day = more LLM spend
+    risk_direction: 1          # more analyses per day = more LLM spend / 每日分析越多，LLM 花費越高
     policy: adaptive
     owner: event_pipeline
     rollback_value: 8
-    special_values: [0]        # 0 = unlimited; a step must never land on or cross it
+    special_values: [0]        # 0 = unlimited; a step must never land on or cross it / 0＝不設限，不得落在或跨過
     bounds: {min: 4, max: 16}
     grid: [4, 6, 8, 12, 16]
     cooldown_days: 63
@@ -34,10 +61,11 @@ parameters:
       horizons_days: [5, 63]
       min_n: 30
       counterfactual_source: llm_real_cost_daily
+  # ── 研究分數最大有效天數：超過就當作「未研究」。越大代表容忍越舊的研究，風險越高。
   - key: universe_research_max_age_days
     store: settings
     class: B
-    risk_direction: 1          # older research tolerated = riskier
+    risk_direction: 1          # older research tolerated = riskier / 容忍越舊的研究，風險越高
     policy: adaptive
     owner: proposal_validator
     rollback_value: 14
@@ -49,6 +77,7 @@ parameters:
       horizons_days: [5, 63]
       min_n: 30
       counterfactual_source: trade_proposals_stale_score
+  # ── 分批建倉單筆上限（USD）：越大單筆曝險越高。
   - key: batch_deploy_max_order_usd
     store: settings
     class: B
@@ -64,10 +93,11 @@ parameters:
       horizons_days: [5, 63]
       min_n: 30
       counterfactual_source: proposal_shadow_below_min_order
+  # ── 建倉最低研究信心（0-10）：門檻越低，被投入資金的候選越多，風險越高。
   - key: batch_deploy_min_confidence
     store: settings
     class: B
-    risk_direction: -1         # lower threshold = more candidates funded = riskier
+    risk_direction: -1         # lower threshold = more candidates funded = riskier / 門檻越低越冒險
     policy: adaptive
     owner: batch_cash_deployment
     rollback_value: 5.5
@@ -78,7 +108,8 @@ parameters:
       metric: net_signed_alpha_marginal_band
       horizons_days: [5, 63]
       min_n: 30
-      counterfactual_source: threshold_band_recorder   # does not exist yet — milestone G1
+      counterfactual_source: threshold_band_recorder   # does not exist yet — milestone G1 / 尚未存在，G1 才會建
+  # ── 換倉最低評分優勢：新標的比持倉至少高多少分才換。越低越容易換倉，摩擦成本越高。
   - key: rotation_min_score_delta
     store: settings
     class: B
@@ -93,7 +124,8 @@ parameters:
       metric: net_buy_minus_sell_return_after_friction
       horizons_days: [5, 63]
       min_n: 30
-      counterfactual_source: threshold_band_recorder   # milestone G1
+      counterfactual_source: threshold_band_recorder   # milestone G1 / G1 才會建
+  # ── 換倉前最短持有天數：越短越容易頻繁換倉。0 代表關閉檢查，不可跨入。
   - key: rotation_min_holding_days
     store: settings
     class: B
@@ -101,7 +133,7 @@ parameters:
     policy: adaptive
     owner: sentinel_rotation
     rollback_value: 5
-    special_values: [0]        # 0 disables the check
+    special_values: [0]        # 0 disables the check / 0＝關閉此檢查
     bounds: {min: 3, max: 10}
     grid: [3, 5, 7, 10]
     cooldown_days: 63
@@ -109,7 +141,8 @@ parameters:
       metric: net_buy_minus_sell_return_after_friction
       horizons_days: [5, 63]
       min_n: 30
-      counterfactual_source: threshold_band_recorder   # milestone G1
+      counterfactual_source: threshold_band_recorder   # milestone G1 / G1 才會建
+  # ── 基準停泊單次上限：只買基準（SPY），決定的是部署速度而非選擇性，所以只允許調小。
   - key: benchmark_parking_max_order_usd
     store: settings
     class: A
@@ -119,6 +152,7 @@ parameters:
     rollback_value: 250.0
     bounds: {min: 10, max: 250}
     untestable_reason: Parking buys the benchmark only; the cap bounds deployment speed, not selectivity, so no outcome metric separates values.
+  # ── 可交易資本占帳戶比例：0 代表停止所有交易。主動部位的淨 alpha 尚未被證明，所以只許收緊。
   - key: tradable_capital_pct
     store: settings
     class: C
@@ -126,9 +160,10 @@ parameters:
     policy: tighten_only
     owner: capital_policy
     rollback_value: 75.0
-    special_values: [0]        # 0 stops all trading
+    special_values: [0]        # 0 stops all trading / 0＝停止所有交易
     bounds: {min: 1, max: 75}
     untestable_reason: Net alpha of the active sleeve is not demonstrated at this account size (years_to_significance is in decades); keep the default and only tighten on risk evidence.
+  # ── 停損百分比：停損事件太少，無法驗證任何數值；出場屬安全控制，只許收緊。
   - key: stop_loss_pct
     store: settings
     class: C
@@ -138,6 +173,8 @@ parameters:
     rollback_value: 8.0
     bounds: {min: 1, max: 8}
     untestable_reason: Too few stop events to validate a value; exits are safety controls and may only be tightened.
+  # ── D 類：判斷「變更是否成立」的機制本身。評審者自己放寬自己等於自我認證，所以只能收緊。
+  #    這兩列是 mission.yaml 的路徑，不在此複製數字（AGENTS.md 規則 6）。
   - key: promotion.min_deflated_sharpe
     store: mission
     class: D

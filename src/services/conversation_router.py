@@ -855,7 +855,7 @@ class ConversationRouter:
                 best_mdd = best_oos.get("max_drawdown", 0.0) * 100.0
 
                 gate_badge = "✅ 終審通過 (PROMOTED)" if is_promotable else "⚠️ 維持基準 (REJECTED)"
-                applied_badge = "🚀 已生效至生產環境" if promoted_to_settings else "⏸️ 未套用至生產環境"
+                applied_badge = "📝 已登記提案，待核可後才生效" if report.get("proposal_id") else "⏸️ 未套用至生產環境"
 
                 lines = [
                     "🧬 <b>【全歷史動態多因子遺傳演算法超參數演化報告 (Phase 31)】</b>",

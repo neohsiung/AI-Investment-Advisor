@@ -9,6 +9,7 @@ from src.config.settings_schema import (
     load_schema,
     schema_default,
 )
+from src.services.param_policy import record_human_write
 from src.repositories.prompt_repository import AlchemyPromptRepository, IPromptRepository
 from src.utils.logger import setup_logger
 
@@ -21,7 +22,8 @@ class SettingsService:
     """
     def __init__(self, db_path: str = None, user_id: str = None, 
                  settings_repo: ISettingsRepository = None, 
-                 prompt_repo: IPromptRepository = None):
+                 prompt_repo: IPromptRepository = None,
+                 param_engine: Any = None):
         """
         Initialize the settings service with repositories.
         初始化具備儲存庫的設定服務。
@@ -30,6 +32,7 @@ class SettingsService:
         self.user_id = user_id  # resolved lazily in _get_effective_uid()
         self.settings_repo = settings_repo or AlchemySettingsRepository()
         self.prompt_repo = prompt_repo or AlchemyPromptRepository()
+        self._param_engine = param_engine  # parameter store engine; None = default DB / 參數儲存引擎
 
     def _get_effective_uid(self) -> str:
         """
@@ -231,6 +234,17 @@ class SettingsService:
                 return False, "SETTINGS_VALIDATION_FAILED: " + "; ".join(rejected)
 
             self.settings_repo.set_many(target_uid, validated)
+
+            # Charter G2: a human write of a registered threshold is recorded as parameter_values
+            # source=human, which also restarts that parameter's evidence clock. Never silently ignored:
+            # a store failure is reported to the caller (the setting itself is already saved).
+            # 章程 G2：人工改動已登記門檻須記為 source=human 並重置證據時鐘，失敗要回報、不得吞掉。
+            try:
+                for k, v in validated.items():
+                    record_human_write(k, v, engine=self._param_engine)
+            except Exception:
+                _logger.exception("save_settings_bulk: parameter store record failed for user=%s", target_uid)
+                return False, "PARAMETER_RECORD_FAILED"
             return True, "Settings saved successfully."
         except Exception:
             # 2026-08-02: both callers (POST /api/v1/settings and the legacy
