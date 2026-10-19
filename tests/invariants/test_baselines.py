@@ -88,7 +88,7 @@ def test_no_new_hardcoded_confidence_scores():
 
 # 4. Evolution/synthesis code must not write live settings directly (promotion goes through a proposal table).
 KNOWN_EVOLUTION_SET_SETTING = {
-    "src/services/factor_genetic_evolution_engine.py",
+    # factor_genetic_evolution_engine.py left this set in G3: it records parameter_proposals rows instead.
     # Writes live settings via `settings_repo.set(` (blind spot until WP2 widened the matcher).
     "src/services/strategy_auto_evolution_service.py",
 }
