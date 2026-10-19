@@ -860,6 +860,29 @@ class TradeProposal(Base):
     )
 
 
+class ParameterProposal(Base):
+    """`parameter_proposals` — alembic 028. A tuning loop's proposed setting values; nothing here is live until
+    an approved path (UI / parameter engine) applies it. 調參迴圈的設定提案；經核可路徑套用前不生效。"""
+    __tablename__ = 'parameter_proposals'
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
+    source = Column(String(32), nullable=False)
+    proposed_values = Column(Text, nullable=False)  # JSON text {setting_key: value}
+    evidence = Column(Text)  # JSON text
+    status = Column(String(16), nullable=False, server_default=text("'proposed'"))
+    idempotency_key = Column(String(128), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    decided_at = Column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("status IN ('proposed', 'approved', 'rejected', 'applied', 'expired')",
+                        name='ck_parameter_proposals_status'),
+        UniqueConstraint('user_id', 'source', 'idempotency_key', name='uq_parameter_proposals_idempotency'),
+        Index('ix_parameter_proposals_user_created', 'user_id', 'created_at'),
+    )
+
+
 class BacktestRun(Base):
     """`backtest_runs` — alembic 008."""
     __tablename__ = 'backtest_runs'

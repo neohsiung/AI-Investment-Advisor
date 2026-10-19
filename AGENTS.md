@@ -30,6 +30,8 @@ Rules every AI coding agent must follow, whatever its capability level:
 2. **Only the execution service places or closes broker orders**; LLM output may *propose*, deterministic code *decides*.
 3. **No non-safety sell without a replacement plan**; no hardcoded decision scores; no `exec` of generated code;
    no evolution code writing live settings (promotion goes through a proposal table).
+   (Rules 1 and 3 are to be amended by ADR-003 once the parameter engine exists; until then they stand as written.
+   規則 1 與 3 日後將由 ADR-003 修訂，在此之前照現行文字執行。 `tests/invariants/test_registered_key_writers.py` enforces rule 3 for registered keys.)
 4. **Never fail silent on decision paths** (constraint #0 below). Missing data = skip + mark, never a plausible default.
 5. **Touching any `config/*.yaml`: run `tests/unit/config` and `tests/invariants` before deploying** (a malformed
    settings schema once made the quality gate crash and evicted 7 of 8 active tickers).
