@@ -1493,22 +1493,4 @@ class CharterState(Base):
         CheckConstraint("mode IN ('dry_run', 'apply', 'tighten_only', 'frozen', 'human_stop')",
                         name='ck_charter_state_mode'),
     )
-
-
-class CharterEvent(Base):
-    """`charter_events` — alembic 032. Append-only audit log of the change engine (verdict/apply/rollback/degrade/...).
-    變更引擎的僅追加稽核紀錄。"""
-    __tablename__ = 'charter_events'
-
-    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
-    user_id = Column(String, nullable=False)
-    kind = Column(String(16), nullable=False)
-    key = Column(String(128))
-    payload_json = Column(JSON)
-    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-
-    __table_args__ = (
-        CheckConstraint("kind IN ('verdict', 'apply', 'rollback', 'freeze', 'resume', 'degrade', 'digest', 'drill', "
-                        "'enable')", name='ck_charter_events_kind'),
-        Index('ix_charter_events_user_kind_created', 'user_id', 'kind', 'created_at'),
-    )
+from src.data.charter_models import CharterEvent  # noqa: E402,F401  (alembic 032; kept out of this file: size ratchet)

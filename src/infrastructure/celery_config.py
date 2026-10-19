@@ -27,7 +27,7 @@ worker_max_tasks_per_child = 1000
 
 # Auto-import tasks so workers know about registered task handlers
 # Must be a string path to avoid circular imports
-imports = ("src.infrastructure.tasks",)
+imports = ("src.infrastructure.tasks", "src.workflow.charter_tasks")
 
 # Result backend settings
 # 結果後端設定
