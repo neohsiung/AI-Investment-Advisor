@@ -22,7 +22,7 @@ USER = "u1"
 KEY = "batch_deploy_min_confidence"
 SHORT = stream(0.01, 0.005, 20, 3)              # 20 decisions: below any min_n in the registry
 TABLES = ("parameter_values", "parameter_changes", "parameter_trials", "strategy_trials", "charter_state",
-          "charter_events", "threshold_band_observations", "rotation_pair_observations")
+          "charter_events", "threshold_band_observations", "rotation_pair_observations", "decision_outcomes")
 
 
 def _watchdog_ok(today):
@@ -32,6 +32,12 @@ def _watchdog_ok(today):
 
 def _watchdog_down(today):
     raise RuntimeError("NAV unavailable")
+
+
+@pytest.fixture(autouse=True)
+def _no_evidence(monkeypatch):
+    """Default: no band evidence. A test that needs series replaces evaluate_key itself. / 預設無證據。"""
+    monkeypatch.setattr(cds, "evaluate_key", make_evaluator({}))
 
 
 @pytest.fixture()

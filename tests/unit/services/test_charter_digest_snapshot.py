@@ -14,7 +14,13 @@ from src.data.models import Base, CharterEvent, CharterState, ParameterChange, P
 from src.services import charter_digest_service as cds
 from tests.charter_synth import NOW, make_evaluator, stream
 
-from .test_weekly_charter_digest import KEY, TABLES, _watchdog_down
+KEY = "batch_deploy_min_confidence"
+TABLES = ("parameter_values", "parameter_changes", "parameter_trials", "strategy_trials", "charter_state",
+          "charter_events", "threshold_band_observations", "rotation_pair_observations", "decision_outcomes")
+
+
+def _watchdog_down(today):
+    raise RuntimeError("NAV unavailable")
 
 SNAP = Path(__file__).parent / "snapshots"
 GOOD = stream(0.012, 0.006, 140, 11)
