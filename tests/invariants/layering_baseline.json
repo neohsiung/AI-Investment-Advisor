@@ -122,9 +122,6 @@
     "src/services/portfolio_aggregator_service.py": [
       "application->entrypoints:src.api.v1.exceptions"
     ],
-    "src/services/scheduler_service.py": [
-      "application->entrypoints:src.infrastructure.tasks"
-    ],
     "src/services/sentinel_service.py": [
       "application->entrypoints:src.api.v1.exceptions"
     ],
