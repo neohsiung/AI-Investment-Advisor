@@ -17,7 +17,7 @@ fail=0
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-echo "== 1/4 Alembic upgrade + check (throwaway Postgres on :$PORT) =="
+echo "== 1/5 Alembic upgrade + check (throwaway Postgres on :$PORT) =="
 if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
   docker run -d --name "$NAME" -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=portfolio \
     -p "$PORT:5432" pgvector/pgvector:pg16 >/dev/null || { echo "FAIL: could not start postgres"; exit 1; }
@@ -32,15 +32,27 @@ if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
   fi
 fi
 
-echo "== 2/4 Bandit (medium+ severity) =="
+echo "== 2/5 Charter E2E (pytest -m charter_e2e on the same throwaway Postgres; any skip is a FAIL) =="
+if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
+  CHARTER_E2E_PG_URL="postgresql+psycopg2://postgres:postgres@localhost:$PORT/portfolio" CHARTER_E2E_REQUIRE_PG=1 \
+    "$PY" -m pytest -m charter_e2e tests/e2e/charter -q -rs >/tmp/ci_local_charter_e2e.log 2>&1
+  rc=$?
+  if [ "$rc" -eq 0 ] && ! grep -q ' skipped' /tmp/ci_local_charter_e2e.log; then
+    tail -1 /tmp/ci_local_charter_e2e.log
+  else
+    echo "FAIL (rc=$rc; a skipped test also fails this gate; see /tmp/ci_local_charter_e2e.log)"; tail -8 /tmp/ci_local_charter_e2e.log; fail=1
+  fi
+fi
+
+echo "== 3/5 Bandit (medium+ severity) =="
 if "$PY" -m bandit --version >/dev/null 2>&1; then
   "$PY" -m bandit -r src/ -ll -q >/tmp/ci_local_bandit.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_bandit.log)"; tail -5 /tmp/ci_local_bandit.log; fail=1; }
 else echo "SKIP: bandit not installed in $PY"; fi
 
-echo "== 3/4 Wiki link integrity =="
+echo "== 4/5 Wiki link integrity =="
 "$PY" .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py >/tmp/ci_local_wiki.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_wiki.log)"; tail -5 /tmp/ci_local_wiki.log; fail=1; }
 
-echo "== 4/4 Layering baseline tightness (warning only; blocking gate is tests/invariants) =="
+echo "== 5/5 Layering baseline tightness (warning only; blocking gate is tests/invariants) =="
 if "$PY" -m tests.invariants.test_layering --check-tight >/tmp/ci_local_layering.log 2>&1; then echo "OK"; else
   echo "WARN: baseline is looser than reality (not blocking) — run \`$PY -m tests.invariants.test_layering --update\`"; head -8 /tmp/ci_local_layering.log
 fi
