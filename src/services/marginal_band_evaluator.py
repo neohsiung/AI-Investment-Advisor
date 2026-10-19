@@ -130,18 +130,15 @@ def _since_date(since: Optional[datetime]) -> Optional[date]:
 
 def _load_threshold_band(engine: Any, user_id: str, key: str, horizon: int,
                          since: Optional[date]) -> List[SettledDecision]:
-    since_sql = "AND o.obs_date >= :since" if since is not None else ""
-    sql = f"""
+    sql = """
         SELECT o.obs_date, o.score, o.threshold_value, d.alpha_pct, d.signal
         FROM threshold_band_observations o
         JOIN decision_outcomes d ON d.proposal_id = o.id AND d.is_counterfactual = TRUE
              AND d.source = 'threshold_band' AND d.horizon_days = :h AND d.resolved_at IS NOT NULL
         WHERE o.user_id = :uid AND o.threshold_key = :key AND o.score IS NOT NULL AND o.data_marker IS NULL
-          AND d.alpha_pct IS NOT NULL {since_sql}
+          AND d.alpha_pct IS NOT NULL AND o.obs_date >= :since
         ORDER BY o.obs_date, o.id"""
-    params: Dict[str, Any] = {"uid": user_id, "key": key, "h": horizon}
-    if since is not None:
-        params["since"] = since
+    params: Dict[str, Any] = {"uid": user_id, "key": key, "h": horizon, "since": since or date.min}
     with engine.connect() as conn:
         rows = conn.execute(text(sql), params).mappings().all()
     return [SettledDecision(_to_date(r["obs_date"]), float(r["score"]), float(r["threshold_value"]),
@@ -151,8 +148,7 @@ def _load_threshold_band(engine: Any, user_id: str, key: str, horizon: int,
 
 def _load_rotation(engine: Any, user_id: str, key: str, horizon: int,
                    since: Optional[date]) -> List[SettledDecision]:
-    since_sql = "AND r.obs_date >= :since" if since is not None else ""
-    sql = f"""
+    sql = """
         SELECT r.obs_date, r.score_delta, r.holding_age_days, r.min_score_delta, r.min_holding_days,
                r.friction_pct, r.decision, b.realized_return_pct AS buy_ret, s.realized_return_pct AS sell_ret
         FROM rotation_pair_observations r
@@ -162,11 +158,9 @@ def _load_rotation(engine: Any, user_id: str, key: str, horizon: int,
         JOIN decision_outcomes s ON s.proposal_id = r.id AND s.is_counterfactual = TRUE
              AND s.source = 'rotation_pair' AND s.signal = 'SELL' AND s.ticker = r.sell_ticker
              AND s.horizon_days = :h AND s.resolved_at IS NOT NULL
-        WHERE r.user_id = :uid AND r.data_marker IS NULL {since_sql}
+        WHERE r.user_id = :uid AND r.data_marker IS NULL AND r.obs_date >= :since
         ORDER BY r.obs_date, r.id"""
-    params: Dict[str, Any] = {"uid": user_id, "h": horizon}
-    if since is not None:
-        params["since"] = since
+    params: Dict[str, Any] = {"uid": user_id, "h": horizon, "since": since or date.min}
     with engine.connect() as conn:
         rows = conn.execute(text(sql), params).mappings().all()
     out: List[SettledDecision] = []
