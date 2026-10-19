@@ -860,6 +860,35 @@ class TradeProposal(Base):
     )
 
 
+class ThresholdBandObservation(Base):
+    """`threshold_band_observations` — alembic 029. Every signal near a threshold (passed or rejected) with
+    its score and the threshold in force (G1). `data_marker` is set when score or price was unavailable."""
+    __tablename__ = 'threshold_band_observations'
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
+    threshold_key = Column(String, nullable=False)
+    source_service = Column(String, nullable=False)
+    ticker = Column(String, nullable=False)
+    direction = Column(String(4), nullable=False)
+    obs_date = Column(Date, nullable=False)
+    score = Column(Numeric(10, 4))
+    threshold_value = Column(Numeric(10, 4), nullable=False)
+    margin = Column(Numeric(10, 4))
+    passed = Column(Boolean)
+    in_band = Column(Boolean, nullable=False)
+    price = Column(Numeric(18, 8))
+    data_marker = Column(String)
+    context = Column(Text)  # JSON text
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'threshold_key', 'source_service', 'ticker', 'direction', 'obs_date',
+                         name='uq_threshold_band_obs'),
+        Index('ix_threshold_band_obs_key_date', 'threshold_key', 'obs_date'),
+    )
+
+
 class BacktestRun(Base):
     """`backtest_runs` — alembic 008."""
     __tablename__ = 'backtest_runs'

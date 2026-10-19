@@ -25,6 +25,7 @@ import pytz
 
 from src.config.owner import resolve_user_id
 from src.services.order_cap_policy import single_order_cap_usd
+from src.services.threshold_band_recorder import band_collector, record_at_boundary
 from src.utils.logger import setup_logger
 
 logger = setup_logger("BatchCashDeploymentService")
@@ -224,11 +225,7 @@ class BatchCashDeploymentService:
                 broker=self.broker,
                 market_clock=self.market_clock,
             )
-        return await self.staggered_dip_service.execute_staggered_dip_deployment(
-            batch_number=batch_number,
-            force=force,
-        )
-
+        return await self.staggered_dip_service.execute_staggered_dip_deployment(batch_number=batch_number, force=force)
 
     async def _get_broker(self) -> Any:
         if self.broker:
@@ -311,6 +308,7 @@ class BatchCashDeploymentService:
         max_tickers: int,
         min_confidence: float,
         min_trade_usd: float = 10.0,
+        observer: Optional[Any] = None,
     ) -> List[Dict[str, Any]]:
         """
         Pick buy candidates from optimizer targets restricted to the active universe.
@@ -332,10 +330,11 @@ class BatchCashDeploymentService:
             if raw_conf is None:
                 continue
             conf = float(raw_conf) * 10.0 if float(raw_conf) <= 1.0 else float(raw_conf)
-            if conf < min_confidence:
-                continue
             gap = total_equity * weight - float(holdings.get(sym, 0.0) or 0.0)
             if gap < min_trade_usd:
+                continue
+            observer and observer(sym, conf, conf >= min_confidence)  # G1 hook, result-neutral / G1 掛鉤，不改結果
+            if conf < min_confidence:
                 continue
             ranked.append({
                 "ticker": sym,
@@ -364,20 +363,22 @@ class BatchCashDeploymentService:
             str(u.get("ticker") or "").upper()
             for u in repo.get_all(self.user_id, status="active")
         }
+        min_conf = self._setting_float("batch_deploy_min_confidence", 5.5)
+        observer, seen = band_collector("BUY", min_conf)
         ranked = self.rank_candidates(
+            observer=observer,
             target_records=target_records,
             active_tickers=active,
             holdings=holdings,
             total_equity=total_equity,
             max_order_usd=single_order_cap_usd(self.settings_service, None),
             max_tickers=int(self._setting_float("batch_deploy_max_tickers", 3)),
-            min_confidence=self._setting_float("batch_deploy_min_confidence", 5.5),
+            min_confidence=min_conf,
         )
+        await record_at_boundary(self.user_id, "batch_deploy_min_confidence", "batch_deploy", seen, settings_service=self.settings_service)
         if not ranked:
-            logger.warning(
-                "BatchCashDeployment: no eligible candidates (active universe=%d, targets=%d); nothing to deploy",
-                len(active), len(target_records),
-            )
+            logger.warning("BatchCashDeployment: no eligible candidates (active universe=%d, targets=%d); nothing to deploy",
+                           len(active), len(target_records))
         return ranked
 
     async def _load_holdings(self) -> Dict[str, float]:
@@ -717,7 +718,6 @@ class BatchCashDeploymentService:
                             is_jump_acute = True
                 except Exception as je:
                     logger.debug(f"Candidate jump evaluation non-blocking error for {ticker}: {je}")
-
 
             # 宏觀突發事件因果圖譜受損度檢驗 (Phase 37)
             is_event_shocked = False
