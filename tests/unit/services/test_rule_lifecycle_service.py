@@ -217,31 +217,54 @@ class TestEmbeddingBackfill:
 class TestGating:
     @pytest.mark.asyncio
     async def test_gate_candidate_rules_safety_valve(self, mock_engine):
+        """14 days without gate evidence -> expired (rejected), never auto-promoted.
+        14 天內沒有閘門證據 -> 到期退役（rejected），不再自動晉升。"""
         engine, conn = mock_engine
         from datetime import datetime, timedelta, timezone
         old_time = datetime.now(timezone.utc) - timedelta(days=15)
-        
+
         candidate_row = MagicMock(
             id=10, agent_name="Momentum", rule_text="- old rule",
             source_decision_id="dec-1", created_at=old_time
         )
         # First query gets candidate rows
         conn.execute.return_value.fetchall.return_value = [candidate_row]
-        
+
         svc = RuleLifecycleService(user_id="u1")
         with patch("src.data.database.get_db_engine", return_value=engine), \
-             patch.object(svc, "_refresh_file_cache") as mock_refresh:
+             patch.object(svc, "_refresh_file_cache"):
             stats = await svc.gate_candidate_rules()
-            
+
         assert stats["checked"] == 1
-        assert stats["provisional"] == 1
+        assert stats["expired"] == 1
+        assert stats["provisional"] == 0
         assert stats["passed"] == 0
-        
+
         # Verify db update occurred
         update_calls = [c for c in conn.execute.call_args_list if "UPDATE agent_rules" in str(c[0][0])]
         assert len(update_calls) == 1
-        assert "gate_status = 'provisional'" in str(update_calls[0][0][0])
-        mock_refresh.assert_called_once_with("Momentum", "u1")
+        assert "status = 'rejected'" in str(update_calls[0][0][0])
+        assert "expired_no_evidence" in str(update_calls[0][0][0])
+
+    @pytest.mark.asyncio
+    async def test_candidate_rule_past_14_days_is_expired_not_promoted(self, mock_engine):
+        engine, conn = mock_engine
+        from datetime import datetime, timedelta, timezone
+        row = MagicMock(
+            id=11, agent_name="Macro", rule_text="- stale candidate",
+            source_decision_id=None, created_at=datetime.now(timezone.utc) - timedelta(days=20),
+        )
+        conn.execute.return_value.fetchall.return_value = [row]
+        svc = RuleLifecycleService(user_id="u1")
+        with patch("src.data.database.get_db_engine", return_value=engine), \
+             patch.object(svc, "_gate_one") as gate_one:
+            stats = await svc.gate_candidate_rules()
+
+        gate_one.assert_not_called()
+        assert stats["expired"] == 1
+        sql = " ".join(str(c[0][0]) for c in conn.execute.call_args_list if "UPDATE agent_rules" in str(c[0][0]))
+        assert "'rejected'" in sql
+        assert "status = 'active'" not in sql
 
     @pytest.mark.asyncio
     async def test_gate_one_no_decisions(self, mock_engine):

@@ -205,3 +205,34 @@ async def test_run_lifecycle_disabled(mock_deps):
         res = await service.run_lifecycle_cycle(force=False)
         assert res["success"] is True
         assert "disabled" in res["message"]
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_calls_shadow_ledger_without_auto_promote(mock_deps):
+    """Shadow ledger evaluation must never auto-promote tickers (ADR-003: no loosening without evidence).
+    影子帳本評估不得自動晉升標的（ADR-003：無證據不放寬）。"""
+    repo, market, quality_gate, settings = mock_deps
+    repo.get_all.return_value = []
+
+    with patch("src.services.universe_lifecycle_service.SettingsService", return_value=settings), \
+         patch("src.services.shadow_ledger_service.ShadowLedgerService") as shadow_cls:
+        shadow_cls.return_value.batch_step_and_evaluate = AsyncMock(
+            return_value={"graduated_count": 0, "in_progress_count": 0, "failed_count": 0}
+        )
+        service = UniverseLifecycleService(
+            user_id="test-user", repo=repo, market=market, quality_gate=quality_gate,
+        )
+        regime = MagicMock(quality_score_adjustment=0.0)
+        with patch.object(service, "detect_macro_regime", AsyncMock(return_value=regime)), \
+             patch.object(service, "review_and_evict_active_tickers", AsyncMock(return_value=[])), \
+             patch.object(service, "evolve_candidate_pool", AsyncMock(return_value={})), \
+             patch.object(service, "evolve_active_pool", AsyncMock(return_value={})), \
+             patch.object(service, "screen_and_admit_candidates", AsyncMock(return_value=[])):
+            try:
+                await service.run_lifecycle_cycle(force=True)
+            except Exception:
+                pass  # tail of the cycle (reporting) is irrelevant here
+
+    shadow_cls.return_value.batch_step_and_evaluate.assert_awaited_once()
+    kwargs = shadow_cls.return_value.batch_step_and_evaluate.await_args.kwargs
+    assert kwargs["auto_promote"] is False

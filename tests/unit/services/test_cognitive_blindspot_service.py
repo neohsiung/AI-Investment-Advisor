@@ -18,7 +18,6 @@ from src.services.cognitive_blindspot_service import (
     CognitiveBlindspotService,
     BiasPattern,
     BlindspotSeverity,
-    STANDARD_AGENT_ROSTER,
 )
 from src.data.models import AgentCognitiveBlindspot
 
@@ -109,6 +108,36 @@ def test_scan_and_detect_blindspots_with_mock_history(blindspot_service):
         assert len(detected) == 1
         assert detected[0].agent_name == "Technical"
         mock_persist.assert_called_once()
+
+
+def _rows_service(svc, rows):
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchall.return_value = rows
+    svc.engine = MagicMock()
+    svc.engine.connect.return_value.__enter__.return_value = mock_conn
+    return svc
+
+
+def test_no_settled_rows_means_no_blindspot_injection(blindspot_service):
+    """n=0 -> nothing detected, nothing persisted (no invented roster)."""
+    _rows_service(blindspot_service, [])
+    with patch.object(blindspot_service, "_persist_blindspot") as mock_persist:
+        assert blindspot_service.scan_and_detect_blindspots() == []
+    mock_persist.assert_not_called()
+
+
+def test_attributions_use_only_agents_present_in_rows(blindspot_service):
+    """Roster derived from rows; unmatched names keep their own name, never 'Fundamental'."""
+    rows = [
+        ("Thematic", "BUY", -0.05, 0.01, -0.06, "2026-07-03"),
+        ("Thematic", "BUY", -0.03, 0.00, -0.03, "2026-07-02"),
+    ]
+    _rows_service(blindspot_service, rows)
+    with patch.object(blindspot_service, "_persist_blindspot") as mock_persist:
+        mock_persist.return_value = MagicMock()
+        blindspot_service.scan_and_detect_blindspots()
+    mock_persist.assert_called_once()
+    assert mock_persist.call_args.kwargs["agent_name"] == "Thematic"
 
 
 def test_get_cio_blindspot_summary(blindspot_service):
