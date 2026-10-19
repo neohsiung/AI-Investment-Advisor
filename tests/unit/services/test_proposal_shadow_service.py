@@ -33,6 +33,13 @@ DDL = [
         decided_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, horizon_days INTEGER NOT NULL DEFAULT 5,
         resolved_at TIMESTAMP, proposal_id TEXT, strategy_id TEXT, source TEXT,
         is_counterfactual BOOLEAN NOT NULL DEFAULT 0)""",
+    """CREATE TABLE threshold_band_observations (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL, threshold_key TEXT NOT NULL,
+        source_service TEXT NOT NULL, ticker TEXT NOT NULL, direction TEXT NOT NULL,
+        obs_date DATE NOT NULL, score NUMERIC, threshold_value NUMERIC NOT NULL, margin NUMERIC,
+        passed BOOLEAN, in_band BOOLEAN NOT NULL, price NUMERIC, data_marker TEXT, context TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_id, threshold_key, source_service, ticker, direction, obs_date))""",
 ]
 
 
@@ -93,8 +100,17 @@ def _sig(**over):
 
 
 def _rows(engine, table):
+    """decision_outcomes here means the proposal ledger's rows; G1 band rows are read via _band_outcomes.
+    此處 decision_outcomes 指提案帳本的列；G1 門檻帶列用 _band_outcomes 讀。"""
+    where = " WHERE agent_name != 'threshold_band'" if table == "decision_outcomes" else ""
     with engine.connect() as c:
-        return [dict(r) for r in c.execute(text(f"SELECT * FROM {table}")).mappings()]
+        return [dict(r) for r in c.execute(text(f"SELECT * FROM {table}{where}")).mappings()]
+
+
+def _band_outcomes(engine):
+    with engine.connect() as c:
+        return [dict(r) for r in c.execute(
+            text("SELECT * FROM decision_outcomes WHERE agent_name = 'threshold_band'")).mappings()]
 
 
 def _walk_keys(o):
@@ -299,3 +315,70 @@ def test_mode_unreadable_behaves_as_shadow_and_warns():
     with patch.object(pss, "logger") as log:
         assert pss.resolve_trade_proposal_mode(svc) == "shadow"
     assert any("settings db down" in str(c) for c in log.warning.call_args_list)
+
+
+# ── G1: threshold band observations (recording only) ──────────────────────────
+
+@pytest.mark.anyio
+async def test_passing_signal_also_gets_counterfactual_row(engine):
+    """An APPROVED proposal (no proposal-ledger counterfactual) still gets a band row + 2 outcome rows."""
+    await pss.record_shadow_proposals("u1", [_sig(score=7.8)], "sentinel", settings_service=_settings(),
+                                      deps=_deps(engine))
+    assert _rows(engine, "decision_outcomes") == []
+    (o,) = _rows(engine, "threshold_band_observations")
+    assert (o["threshold_key"], o["source_service"], o["direction"]) == ("auto_trade_threshold", "event_shadow", "BUY")
+    assert bool(o["passed"]) is True and float(o["score"]) == 7.8 and float(o["threshold_value"]) == 7.5
+    assert sorted(r["horizon_days"] for r in _band_outcomes(engine)) == [5, 63]
+
+
+@pytest.mark.anyio
+async def test_sell_uses_sell_threshold_in_force_and_records_rejection(engine):
+    settings = _settings(auto_trade_threshold_sell=6.5)
+    await pss.record_shadow_proposals("u1", [_sig(ticker="AAPL", action="SELL", score=6.0)], "sentinel",
+                                      settings_service=settings, deps=_deps(engine))
+    (o,) = _rows(engine, "threshold_band_observations")
+    assert o["threshold_key"] == "auto_trade_threshold_sell"
+    assert bool(o["passed"]) is False and float(o["threshold_value"]) == 6.5 and float(o["margin"]) == -0.5
+
+
+@pytest.mark.anyio
+async def test_band_threshold_stored_on_0_100_ui_scale_is_normalised(engine):
+    await pss.record_shadow_proposals("u1", [_sig(score=75)], "sentinel",
+                                      settings_service=_settings(auto_trade_threshold=75), deps=_deps(engine))
+    (o,) = _rows(engine, "threshold_band_observations")
+    assert float(o["threshold_value"]) == 7.5 and float(o["score"]) == 7.5 and bool(o["passed"]) is True
+
+
+@pytest.mark.anyio
+async def test_missing_price_row_is_marked_and_counted(engine):
+    async def no_price(ticker):
+        return None
+
+    with patch("src.services.threshold_band_recorder.logger") as log:
+        await pss.record_shadow_proposals("u1", [_sig(score=7.8)], "sentinel", settings_service=_settings(),
+                                          deps=_deps(engine, price_lookup=no_price))
+    (o,) = _rows(engine, "threshold_band_observations")
+    assert o["data_marker"] == "_insufficient_data:price" and o["price"] is None
+    assert _band_outcomes(engine) == []
+    assert any("missing_price" in c.args[0] and c.args[4] == 1 for c in log.warning.call_args_list)
+
+
+@pytest.mark.anyio
+async def test_signal_without_score_is_marked_not_defaulted(engine):
+    sig = _sig()
+    del sig["score"]
+    await pss.record_shadow_proposals("u1", [sig], "sentinel", settings_service=_settings(), deps=_deps(engine))
+    (o,) = _rows(engine, "threshold_band_observations")
+    assert o["score"] is None and o["passed"] is None and o["data_marker"] == "_insufficient_data:score"
+
+
+@pytest.mark.anyio
+async def test_recorder_never_changes_decision_of_shadow_path(engine):
+    """Same proposal row with the band table present or absent; a broken recorder does not stop recording."""
+    deps = _deps(engine, gateway=_Gateway(allowed=False))
+    with patch("src.services.proposal_shadow_service.record_at_boundary", side_effect=RuntimeError("boom")):
+        await pss.record_shadow_proposals("u1", [_sig(score=7.8)], "sentinel", settings_service=_settings(), deps=deps)
+    (p,) = _rows(engine, "trade_proposals")
+    assert p["status"] == "rejected" and p["reject_reason"] == "gateway_blocked"
+    assert len(_rows(engine, "decision_outcomes")) == 2
+    assert _rows(engine, "threshold_band_observations") == []
