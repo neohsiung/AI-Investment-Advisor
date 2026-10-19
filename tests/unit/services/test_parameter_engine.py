@@ -230,7 +230,7 @@ def test_rollback_on_cusum_alarm_writes_rollback_version(engine, monkeypatch):
     _apply_one(engine, monkeypatch)
     sent = []
     later = NOW + timedelta(days=7)
-    vs = _run(engine, per_key={KEY: stream(-0.03, 0.005, 40, 5)}, now=later, notify=lambda m, **k: sent.append(m),
+    vs = _run(engine, per_key={KEY: {5.0: stream(-0.03, 0.005, 40, 5), "*": GOOD}}, now=later, notify=lambda m, **k: sent.append(m),
               monkeypatch=monkeypatch)
     ch = _rows(engine, ParameterChange, key=KEY)[0]
     assert ch.rolled_back_at is not None
@@ -248,7 +248,7 @@ def test_no_rollback_when_monitor_series_is_healthy(engine, monkeypatch):
 
 def test_rollback_cooldown_two_quarters(engine, monkeypatch):
     _apply_one(engine, monkeypatch)
-    _run(engine, per_key={KEY: stream(-0.03, 0.005, 40, 5)}, now=NOW + timedelta(days=7), monkeypatch=monkeypatch)
+    _run(engine, per_key={KEY: {5.0: stream(-0.03, 0.005, 40, 5), "*": GOOD}}, now=NOW + timedelta(days=7), monkeypatch=monkeypatch)
     with sessionmaker(bind=engine)() as s:
         assert pe.budget_gate(s, REG[KEY], NOW + timedelta(days=100), engine)["no_rollback_cooldown"] is False
         assert pe.budget_gate(s, REG[KEY], NOW + timedelta(days=200), engine)["no_rollback_cooldown"] is True

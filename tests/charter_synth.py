@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -31,11 +31,14 @@ def series_dict(key: str, x: Sequence[float], *, cur: float = 5.5, chal: float =
             for h in (5, 63) for m, a in ((1.0, arr), (2.0, arr2))}
 
 
-def make_evaluator(per_key: Dict[str, Sequence[float]], default: Optional[Sequence[float]] = None):
-    """Stand-in for marginal_band_evaluator.evaluate_key: the stream for `key`, or `default`, or empty."""
+def make_evaluator(per_key: Dict[str, Any], default: Optional[Sequence[float]] = None):
+    """Stand-in for marginal_band_evaluator.evaluate_key. per_key[key] is a stream, or {challenger: stream, "*": stream}
+    (the band is identified by its challenger value); keys not listed use `default`, else an empty series."""
     def fake(engine, user_id, key, current, challenger, since=None):
-        x = per_key.get(key, default if default is not None else [])
-        return series_dict(key, x, cur=current, chal=challenger)
+        spec = per_key.get(key, default)
+        if isinstance(spec, dict):
+            spec = spec.get(float(challenger), spec.get("*"))
+        return series_dict(key, [] if spec is None else spec, cur=current, chal=challenger)
     return fake
 
 
