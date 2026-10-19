@@ -14,6 +14,16 @@ Rules (all enforced by tests/unit/services/test_param_policy.py):
     riskier than the seed (frozen is always the seed). A special value (e.g. 0 = unlimited) is never returned.
   * ANY read failure returns the registry rollback value, logs WARNING and carries ``fallback_reason``;
     never a number riskier than the seed.  Missing data = skip + mark, not a plausible default.
+  * Whenever the returned value differs from the stored value (clamped into bounds, pulled back to the seed
+    for tighten_only / frozen, or moved off a special value) the result carries ``fallback_reason``
+    ('clamped: ...', 'riskier_than_seed: ...', 'frozen: ...' or 'special_value: ...') and ``stored_value``
+    keeps what was actually stored.  An unmarked substitution would look like a real answer.
+    返回值與儲存值不同時（夾界、拉回 seed、移出特殊值）一律帶 fallback_reason，並以 stored_value 保留原值。
+  * tradable_capital_pct: bounds.min is 1, so a human-stored 0 ("stop all trading") is clamped to 1 AND carries
+    a ``clamped:`` marker. Consumers (milestone G10) must keep reading the raw setting for 0 = stop trading and
+    treat ANY ``fallback_reason`` as "do not trust for a safety switch".
+    tradable_capital_pct 的 bounds.min 為 1，人工寫入的 0（停止所有交易）會被夾成 1 並帶標記；
+    G10 消費端須另讀原始設定判斷 0，且任何 fallback_reason 都代表「不可用於安全開關」。
   * NOT wired into any consumer yet (milestone G10). Calling this changes no live behaviour.
     注意：特殊值（如 0）被夾回界內，故 G10 的消費端若需要「0＝停止交易」之類的人工開關，須另行讀取，不可經此函式。
 
@@ -49,6 +59,9 @@ class ParamResult:
     value: Any
     source: str
     fallback_reason: Optional[str] = None
+    # What the store actually held when ``value`` is a substitute for it (None = no row, or value is as stored).
+    # 值為代換時，儲存庫中實際存放的值。
+    stored_value: Any = None
 
     def __float__(self) -> float:
         return float(self.value)
@@ -88,23 +101,41 @@ def _riskier(p: Parameter, value: float, seed: float) -> bool:
     return p.risk_direction * (value - seed) > 0
 
 
-def _clamp(p: Parameter, value: Any, seed: Any) -> Any:
-    """Bounds, seed ceiling for non-adaptive policies, special values. Raises on non-numeric input."""
+def _clamp_marked(p: Parameter, value: Any, seed: Any) -> tuple[Any, Optional[str]]:
+    """Bounds, seed ceiling for non-adaptive policies, special values. Raises on non-numeric input.
+    Returns (value, reason); reason is None iff the value is exactly as stored.
+    回傳 (值, 原因)；原因為 None 代表與儲存值完全相同。"""
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
         raise ValueError(f"stored value {value!r} is not a finite number")
     v = float(value)
     s = float(seed)
+    reason: Optional[str] = None
     if p.policy == "frozen":
         v = s
+        if v != float(value):
+            reason = f"frozen: stored={value} seed={seed}"
     if p.bounds is not None:
-        v = min(max(v, p.bounds.min), p.bounds.max)
+        b = min(max(v, p.bounds.min), p.bounds.max)
+        if b != v and reason is None:
+            reason = f"clamped: stored={value} bounds=[{p.bounds.min},{p.bounds.max}]"
+        v = b
     if p.policy in ("tighten_only", "frozen") and _riskier(p, v, s):
         v = s
+        if reason is None:
+            reason = f"riskier_than_seed: stored={value} seed={seed}"
     if v in p.special_values:  # unreachable by construction when bounds exclude it; belt and braces
         v = s
+        if reason is None:
+            reason = f"special_value: stored={value} seed={seed}"
+    if reason is not None and v == float(value):
+        reason = None  # a later step restored the stored value: nothing was substituted
     if isinstance(seed, int) and not isinstance(seed, bool) and float(v).is_integer():
-        return int(v)
-    return v
+        return int(v), reason
+    return v, reason
+
+
+def _clamp(p: Parameter, value: Any, seed: Any) -> Any:
+    return _clamp_marked(p, value, seed)[0]
 
 
 def _latest_row(session: Any, key: str):
@@ -129,8 +160,10 @@ def get_param(key: str, engine: Any = None) -> ParamResult:
         with sessionmaker(bind=_engine(engine))() as s:
             row = _latest_row(s, key)
             if row is None:
-                return ParamResult(key, _clamp(p, seed, seed), "seed")
-            return ParamResult(key, _clamp(p, row.value_json, seed), row.source)
+                v, why = _clamp_marked(p, seed, seed)
+                return ParamResult(key, v, "seed", why, seed if why else None)
+            v, why = _clamp_marked(p, row.value_json, seed)
+            return ParamResult(key, v, row.source, why, row.value_json if why else None)
     except Exception as e:
         logger.warning("get_param(%s) failed (%s); returning rollback value", key, e)
         try:
