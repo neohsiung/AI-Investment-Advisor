@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.config.parameter_registry import load_registry
+from src.config.parameter_registry import Bounds, load_registry
 from src.config.settings_schema import schema_default
 from src.data.models import Base, ParameterValue
 from src.services import param_policy
@@ -158,3 +158,51 @@ def test_settings_service_surfaces_record_failure():
     svc.user_id = "owner"
     ok, msg = svc.save_settings_bulk({"event_analysis_daily_cap": 6})
     assert ok is False and msg == "PARAMETER_RECORD_FAILED"
+
+
+# ── fail-silent: a substituted value must carry an observable marker (AGENTS.md constraint 0) ──
+def test_clamped_value_carries_fallback_reason_and_stored_value(engine):
+    b = REG["rotation_min_score_delta"].bounds
+    record_value("rotation_min_score_delta", 99.0, source="human", engine=engine)
+    r = get_param("rotation_min_score_delta", engine=engine)
+    assert r.value == b.max  # the returned value itself is unchanged
+    assert r.source == "human"
+    assert r.stored_value == 99.0
+    assert r.fallback_reason and r.fallback_reason.startswith("clamped:")
+    assert "stored=99" in r.fallback_reason
+
+
+def test_riskier_than_seed_carries_marker():
+    # No registered key has in-bounds values riskier than its seed, so exercise the rule on a widened copy.
+    p = REG["stop_loss_pct"].model_copy(update=dict(bounds=Bounds(min=1, max=20)))
+    v, why = param_policy._clamp_marked(p, 15.0, 8.0)
+    assert v == 8.0
+    assert why and why.startswith("riskier_than_seed:") and "stored=15" in why
+
+
+def test_frozen_and_special_value_carry_markers():
+    p = REG["stop_loss_pct"].model_copy(update=dict(policy="frozen"))
+    v, why = param_policy._clamp_marked(p, 5.0, 8.0)
+    assert v == 8.0 and why and why.startswith("frozen:")
+    p = REG["stop_loss_pct"].model_copy(update=dict(bounds=None, special_values=[8.0], policy="adaptive"))
+    v, why = param_policy._clamp_marked(p, 8.0, 5.0)
+    assert v == 5.0 and why and why.startswith("special_value:")
+
+
+def test_unclamped_value_has_no_marker(engine):
+    assert get_param("rotation_min_score_delta", engine=engine).fallback_reason is None  # seed
+    record_value("rotation_min_score_delta", 2.5, source="human", engine=engine)
+    r = get_param("rotation_min_score_delta", engine=engine)
+    assert (r.value, r.source, r.fallback_reason, r.stored_value) == (2.5, "human", None, None)
+
+
+def test_zero_capital_pct_clamp_is_marked(engine):
+    """bounds.min is 1: a human-stored 0 ("stop all trading") comes back as 1, never as 0, and is marked.
+    G10 consumers must read the raw setting for the 0 switch and distrust any result with a fallback_reason."""
+    p = REG["tradable_capital_pct"]
+    assert p.bounds.min == 1 and 0 in p.special_values
+    record_value("tradable_capital_pct", 0, source="human", engine=engine)
+    r = get_param("tradable_capital_pct", engine=engine)
+    assert r.value == 1
+    assert r.stored_value == 0
+    assert r.fallback_reason and r.fallback_reason.startswith("clamped:")
