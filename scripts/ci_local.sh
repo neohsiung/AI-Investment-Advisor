@@ -17,7 +17,7 @@ fail=0
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-echo "== 1/3 Alembic upgrade + check (throwaway Postgres on :$PORT) =="
+echo "== 1/4 Alembic upgrade + check (throwaway Postgres on :$PORT) =="
 if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
   docker run -d --name "$NAME" -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=portfolio \
     -p "$PORT:5432" pgvector/pgvector:pg16 >/dev/null || { echo "FAIL: could not start postgres"; exit 1; }
@@ -32,13 +32,18 @@ if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
   fi
 fi
 
-echo "== 2/3 Bandit (medium+ severity) =="
+echo "== 2/4 Bandit (medium+ severity) =="
 if "$PY" -m bandit --version >/dev/null 2>&1; then
   "$PY" -m bandit -r src/ -ll -q >/tmp/ci_local_bandit.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_bandit.log)"; tail -5 /tmp/ci_local_bandit.log; fail=1; }
 else echo "SKIP: bandit not installed in $PY"; fi
 
-echo "== 3/3 Wiki link integrity =="
+echo "== 3/4 Wiki link integrity =="
 "$PY" .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py >/tmp/ci_local_wiki.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_wiki.log)"; tail -5 /tmp/ci_local_wiki.log; fail=1; }
+
+echo "== 4/4 Layering baseline tightness (warning only; blocking gate is tests/invariants) =="
+if "$PY" -m tests.invariants.test_layering --check-tight >/tmp/ci_local_layering.log 2>&1; then echo "OK"; else
+  echo "WARN: baseline is looser than reality (not blocking) — run \`$PY -m tests.invariants.test_layering --update\`"; head -8 /tmp/ci_local_layering.log
+fi
 
 [ "$fail" -eq 0 ] && echo "ci_local: all gates passed" || echo "ci_local: FAILED"
 exit "$fail"

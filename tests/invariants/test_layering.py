@@ -7,15 +7,21 @@ Three measurements over `src/` and `services/`, all AST/line based (no productio
   2. oversize files — files over MAX_LINES lines; they may not grow, and no new one may appear;
   3. lazy imports   — total `import` statements inside function bodies; the total may not rise.
 
-Today's counts live in `layering_baseline.json`. The test fails when a count rises or a new offender
-appears, and also when the baseline is looser than reality (so the numbers only ever shrink).
-Do NOT edit the JSON by hand to make a test pass — fix the code. After a clean-up, tighten it:
+Today's counts live in `layering_baseline.json`. The pytest gate BLOCKS only on regressions: a count that
+rises or a new offender. A baseline that is merely looser than reality (someone cleaned up, or another PR
+merged first) never blocks, so independent PRs do not fight over the JSON. Tightness is checked out of band:
 
-    .venv/bin/python -m tests.invariants.test_layering --update
+    .venv/bin/python -m tests.invariants.test_layering --check-tight   # exit 1 + list when baseline is loose
+    .venv/bin/python -m tests.invariants.test_layering --update        # tighten (never raises a number)
 
-`--update` refuses to raise any number (it only creates the file when absent, or shrinks it).
-今日數字記在 `layering_baseline.json`；數字上升、出現新違規、或基準檔比現況寬鬆都會失敗。
-禁止手改 JSON 讓測試通過；清理完成後用上方 `--update` 收緊（它拒絕調高任何數字）。
+`scripts/ci_local.sh` prints `--check-tight` as a warning; a scheduled step may enforce it. You do NOT have to
+run `--update` in a feature PR. Never edit the JSON by hand to make a test pass — fix the code.
+The JSON is one key per line, sorted, with no stored totals (the lazy-import total is the sum of the
+per-file counts), so concurrent edits to different files merge without conflict.
+今日數字記在 `layering_baseline.json`。pytest 只在「退步」時阻擋：數字上升或出現新違規。基準檔比現況寬鬆
+（清理了、或他 PR 先合併）不阻擋，獨立 PR 不再互搶 JSON。緊度另由 `--check-tight` 檢查（ci_local.sh 以
+警告顯示，排程步驟可強制）；`--update` 收緊且拒絕調高。JSON 一鍵一行、排序、不存總數（延遲 import 總數
+為各檔數字加總），並行修改不同檔案可乾淨合併。禁止手改 JSON 讓測試通過。
 """
 from __future__ import annotations
 
@@ -122,7 +128,7 @@ def _imported_modules(node: ast.AST, importer: Path) -> list[str]:
 def measure() -> dict:
     edges: dict[str, list[str]] = {}
     lines: dict[str, int] = {}
-    lazy_total = 0
+    lazy: dict[str, int] = {}
     for p in _source_files():
         text = p.read_text(encoding="utf-8")
         n_lines = text.count("\n") + (0 if text.endswith("\n") or not text else 1)
@@ -135,6 +141,7 @@ def measure() -> dict:
         src_layer = layer_of(_rel(p).removesuffix(".py"))
         forbidden = FORBIDDEN.get(src_layer or "", ())
         found: set[str] = set()
+        lazy_here = 0
         in_func: set[int] = set()
         for fn in ast.walk(tree):
             if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -145,19 +152,39 @@ def measure() -> dict:
             if not isinstance(n, (ast.Import, ast.ImportFrom)):
                 continue
             if id(n) in in_func:
-                lazy_total += 1
+                lazy_here += 1
             for mod in _imported_modules(n, p):
                 dst_layer = layer_of(mod.replace(".", "/"))
                 if dst_layer in forbidden:
                     found.add(f"{src_layer}->{dst_layer}:{mod}")
+        if lazy_here:
+            lazy[_rel(p)] = lazy_here
         if found:
             edges[_rel(p)] = sorted(found)
     return {
         "max_lines": MAX_LINES,
         "violating_edges": dict(sorted(edges.items())),
         "oversize_files": dict(sorted(lines.items())),
-        "lazy_imports_total": lazy_total,
+        "lazy_imports": dict(sorted(lazy.items())),
     }
+
+
+def lazy_total(d: dict) -> int:
+    """Total function-level imports (the number that may not rise). / 函式內 import 總數（不得上升者）。"""
+    return sum(d["lazy_imports"].values())
+
+
+def dump_baseline(d: dict) -> str:
+    """Stable, merge-friendly text: one key per line, sorted, no volatile totals. / 一鍵一行、排序、不含易變總數。"""
+    def block(name: str, m: dict) -> str:
+        if not m:
+            return f'  "{name}": {{}}'
+        body = ",\n".join(f"    {json.dumps(k)}: {json.dumps(m[k])}" for k in sorted(m))
+        return f'  "{name}": {{\n{body}\n  }}'
+    parts = [f'  "max_lines": {d["max_lines"]}'] + [
+        block(n, d[n]) for n in ("violating_edges", "oversize_files", "lazy_imports")
+    ]
+    return "{\n" + ",\n".join(parts) + "\n}\n"
 
 
 def load_baseline() -> dict:
@@ -176,8 +203,8 @@ def regressions(base: dict, now: dict) -> list[str]:
             out.append(f"NEW oversize file {f}: {n} lines (> {MAX_LINES})")
         elif n > old:
             out.append(f"oversize file grew {f}: {old} -> {n} lines")
-    if now["lazy_imports_total"] > base["lazy_imports_total"]:
-        out.append(f"lazy imports rose: {base['lazy_imports_total']} -> {now['lazy_imports_total']}")
+    if lazy_total(now) > lazy_total(base):
+        out.append(f"lazy imports rose: {lazy_total(base)} -> {lazy_total(now)}")
     return out
 
 
@@ -190,19 +217,14 @@ def stale(base: dict, now: dict) -> list[str]:
     for f in base["oversize_files"]:
         if f not in now["oversize_files"]:
             out.append(f"no longer oversize: {f}")
-    if now["lazy_imports_total"] < base["lazy_imports_total"]:
-        out.append(f"lazy imports fell: {base['lazy_imports_total']} -> {now['lazy_imports_total']}")
+    if lazy_total(now) < lazy_total(base):
+        out.append(f"lazy imports fell: {lazy_total(base)} -> {lazy_total(now)}")
     return out
 
 
 def test_layering_does_not_regress():
     bad = regressions(load_baseline(), measure())
     assert not bad, "layering ratchet regressed (fix the code, do not raise the baseline):\n" + "\n".join(bad[:40])
-
-
-def test_baseline_is_tight():
-    gone = stale(load_baseline(), measure())
-    assert not gone, "baseline is looser than reality — run `python -m tests.invariants.test_layering --update`:\n" + "\n".join(gone[:40])
 
 
 def test_layer_table_covers_every_top_level_package():
@@ -216,21 +238,81 @@ def test_layer_table_covers_every_top_level_package():
     assert not unmapped, f"files with no layer in LAYER_PREFIXES: {unmapped[:10]}"
 
 
+def _b(edges=None, over=None, lazy=None) -> dict:
+    return {"max_lines": MAX_LINES, "violating_edges": edges or {}, "oversize_files": over or {},
+            "lazy_imports": lazy or {}}
+
+
 def test_ratchet_logic_flags_worse_and_stale():
     """The comparator itself is tested on synthetic data so a broken ratchet cannot pass silently.
     用合成資料測比較器本身，避免棘輪壞掉卻靜默通過。"""
-    base = {"violating_edges": {"a.py": ["x"]}, "oversize_files": {"b.py": 1600}, "lazy_imports_total": 10}
-    worse = {"violating_edges": {"a.py": ["x", "y"], "c.py": ["z"]}, "oversize_files": {"b.py": 1601, "d.py": 1501},
-             "lazy_imports_total": 11}
+    base = _b({"a.py": ["x"]}, {"b.py": 1600}, {"m.py": 10})
+    worse = _b({"a.py": ["x", "y"], "c.py": ["z"]}, {"b.py": 1601, "d.py": 1501}, {"m.py": 11})
     assert len(regressions(base, worse)) == 5
-    better = {"violating_edges": {}, "oversize_files": {}, "lazy_imports_total": 9}
+    better = _b()
     assert regressions(base, better) == [] and len(stale(base, better)) == 3
     assert regressions(base, base) == [] and stale(base, base) == []
 
 
+def test_baseline_tighter_than_reality_after_merge_does_not_block():
+    """Failure mode 1: another PR merged first and removed modules, so this PR's merge result is tighter than the
+    baseline it recorded. That is not a regression — the blocking check must pass (tightness is `--check-tight`).
+    失敗模式 1：他 PR 先合併刪了模組，合併結果比本 PR 記錄的基準更緊，不是退步，阻擋檢查必須通過。"""
+    base = _b({"a.py": ["x", "y"]}, {"b.py": 1600}, {"m.py": 10, "n.py": 5})
+    merged = _b({"a.py": ["x"]}, {}, {"m.py": 10})
+    assert regressions(base, merged) == []
+    assert stale(base, merged)  # still reported, by --check-tight only
+
+
+def test_rise_still_blocks():
+    """The ratchet itself is unchanged: any rise or new offender is a regression, offsetting lazy moves net out.
+    棘輪本身不變：任何上升或新增違規都失敗；延遲 import 以總數比較。"""
+    base = _b({"a.py": ["x"]}, {"b.py": 1600}, {"m.py": 10})
+    assert regressions(base, _b({"a.py": ["x", "y"]}, {"b.py": 1600}, {"m.py": 10}))
+    assert regressions(base, _b({"a.py": ["x"]}, {"b.py": 1601}, {"m.py": 10}))
+    assert regressions(base, _b({"a.py": ["x"]}, {"b.py": 1600}, {"m.py": 11}))
+    assert regressions(base, _b({"a.py": ["x"]}, {"b.py": 1600}, {"m.py": 9, "k.py": 2}))
+    assert regressions(base, _b({"a.py": ["x"]}, {"b.py": 1600}, {"m.py": 9, "k.py": 1})) == []
+
+
+def test_baseline_file_is_merge_friendly():
+    """Failure mode 2: a single volatile `lazy_imports_total` line conflicted in every PR touching the baseline.
+    The file must be one key per line, sorted, with no stored total, so independent edits merge cleanly.
+    失敗模式 2：單一易變的 total 行讓每個 PR 都衝突。檔案須一鍵一行、排序、不存總數。"""
+    text = BASELINE.read_text(encoding="utf-8")
+    assert "lazy_imports_total" not in text
+    data = json.loads(text)
+    assert text == dump_baseline(data)
+    for key in ("violating_edges", "oversize_files", "lazy_imports"):
+        assert list(data[key]) == sorted(data[key])
+    assert all(len(line) < 400 for line in text.splitlines())
+
+
+def test_check_tight_cli_reports_stale_without_pytest_blocking(tmp_path, monkeypatch, capsys):
+    """`--check-tight` exits 1 and names the slack when the baseline is looser than reality; exits 0 when tight.
+    `--check-tight` 在基準比現況寬鬆時回 1 並列出差距，緊貼時回 0。"""
+    import tests.invariants.test_layering as mod
+    f = tmp_path / "b.json"
+    f.write_text(dump_baseline(_b({"a.py": ["x"]}, {}, {"m.py": 3})), encoding="utf-8")
+    monkeypatch.setattr(mod, "BASELINE", f)
+    monkeypatch.setattr(mod, "measure", lambda: _b())
+    assert mod.main(["--check-tight"]) == 1
+    assert "fixed layering edge a.py: x" in capsys.readouterr().out
+    monkeypatch.setattr(mod, "measure", lambda: _b({"a.py": ["x"]}, {}, {"m.py": 3}))
+    assert mod.main(["--check-tight"]) == 0
+
+
 def main(argv: list[str]) -> int:
+    if argv == ["--check-tight"]:
+        gone = stale(load_baseline(), measure())
+        if gone:
+            print("baseline is looser than reality — run `python -m tests.invariants.test_layering --update`:")
+            print("\n".join(gone[:40]))
+            return 1
+        print("baseline is tight")
+        return 0
     if argv != ["--update"]:
-        print("usage: python -m tests.invariants.test_layering --update")
+        print("usage: python -m tests.invariants.test_layering --update | --check-tight")
         return 2
     now = measure()
     if BASELINE.exists():
@@ -239,9 +321,9 @@ def main(argv: list[str]) -> int:
             print("REFUSED: --update never raises the baseline. Fix these first:")
             print("\n".join(bad[:40]))
             return 1
-    BASELINE.write_text(json.dumps(now, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+    BASELINE.write_text(dump_baseline(now), encoding="utf-8")
     print(f"baseline written: {sum(len(v) for v in now['violating_edges'].values())} edges, "
-          f"{len(now['oversize_files'])} oversize files, {now['lazy_imports_total']} lazy imports")
+          f"{len(now['oversize_files'])} oversize files, {lazy_total(now)} lazy imports")
     return 0
 
 
