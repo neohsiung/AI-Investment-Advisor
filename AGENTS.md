@@ -27,11 +27,18 @@ Enforced by `tests/invariants/` (run them before any deploy; they gate `./start.
 Rules every AI coding agent must follow, whatever its capability level:
 1. **Money paths are R3**: broker writes, `unified_risk_gateway`, `capital_policy`, `automated_trading`,
    `etoro_service`, `ai_trading_enabled`, `tradable_capital_usd`, `mission.yaml` — need human approval + an ADR.
+   Exception (ADR-003): changing a registered key inside `config/parameter_registry.yaml` is applied automatically by
+   the change engine under the charter's test method; this replaces per-change human approval of loosening with the
+   weekly digest and the human emergency stop. Editing the registry or the charter itself stays R3.
+   例外（ADR-003）：登錄檔內的參數變更由章程規範的引擎自動執行；修改登錄檔或章程本身仍屬 R3。
 2. **Only the execution service places or closes broker orders**; LLM output may *propose*, deterministic code *decides*.
 3. **No non-safety sell without a replacement plan**; no hardcoded decision scores; no `exec` of generated code;
    no evolution code writing live settings (promotion goes through a proposal table).
-   (Rules 1 and 3 are to be amended by ADR-003 once the parameter engine exists; until then they stand as written.
-   規則 1 與 3 日後將由 ADR-003 修訂，在此之前照現行文字執行。 `tests/invariants/test_registered_key_writers.py` enforces rule 3 for registered keys.)
+   (ADR-003 amends rules 1 and 3: loosening no longer always needs a human, but only the change engine may write a
+   registered key, and the constitution in ADR-003 never changes by automation. Until milestone G11 enables `apply`
+   the engine stays in `dry_run` and these rules apply as before.
+   ADR-003 修訂規則 1 與 3：放寬不再一律需要人，但只有變更引擎能寫登錄鍵；G11 啟用 `apply` 前引擎維持 `dry_run`，
+   規則照舊。 `tests/invariants/test_registered_key_writers.py` enforces rule 3 for registered keys.)
 4. **Never fail silent on decision paths** (constraint #0 below). Missing data = skip + mark, never a plausible default.
 5. **Touching any `config/*.yaml`: run `tests/unit/config` and `tests/invariants` before deploying** (a malformed
    settings schema once made the quality gate crash and evicted 7 of 8 active tickers).

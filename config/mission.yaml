@@ -16,6 +16,76 @@ adr:
     date: 2026-10-17
     decision: "Enable benchmark parking (idle cash ramps into SPY at leverage 1, buy-only, banded, per-run capped); `default_allocation: benchmark` is now operative instead of aspirational."
     reason: "Idle cash is a standing bet against the benchmark. eToro read check: SPY spread ~0.004%, leverage-1 long is a plain holding (no CFD overnight fees), fractional, min $10. UNVERIFIED: per-order fee and dividend withholding for a Taiwan tax resident (est. ~0.4%/yr drag). Operator approved 2026-10-17; rollback = benchmark_parking_enabled=false."
+  - id: ADR-003
+    date: 2026-10-19
+    decision: >-
+      Autonomy charter. (1) Approves config/parameter_registry.yaml as the pre-registered change surface, and the
+      test method and budgets that gate changes: any-time-valid confidence lower bound (normal-mixture confidence
+      sequence, trimmed at +/-20%) above 0 at significance 0.05/N_cum (N_cum includes strategy-lab trials);
+      >=3 consecutive non-overlapping 21-day windows with positive point estimates, monotone cumulative sum and
+      no window above 50% of the total; >=2 non-overlapping 63-day windows positive; >=30 settled marginal
+      decisions per period with a 2x cost stress test; no regime flip in the evidence period or evidence spanning
+      >=2 regime cells. All five must hold (computed by code) to loosen. Tightening needs one trigger only
+      (one-sided CUSUM alarm, any K breach, or negative gate_policy evidence). One step per change; at most one
+      loosening in flight system-wide and one applied per quarter; each challenger consumes one quarterly trial
+      slot shared with the strategy lab; cooldown after a change is max(63 trading days, evidence period);
+      after a loosening CUSUM monitoring continues and an alarm rolls back and cools down for two quarters; 2
+      rollbacks among the last 4 loosenings degrade the engine to tighten_only.
+      (2) Changes inside the registry are applied automatically. This replaces the per-change human confirmation
+      of danger:true parameters with a weekly digest plus immediate notices (apply, rollback, freeze, resume,
+      degrade). The human keeps the emergency stop, which has priority over everything below.
+      (3) Constitution, never changeable by automation: single order executor; the LLM proposes and
+      deterministic code decides; no exec of generated code; fail-closed behaviour and constraint 0 (never fail
+      silent on decision paths); broker permission scope; mission.objective; the test method and the N_cum rule;
+      the priority of the human stop.
+      (4) Class D parameters (the mechanisms that judge changes: DSR and t thresholds, budgets, K1-K7,
+      settlement windows) may only be tightened automatically, never loosened, because a judge must not loosen
+      itself.
+      (5) Halt semantics, replacing the earlier wording of moving to 100% benchmark: a K1, K3 or K4 breach puts
+      charter_state into frozen, which stops new non-safety orders and never auto-liquidates; it resumes
+      automatically at the watchdog clears_on date, after which benchmark parking refills within its budget.
+      K5 and K6 stay not_measurable until built and do not block loosening meanwhile. K7 only freezes strategy
+      promotion. The halt state is the separate charter_state (dry_run, apply, tighten_only, frozen,
+      human_stop) and is never ai_trading_enabled; a manual resume may not clear charter_state.
+      (6) Enablement of milestone G11 (dry_run to apply) requires all of: this ADR merged; dry_run for >=90 days
+      including at least one full decision round; zero-effect simulation false-loosening rate <= alpha; halt
+      drill passed; 8 consecutive weekly digests; no K breach in the last 30 days.
+      (7) Editing the registry or this charter stays R3 (human approval plus an ADR).
+      繁體中文：自治章程。(1) 核准 config/parameter_registry.yaml 為事先登記的變更範圍，並核准把關的檢定方法與預算：
+      隨時有效的信賴下界（常態混合信賴序列，報酬截尾 +/-20%）須在顯著水準 0.05/N_cum 下大於 0（N_cum 含策略實驗室
+      試驗）；至少 3 個連續且互不重疊的 21 日窗口點估計為正、累計和單調、單一窗口不超過總和 50%；至少 2 個互不重疊
+      的 63 日窗口為正；每個期間至少 30 筆已結算的邊際決策並做 2 倍成本壓力測試；證據期間體制未翻轉或橫跨至少 2 個
+      體制格。五項由程式判定且須全部成立才可放寬；收緊只需單一觸發（單邊 CUSUM 報警、任一 K 違規、或 gate_policy
+      負證據）。每次只動一格；全系統同時最多一個放寬進行中、每季最多套用一次；每個挑戰值消耗一個與策略實驗室共用的
+      季試驗額度；變更後冷卻為 max(63 個交易日, 證據期間)；放寬後持續 CUSUM 監控，報警即回滾並冷卻兩季；最近 4 次
+      放寬中有 2 次回滾，引擎降為 tighten_only。
+      (2) 登錄檔內的變更自動執行，以週報加即時通知（套用、回滾、停機、恢復、降級）取代 danger:true 參數的逐筆人工確認；
+      人工保留緊急停止，優先於以下所有項目。
+      (3) 憲法，自動化永遠不得更動：單一下單者；LLM 只提案、由確定性程式決定；不執行生成的程式碼；fail-closed 與約束 #0
+      （決策路徑不得靜默失敗）；券商權限範圍；mission.objective；檢定方法與 N_cum 規則；人工停止的優先權。
+      (4) D 類參數（判斷變更的機制：DSR 與 t 門檻、預算、K1–K7、結算窗口）自動調整時只能收緊、不能放寬，因為評審者
+      不得放寬自己。
+      (5) 停機語意，取代先前「轉為 100% 基準」的寫法：K1、K3 或 K4 違規時，charter_state 進入 frozen，停止新的非安全
+      下單、絕不自動清倉，並在看門狗的 clears_on 日期自動恢復，之後由基準停泊在預算內補回。K5、K6 在建好之前維持
+      not_measurable，期間不阻擋放寬；K7 只凍結策略晉升。停機狀態是獨立的 charter_state（dry_run、apply、
+      tighten_only、frozen、human_stop），絕不是 ai_trading_enabled；手動 resume 不得清除 charter_state。
+      (6) 里程碑 G11（dry_run 轉 apply）須同時滿足：本 ADR 已合併；dry_run 至少 90 天且完成至少一輪完整判定；零效應
+      模擬的誤放寬率 <= alpha；停機演練通過；連續 8 份週報；最近 30 天無任何 K 違規。
+      (7) 修改登錄檔或本章程仍屬 R3（人工核准加 ADR）。
+    reason: >-
+      Operator requirement of 2026-10-18: minimise human intervention while letting every judgment threshold
+      move, but only when a change is meaningful, verified and a trend has formed. One human signature on a
+      pre-registered surface and a fixed test method replaces repeated per-change approvals, while the
+      constitution and class D keep the judge from loosening itself. Honest limit: at IR 0.5 reaching t=3 needs
+      about 36 years and t=2 about 16 years (estimates), and each marginal-interval loosening needs roughly
+      120-450 independent decisions (sigma and signal volume UNVERIFIED), so expect zero to one loosening per
+      year and frequent no-change or tightening outcomes; that is the designed behaviour. Merging this change is
+      the operator's approval; the behaviour is inert until G11 criteria hold.
+      繁體中文：操作者於 2026-10-18 的要求是盡量減少人工介入，同時讓每個判斷門檻都能移動，但只有在變更有意義、
+      已驗證且趨勢成形時才動。以「事先登記的範圍加固定檢定方法」的一次人工簽核，取代反覆的逐筆核准；憲法與 D 類
+      則防止評審者放寬自己。誠實的限制：IR 0.5 時要達到 t=3 約需 36 年、t=2 約需 16 年（估計值），每次邊際區間的
+      放寬約需 120–450 筆獨立決策（sigma 與訊號量未驗證），所以預期一年放寬 0 到 1 次，且常見「不動」或收緊，這是
+      設計的行為。合併本變更即為操作者核准；在 G11 條件成立前，這些行為都不會生效。
 
 objective:
   benchmark: SPY
@@ -44,7 +114,7 @@ promotion:
   min_forward_shadow_days: 180
   max_initial_live_weight_pct: 10.0
 
-kill_criteria:                              # any one flips the system to 100% benchmark and stops active trading
+kill_criteria:                              # any K1/K3/K4 breach freezes new non-safety orders (charter_state=frozen, ADR-003 (5); no auto-liquidation); K7 only freezes strategy promotion / 任一 K1/K3/K4 違規即凍結新的非安全下單（charter_state=frozen，見 ADR-003 (5)，不自動清倉）；K7 只凍結策略晉升
   - {id: K1, name: cost_ratio,            threshold: 3.0,  unit: pct_of_nav_rolling_12m}
   - {id: K2, name: ledger_broker_mismatch, threshold: 1,    unit: trading_days}
   - {id: K3, name: single_day_sell,        threshold: 20.0, unit: pct_of_nav}
