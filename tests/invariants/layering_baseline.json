@@ -145,5 +145,5 @@
     "src/services/staggered_dip_buying_service.py": 1586,
     "src/services/workflow_service.py": 1589
   },
-  "lazy_imports_total": 1574
+  "lazy_imports_total": 1569
 }
