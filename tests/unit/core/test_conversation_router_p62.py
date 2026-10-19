@@ -29,6 +29,7 @@ async def test_router_gex_command():
         mock_metric.requires_protection = False
         mock_metric.rationale = "Test GEX rationale"
         mock_metric.evaluated_at = "2026-10-14T08:00:00Z"
+        mock_metric.fallback_reason = None
         mock_eval.return_value = mock_metric
 
         res = await router._handle_system_command(adapter, "chan1", "/gex SPY", "test_user")
@@ -60,6 +61,7 @@ async def test_router_pair_command():
         mock_metric.requires_circuit_breaker = False
         mock_metric.rationale = "Test Pairs rationale"
         mock_metric.evaluated_at = "2026-10-14T08:00:00Z"
+        mock_metric.fallback_reason = None
         mock_eval.return_value = mock_metric
 
         res = await router._handle_system_command(adapter, "chan1", "/pair NVDA AMD", "test_user")
