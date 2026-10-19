@@ -21,6 +21,7 @@ from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.repositories.snapshot_repository import AlchemySnapshotRepository
 from src.services.settings_service import SettingsService
 from src.services.risk_keyword_service import RiskKeywordService
+from src.services.rotation_pair_recorder import DECISION_APPROVED, DECISION_REJECTED_DELTA, record_rotation_decision, record_young_blocked
 from src.domain.entities import RiskKeyword
 
 # PAD Phase 2: Add model router and gateway imports
@@ -4483,15 +4484,11 @@ class SentinelService:
         """
         rotation_triggers: List[Dict[str, Any]] = []
         try:
-            rotation_enabled = self.settings_service.get_setting(
-                "capital_rotation_enabled", True, self.user_id
-            )
+            rotation_enabled = self.settings_service.get_setting("capital_rotation_enabled", True, self.user_id)
             if str(rotation_enabled).lower() not in ("true", "1"):
                 return []
 
-            rotation_min_delta = float(
-                self.settings_service.get_setting("rotation_min_score_delta", 2.0, self.user_id) or 2.0
-            )
+            rotation_min_delta = float(self.settings_service.get_setting("rotation_min_score_delta", 2.0, self.user_id) or 2.0)
 
             # Filter valid holdings
             active_holdings = {}
@@ -4581,15 +4578,18 @@ class SentinelService:
             # to outlast round-trip friction. Unknown age fails closed (no sell on absent evidence).
             # 最短持有期：持倉須先撐過來回摩擦才可被換出；年齡未知則不賣（缺證據不當作可賣）。
             min_hold = float(self.settings_service.get_setting("rotation_min_holding_days", 5, self.user_id) or 0)
-            sellable = {}
+            sellable, young = {}, {}  # young: age known but < min_hold, recorded for G1b / 年齡不足者供 G1b 記錄
             for t_, i_ in active_holdings.items():
                 age = self._holding_age_days(t_, i_)
                 if age is None:
                     logger.info(f"[Capital Rotation] {t_} skipped as rotation source: holding age unknown (fail closed)")
                 elif age < min_hold:
                     logger.info(f"[Capital Rotation] {t_} skipped as rotation source: held {age:.1f}d < {min_hold:.0f}d minimum")
+                    young[t_] = age
                 else:
                     sellable[t_] = i_
+            await record_young_blocked(self.user_id, self.settings_service, young, best_candidate["ticker"], best_cand_score,
+                                       self._research_score, rotation_min_delta, min_hold)
             if not sellable:
                 return []
 
@@ -4675,12 +4675,14 @@ class SentinelService:
                 min_delta_override=rotation_min_delta,
             )
 
+            await record_rotation_decision(
+                self.user_id, self.settings_service, weakest_ticker, target_sym, weakest_conviction, best_cand_score,
+                self._holding_age_days(weakest_ticker, weakest_info), rotation_min_delta, min_hold,
+                DECISION_APPROVED if swap_decision.should_swap else DECISION_REJECTED_DELTA)
             if swap_decision.should_swap:
                 est_proceeds = round(shares_to_sell * price, 2)
                 if est_proceeds < 10.0:
-                    logger.info(
-                        f"[Capital Rotation] Swap rejected: estimated proceeds ${est_proceeds} < $10.00 minimum trade size"
-                    )
+                    logger.info(f"[Capital Rotation] Swap rejected: estimated proceeds ${est_proceeds} < $10.00 minimum trade size")
                     return []
 
                 # Pre-flight check via UnifiedRiskGateway
@@ -4688,18 +4690,11 @@ class SentinelService:
                     from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
                     risk_gw = UnifiedRiskGatewayService(user_id=self.user_id)
                     preflight = await risk_gw.evaluate_trade_risk(
-                        ticker=target_sym,
-                        action="BUY",
-                        amount_usd=est_proceeds,
-                        current_price=None,
-                        strategy_name="capital_rotation",
-                        confidence_score=best_cand_score,
-                    )
+                        ticker=target_sym, action="BUY", amount_usd=est_proceeds, current_price=None,
+                        strategy_name="capital_rotation", confidence_score=best_cand_score)
                     if not preflight.allowed:
-                        logger.warning(
-                            f"[Capital Rotation] Swap rejected by Pre-Flight Risk Gateway: "
-                            f"Target BUY {target_sym} blocked by {preflight.primary_blocker} - {preflight.reasons}"
-                        )
+                        logger.warning(f"[Capital Rotation] Swap rejected by Pre-Flight Risk Gateway: "
+                                       f"Target BUY {target_sym} blocked by {preflight.primary_blocker} - {preflight.reasons}")
                         return []
                 except Exception as pfe:
                     logger.warning(f"[Capital Rotation] Pre-flight check error: {pfe}")
