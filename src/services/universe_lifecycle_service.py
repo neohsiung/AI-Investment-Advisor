@@ -1000,15 +1000,15 @@ class UniverseLifecycleService:
                 market=self.market,
                 quality_gate=self.quality_gate,
             )
-            shadow_evolution = await shadow_svc.batch_step_and_evaluate(auto_promote=True)
+            shadow_evolution = await shadow_svc.batch_step_and_evaluate(auto_promote=False)
             logger.info(
-                "Lifecycle shadow evaluation: %d graduated, %d in progress, %d failed",
+                "Lifecycle shadow evaluation: %d qualified (not promoted: promotion requires evidence gate), %d in progress, %d failed",
                 shadow_evolution.get("graduated_count", 0),
                 shadow_evolution.get("in_progress_count", 0),
                 shadow_evolution.get("failed_count", 0),
             )
         except Exception as sle:
-            logger.debug("Shadow ledger evaluation skipped/failed during lifecycle cycle: %s", sle)
+            logger.warning("Shadow ledger evaluation skipped/failed during lifecycle cycle: %s", sle)
 
         # 5. Screen & admit new candidates to active pool (or shadow pipeline) if slots available
         admitted = await self.screen_and_admit_candidates(

@@ -315,7 +315,7 @@ class RuleLifecycleService:
         """
         import json
         uid = user_id or self.user_id
-        stats = {"checked": 0, "passed": 0, "provisional": 0, "rejected": 0, "failed": 0}
+        stats = {"checked": 0, "passed": 0, "provisional": 0, "rejected": 0, "expired": 0, "failed": 0}
         
         try:
             with self._engine().connect() as conn:
@@ -340,7 +340,8 @@ class RuleLifecycleService:
             
             stats["checked"] += 1
             
-            # Check 14-day safety valve
+            # 14-day expiry: no gate evidence in time -> retire, never promote (ADR-003)
+            # 14 天到期：期限內沒有閘門證據 -> 退役，不得晉升
             now = datetime.now(timezone.utc) if created_at.tzinfo else datetime.now()
             if created_at < now - timedelta(days=14):
                 try:
@@ -348,8 +349,7 @@ class RuleLifecycleService:
                         conn.execute(
                             text("""
                                 UPDATE agent_rules
-                                SET status = 'active', gate_status = 'provisional',
-                                    expires_at = NOW() + INTERVAL '30 days',
+                                SET status = 'rejected', gate_status = 'expired_no_evidence',
                                     gate_checked_at = NOW(),
                                     gate_details = :details,
                                     updated_at = NOW()
@@ -357,17 +357,17 @@ class RuleLifecycleService:
                             """),
                             {
                                 "rid": rule_id,
-                                "details": '{"reason": "14-day safety valve auto-promotion", "provisional": true}'
+                                "details": '{"reason": "expired: no gate evidence within 14 days"}'
                             }
                         )
-                    stats["provisional"] += 1
-                    logger.info(f"RuleLifecycle: rule {rule_id} auto-promoted to provisional (14-day safety valve)")
+                    stats["expired"] += 1
+                    logger.info(f"RuleLifecycle: rule {rule_id} expired (no gate evidence within 14 days)")
                     self._refresh_file_cache(agent_name, uid)
                 except Exception as e:
-                    logger.error(f"RuleLifecycle: failed auto-promotion of rule {rule_id}: {e}")
+                    logger.error(f"RuleLifecycle: failed expiry of rule {rule_id}: {e}")
                     stats["failed"] += 1
                 continue
-                
+
             # Run gate evaluation
             try:
                 verdict, details = await self._gate_one(uid, rule_id, agent_name, rule_text, source_decision_id)

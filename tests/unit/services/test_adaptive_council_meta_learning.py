@@ -19,8 +19,9 @@ from src.services.adaptive_council_meta_learning_service import (
     AgentAttributionMetrics,
     AdaptiveCouncilContext,
     DEFAULT_REGIME_PRIORS,
-    STANDARD_AGENT_ROSTER,
 )
+
+_ROSTER_FOR_TEST = ["Technical", "Fundamental", "Sentiment", "Valuation", "Risk"]
 
 
 @pytest.fixture
@@ -37,21 +38,53 @@ def test_meta_service_default_priors():
         assert "Risk" in weights
 
 
-def test_agent_attributions_empty_history(meta_service):
-    """When no decision outcomes exist, attributions default to Laplace prior (0.50 win rate)."""
+def _service_with_rows(meta_service, rows):
     mock_conn = MagicMock()
-    mock_conn.execute.return_value.fetchall.return_value = []
+    mock_conn.execute.return_value.fetchall.return_value = rows
     meta_service.engine = MagicMock()
     meta_service.engine.connect.return_value.__enter__.return_value = mock_conn
+    return meta_service
 
+
+def test_agent_attributions_empty_history(meta_service):
+    """No settled rows -> no attributions at all (no invented roster, no 0.50 prior)."""
+    _service_with_rows(meta_service, [])
+    assert meta_service.compute_agent_attributions() == {}
+
+
+def test_attributions_use_only_agents_present_in_rows(meta_service):
+    """Roster comes from the data: Momentum and Macro only, no Fundamental default bucket."""
+    rows = [
+        ("Momentum", "BUY", 0.05, 0.02, 0.03, "2026-07-01"),
+        ("Macro", "SELL", -0.02, -0.01, 0.01, "2026-07-02"),
+        ("Momentum", "BUY", 0.02, 0.01, 0.01, "2026-07-03"),
+    ]
+    _service_with_rows(meta_service, rows)
     attributions = meta_service.compute_agent_attributions()
-    assert len(attributions) == len(STANDARD_AGENT_ROSTER)
-    for agent in STANDARD_AGENT_ROSTER:
-        attr = attributions[agent]
-        assert attr.total_calls == 0
-        assert attr.correct_calls == 0
-        assert attr.rolling_win_rate == 0.50
-        assert attr.avg_alpha_contribution == 0.0
+    assert set(attributions.keys()) == {"Macro", "Momentum"}
+    assert "Fundamental" not in attributions
+    assert attributions["Momentum"].total_calls == 2
+
+
+def test_unmatched_agent_name_is_not_attributed_to_fundamental(meta_service):
+    """No substring matching and no catch-all: 'Thematic' stays 'Thematic'."""
+    _service_with_rows(meta_service, [("Thematic", "BUY", 0.05, 0.02, 0.03, "2026-07-01")])
+    attributions = meta_service.compute_agent_attributions()
+    assert list(attributions.keys()) == ["Thematic"]
+
+
+def test_no_settled_rows_means_no_meta_weight_injection(meta_service):
+    """n=0 -> meta_weights == {} and the prompt has no weights block."""
+    _service_with_rows(meta_service, [])
+    ctx = meta_service.generate_adaptive_council_context()
+    assert ctx.meta_weights == {}
+    assert "專家動態決策影響力權重" not in ctx.prompt_guidance
+    assert "n=0" in ctx.prompt_guidance
+
+
+def test_calibrate_with_no_attributions_returns_empty(meta_service):
+    _service_with_rows(meta_service, [])
+    assert meta_service.calibrate_meta_weights(current_regime="BULL_LOW_VOL") == {}
 
 
 def test_agent_attributions_with_mock_history(meta_service):
@@ -114,7 +147,7 @@ def test_calibrate_meta_weights_black_swan_veto(meta_service):
     """When Black Swan alert is active, Risk Agent receives >= 50% veto power."""
     mock_attributions = {
         agent: AgentAttributionMetrics(agent_name=agent, rolling_win_rate=0.50)
-        for agent in STANDARD_AGENT_ROSTER
+        for agent in _ROSTER_FOR_TEST
     }
 
     calibrated = meta_service.calibrate_meta_weights(
@@ -128,7 +161,9 @@ def test_calibrate_meta_weights_black_swan_veto(meta_service):
 
 
 def test_generate_adaptive_council_context_structure(meta_service):
-    """Verify that synthesized context includes D1, O1, O2 metrics and prompt text."""
+    """Context carries D1, O1, O2 metrics and prompt text; weights appear only with settled rows."""
+    rows = [(a, "BUY", 0.05, 0.02, 0.03, "2026-07-01") for a in _ROSTER_FOR_TEST]
+    _service_with_rows(meta_service, rows)
     ctx = meta_service.generate_adaptive_council_context()
 
     assert isinstance(ctx, AdaptiveCouncilContext)
@@ -163,8 +198,7 @@ def test_api_council_meta_learning_endpoints():
     assert resp_attrs.status_code == 200
     data_attrs = resp_attrs.json()
     assert data_attrs["status"] == "success"
-    assert "Risk" in data_attrs["attributions"]
-    assert "rolling_win_rate" in data_attrs["attributions"]["Risk"]
+    assert isinstance(data_attrs["attributions"], dict)
 
     # 3. Calibrate endpoint
     resp_calib = client.post("/api/v1/council/meta-learning/calibrate")
