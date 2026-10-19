@@ -95,7 +95,7 @@ def test_github_actions_url_does_not_depend_on_deleted_db_vars(monkeypatch):
     from unittest import mock
 
     from . import factories
-    for v in ("CHARTER_E2E_PG_URL", "DB_HOST", "DB_USER", "DB_PASS", "DB_NAME"):
+    for v in ("CHARTER_E2E_PG_URL", "DB_HOST", "DB_USER", "DB_PASS", "DB_NAME", "PYTEST_XDIST_WORKER"):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     monkeypatch.setenv("DB_PORT", "5432")
@@ -105,3 +105,48 @@ def test_github_actions_url_does_not_depend_on_deleted_db_vars(monkeypatch):
         ce.return_value.connect.return_value = conn
         url = factories.resolve_pg_url()
     assert url == "postgresql+psycopg2://postgres:postgres@localhost:5432/charter_e2e"
+
+
+def _actions_url(monkeypatch, worker):
+    """Resolve the Actions-branch URL with a mocked admin connection; returns (url, executed SQL texts)."""
+    from unittest import mock
+
+    from . import factories
+    for v in ("CHARTER_E2E_PG_URL", "DB_HOST", "DB_USER", "DB_PASS", "DB_NAME", "PYTEST_XDIST_WORKER"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("DB_PORT", "5432")
+    if worker:
+        monkeypatch.setenv("PYTEST_XDIST_WORKER", worker)
+    conn = mock.MagicMock()
+    execute = conn.__enter__.return_value.execute
+    execute.return_value.fetchone.return_value = None
+    with mock.patch.object(factories, "create_engine") as ce:
+        ce.return_value.connect.return_value = conn
+        url = factories.resolve_pg_url()
+    return url, [str(c.args[0]) for c in execute.call_args_list]
+
+
+def test_xdist_worker_gets_its_own_database(monkeypatch):
+    """Under pytest-xdist each worker TRUNCATEs its own database; sharing one would collide between workers."""
+    url, sql = _actions_url(monkeypatch, "gw1")
+    assert url == "postgresql+psycopg2://postgres:postgres@localhost:5432/charter_e2e_gw1"
+    assert any('CREATE DATABASE "charter_e2e_gw1"' in s for s in sql)
+
+
+def test_no_xdist_worker_keeps_plain_database(monkeypatch):
+    url, sql = _actions_url(monkeypatch, None)
+    assert url == "postgresql+psycopg2://postgres:postgres@localhost:5432/charter_e2e"
+    assert any(s == 'CREATE DATABASE "charter_e2e"' for s in sql)
+
+
+def test_explicit_url_is_suffixed_per_worker_only_for_charter_databases(monkeypatch):
+    from unittest import mock
+
+    from . import factories
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw2")
+    monkeypatch.setenv("CHARTER_E2E_PG_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/charter_e2e")
+    with mock.patch.object(factories, "create_engine"):
+        assert factories.resolve_pg_url().endswith("/charter_e2e_gw2")
+    monkeypatch.setenv("CHARTER_E2E_PG_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/portfolio")
+    assert factories.resolve_pg_url().endswith("/portfolio")

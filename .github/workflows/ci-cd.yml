@@ -92,7 +92,7 @@ jobs:
           REDIS_PORT: 6379
           AI_PROVIDER: mock
         run: |
-          python -m pytest --cov=src --cov-report=xml --cov-fail-under=65 tests/
+          python -m pytest -n 4 --dist loadfile --cov=src --cov-report=xml --cov-fail-under=65 tests/
 
       - name: Verify Alembic Migrations
         env:
