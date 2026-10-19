@@ -19,6 +19,7 @@ CHARTER_MODULES = [
     "src/services/parameter_engine.py",
     "src/evaluation/regime.py",
     "src/workflow/charter_tasks.py",
+    "src/services/charter_digest_service.py",
 ]
 
 _SQL_NOW = re.compile(r"\bnow\s*\(\s*\)", re.IGNORECASE)

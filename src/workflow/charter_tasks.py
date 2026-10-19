@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 from src.config.owner import resolve_user_id
 from src.data.database import get_db_engine
 from src.infrastructure.celery_app import app
-from src.services import parameter_engine
+from src.services import charter_digest_service, parameter_engine
 from src.services.market_data_service import MarketDataService
 from src.services.notification_service import NotificationService
 from src.services.settings_service import SettingsService
@@ -64,3 +64,15 @@ def run_parameter_engine(user_id: Optional[str] = None, now: Optional[datetime] 
     applied = sum(v.applied for v in verdicts)
     logger.info("run_parameter_engine: verdicts=%d applied=%d", len(verdicts), applied)
     return {"verdicts": len(verdicts), "applied": applied}
+
+
+@app.task(name="src.workflow.charter_tasks.run_charter_weekly_digest", soft_time_limit=300, time_limit=360)
+def run_charter_weekly_digest(user_id: Optional[str] = None, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Saturday charter digest (G8); one row per ISO week. beat calls it without arguments. / 週六週報；每週一筆。"""
+    user_id = resolve_user_id(user_id)
+    now = now or datetime.now(timezone.utc)
+    try:
+        return charter_digest_service.write_weekly_digest(get_db_engine(), user_id, now)
+    except Exception as e:
+        logger.warning("run_charter_weekly_digest failed: %s", e, exc_info=True)
+        return {"error": str(e), "written": False}
