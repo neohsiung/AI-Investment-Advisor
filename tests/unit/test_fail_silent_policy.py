@@ -40,6 +40,7 @@ DECISION_PATH_MODULES = [
     "src/services/capital_policy.py",
     "src/services/proposal_validator.py",
     "src/services/gate_policy.py",
+    "src/services/param_policy.py",
     "src/services/proposal_shadow_service.py",
     "src/services/self_ops_service.py",
     "src/infrastructure/risk_manager.py",

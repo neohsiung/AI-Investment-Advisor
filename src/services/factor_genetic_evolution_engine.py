@@ -21,7 +21,7 @@ Factor Genetic Hyper-Evolution Engine (Phase 31)
    - OOS 最大回撤 (MDD) 擴張 <= 10%。
    - 香農多因子多樣性指數 (Shannon Diversity Index) >= 0.80，杜絕退化為單因子極端集中。
 4. 離線非同步排程與自動晉級 (Autonomous Promotion & Redis Persistence)：
-   - 支援自動將通過驗證之基因矩陣晉級至 SettingsRepository (tactical_phase_factor_weights)。
+   - 將通過驗證之基因矩陣登記為 parameter_proposals 提案（G3：不再直接寫入 SettingsRepository）。
    - 跨程序 Redis 快取持久化 (factor_evolution:genetic_latest:{user_id}) 與 0-LLM 指令 /evolve。
 """
 
@@ -35,11 +35,12 @@ import random
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from src.config.owner import resolve_user_id
+from src.repositories.parameter_proposal_repository import ParameterProposalRepository
 from src.services.factor_rotation_replay_engine import (
     FACTOR_NAMES,
     FactorRotationReplayEngine,
@@ -111,7 +112,8 @@ class GeneticEvolutionReport:
     is_promotable: bool
     promotion_reason: str
     generation_history: List[GenerationSummary] = field(default_factory=list)
-    promoted_to_settings: bool = False
+    promoted_to_settings: bool = False  # always False since G3: the engine proposes, it never writes settings
+    proposal_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -135,6 +137,7 @@ class GeneticEvolutionReport:
             "promotion_reason": self.promotion_reason,
             "generation_history": [g.to_dict() for g in self.generation_history],
             "promoted_to_settings": self.promoted_to_settings,
+            "proposal_id": self.proposal_id,
         }
 
 
@@ -157,6 +160,7 @@ class FactorGeneticEvolutionEngine:
         user_id: Optional[str] = None,
         settings_service: Optional[Any] = None,
         replay_engine: Optional[FactorRotationReplayEngine] = None,
+        proposal_writer: Optional[Callable[[Dict[str, Any]], Optional[str]]] = None,
     ):
         try:
             self.user_id = resolve_user_id(user_id) if user_id else "default"
@@ -164,6 +168,7 @@ class FactorGeneticEvolutionEngine:
             self.user_id = user_id or "default"
         self.settings_service = settings_service
         self.replay_engine = replay_engine or FactorRotationReplayEngine()
+        self._proposal_writer = proposal_writer
 
     def _get_setting_bool(self, key: str, default: bool = True) -> bool:
         if not self.settings_service:
@@ -579,9 +584,21 @@ class FactorGeneticEvolutionEngine:
         else:
             promotion_reason = f"⚠️ 未達晉級門檻，維持基準權重：{'; '.join(rejection_reasons)}"
 
-        promoted_applied = False
+        proposal_id: Optional[str] = None
         if promotable and self.auto_promote:
-            promoted_applied = self._apply_matrix_to_settings(champion.matrix)
+            proposal_id = self._propose_matrix(
+                champion.matrix,
+                run_id=run_id,
+                evidence={
+                    "wfo_efficiency": wfo_eff,
+                    "sharpe_improvement_pct": sharpe_improvement_pct,
+                    "mdd_expansion_pct": mdd_expansion_pct,
+                    "factor_shannon_diversity": diversity,
+                    "oos_sharpe": oos_sharpe,
+                    "baseline_oos_sharpe": base_oos_sharpe,
+                    "promotion_reason": promotion_reason,
+                },
+            )
 
         report = GeneticEvolutionReport(
             run_id=run_id,
@@ -603,7 +620,8 @@ class FactorGeneticEvolutionEngine:
             is_promotable=promotable,
             promotion_reason=promotion_reason,
             generation_history=generation_history,
-            promoted_to_settings=promoted_applied,
+            promoted_to_settings=False,
+            proposal_id=proposal_id,
         )
 
         # 8. 持久化至 Redis 與內存
@@ -611,26 +629,31 @@ class FactorGeneticEvolutionEngine:
 
         return report
 
-    def _apply_matrix_to_settings(self, matrix: FactorWeightMatrix) -> bool:
-        """將驗證通過之基因矩陣持久化至 SettingsService / Repository"""
-        if not self.settings_service:
-            return False
+    def _propose_matrix(self, matrix: FactorWeightMatrix, run_id: str, evidence: Dict[str, Any]) -> Optional[str]:
+        """Record the validated gene matrix as a PROPOSAL row; never writes a live setting (G3, AGENTS.md rule 3).
+        Returns the proposal id, or None when recording failed (logged at error level, nothing is faked).
+        將通過驗證的基因矩陣登記為「提案」；絕不直接寫入實盤設定。失敗時回傳 None 並以 error 記錄。"""
         try:
-            mat_dict = matrix.to_dict()
-            json_str = json.dumps(mat_dict)
-            if hasattr(self.settings_service, "set_setting"):
-                self.settings_service.set_setting("tactical_phase_factor_weights", json_str)
-                self.settings_service.set_setting("tactical_rotation_min_edge_pct", float(matrix.min_edge_pct))
-                self.settings_service.set_setting("factor_liquidity_premium_weight", float(matrix.liquidity_premium_weight))
-            elif hasattr(self.settings_service, "set"):
-                self.settings_service.set(self.user_id, "tactical_phase_factor_weights", json_str)
-                self.settings_service.set(self.user_id, "tactical_rotation_min_edge_pct", float(matrix.min_edge_pct))
-                self.settings_service.set(self.user_id, "factor_liquidity_premium_weight", float(matrix.liquidity_premium_weight))
-            logger.info(f"Successfully promoted evolved genetic factor matrix for {self.user_id}")
-            return True
+            payload = {
+                "user_id": self.user_id,
+                "source": "genetic_evolution",
+                "idempotency_key": run_id,
+                "proposed_values": {
+                    "tactical_phase_factor_weights": json.dumps(matrix.to_dict()),
+                    "tactical_rotation_min_edge_pct": float(matrix.min_edge_pct),
+                    "factor_liquidity_premium_weight": float(matrix.liquidity_premium_weight),
+                },
+                "evidence": evidence,
+            }
+            writer = self._proposal_writer
+            if writer is None:
+                writer = ParameterProposalRepository().create
+            pid = writer(payload)
+            logger.info(f"Recorded genetic factor matrix proposal {pid} for {self.user_id} (not applied)")
+            return pid
         except Exception as e:
-            logger.error(f"Failed to apply genetic matrix to settings: {e}")
-            return False
+            logger.error(f"Failed to record genetic matrix proposal: {e}")
+            return None
 
     def _save_report_to_redis(self, report: GeneticEvolutionReport) -> None:
         """持久化演化報告至 Redis 與記憶體快取"""

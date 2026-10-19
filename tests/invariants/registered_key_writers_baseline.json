@@ -1,0 +1,48 @@
+{
+  "offenders": {
+    "src/agents/thematic.py": {
+      "dynamic": 2,
+      "literal": [],
+      "raw_sql": 0
+    },
+    "src/api/v1/endpoints/skills.py": {
+      "dynamic": 1,
+      "literal": [],
+      "raw_sql": 0
+    },
+    "src/infrastructure/memory/mem0_integration.py": {
+      "dynamic": 1,
+      "literal": [],
+      "raw_sql": 0
+    },
+    "src/infrastructure/risk_manager.py": {
+      "dynamic": 1,
+      "literal": [],
+      "raw_sql": 0
+    },
+    "src/services/cost_profile_service.py": {
+      "dynamic": 1,
+      "literal": [],
+      "raw_sql": 0
+    },
+    "src/services/dashboard_router.py": {
+      "dynamic": 1,
+      "literal": [],
+      "raw_sql": 0
+    },
+    "src/services/notification_settings_manager.py": {
+      "dynamic": 1,
+      "literal": [],
+      "raw_sql": 0
+    },
+    "src/services/strategy_auto_evolution_service.py": {
+      "dynamic": 1,
+      "literal": [
+        "factor_liquidity_premium_weight",
+        "tactical_phase_factor_weights",
+        "tactical_rotation_min_edge_pct"
+      ],
+      "raw_sql": 0
+    }
+  }
+}

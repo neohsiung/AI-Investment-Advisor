@@ -229,15 +229,18 @@ class TestFactorGeneticEvolutionExecution:
         rep_dict = report.to_dict()
         assert json.dumps(rep_dict)
 
-    def test_promotion_gate_logic_and_settings_application(self, mock_settings):
-        """驗證防過擬合晉級門檻 (WFO efficiency, Sharpe improvement, MDD, diversity) 及 SettingsService 寫入。"""
-        engine = FactorGeneticEvolutionEngine(user_id="test_user", settings_service=mock_settings)
+    def test_promotion_gate_logic_records_proposal_not_setting(self, mock_settings):
+        """驗證晉級通過時只登記提案（G3），不寫入 SettingsService。"""
+        writer = MagicMock(return_value="prop-1")
+        engine = FactorGeneticEvolutionEngine(
+            user_id="test_user", settings_service=mock_settings, proposal_writer=writer)
         champion_mat = FactorWeightMatrix()
 
-        # 測試手動觸發 _apply_matrix_to_settings
-        applied = engine._apply_matrix_to_settings(champion_mat)
-        assert applied is True
-        mock_settings.set_setting.assert_any_call("tactical_phase_factor_weights", json.dumps(champion_mat.to_dict()))
+        pid = engine._propose_matrix(champion_mat, run_id="r1", evidence={})
+        assert pid == "prop-1"
+        mock_settings.set_setting.assert_not_called()
+        (payload,), _ = writer.call_args
+        assert payload["proposed_values"]["tactical_phase_factor_weights"] == json.dumps(champion_mat.to_dict())
 
     def test_strategy_auto_evolution_service_facade(self, mock_settings):
         """驗證 StrategyAutoEvolutionService.evolve_factor_matrix_genetic 外觀調用。"""
@@ -356,7 +359,8 @@ class TestFactorGeneticEvolutionTasksAndCommands:
             "mdd_expansion_pct": -2.3,
             "factor_shannon_diversity": 1.58,
             "is_promotable": True,
-            "promoted_to_settings": True,
+            "promoted_to_settings": False,
+            "proposal_id": "prop-1",
             "promotion_reason": "✅ 通過遺傳演化終審晉級門檻",
             "baseline_oos_metrics": {"sharpe": 1.40, "annualized_return": 0.18, "max_drawdown": 0.12},
             "best_oos_metrics": {"sharpe": 1.70, "annualized_return": 0.23, "max_drawdown": 0.11},
@@ -382,7 +386,7 @@ class TestFactorGeneticEvolutionTasksAndCommands:
             )
             assert "ga_abc123" in resp
             assert "終審通過 (PROMOTED)" in resp
-            assert "已生效至生產環境" in resp
+            assert "已登記提案" in resp
             assert "+21.5%" in resp
             assert "世代適應度演化進程" in resp
             assert "演化最優冠軍權重矩陣" in resp
