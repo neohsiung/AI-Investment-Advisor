@@ -52,10 +52,6 @@ class BlindspotDetectionResult:
     corrective_guidance: str
 
 
-# 標準專家名冊
-STANDARD_AGENT_ROSTER = ["Technical", "Fundamental", "Sentiment", "Valuation", "Risk"]
-
-
 class CognitiveBlindspotService:
     """
     A2 專家在線認知偏誤偵測與反省校準服務。
@@ -94,7 +90,7 @@ class CognitiveBlindspotService:
             return []
 
         # 整理每個 Agent 的決策序列
-        agent_outcomes: Dict[str, List[Dict[str, Any]]] = {agent: [] for agent in STANDARD_AGENT_ROSTER}
+        agent_outcomes: Dict[str, List[Dict[str, Any]]] = {}  # roster = agent_name values present in rows
 
         for row in rows:
             agent = row[0] or ""
@@ -115,18 +111,8 @@ class CognitiveBlindspotService:
             else:
                 is_hit = abs(alpha) < 0.02
 
-            matched_agent = None
-            for std_agent in STANDARD_AGENT_ROSTER:
-                if std_agent.lower() in agent.lower():
-                    matched_agent = std_agent
-                    break
-            if not matched_agent:
-                matched_agent = agent if agent in STANDARD_AGENT_ROSTER else "Fundamental"
-
-            if matched_agent not in agent_outcomes:
-                agent_outcomes[matched_agent] = []
-
-            agent_outcomes[matched_agent].append({
+            agent_outcomes.setdefault(agent, [])
+            agent_outcomes[agent].append({
                 "signal": signal,
                 "realized": realized,
                 "benchmark": benchmark,

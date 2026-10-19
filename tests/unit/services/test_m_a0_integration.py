@@ -3,6 +3,7 @@ Integration test for M-A0 (ADR-003): the rule lifecycle cycle on a real (sqlite)
 leave an evidence-free 'provisional' rule older than 14 days.
 M-A0 整合測試：規則生命週期循環跑在真實（sqlite）表上，不得留下超過 14 天且無證據的 provisional 規則。
 """
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -15,7 +16,7 @@ from src.services.rule_lifecycle_service import RuleLifecycleService
 
 @pytest.fixture
 def engine():
-    eng = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+    eng = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False, "detect_types": sqlite3.PARSE_DECLTYPES})
 
     @event.listens_for(eng, "connect")
     def _register_now(dbapi_conn, _):

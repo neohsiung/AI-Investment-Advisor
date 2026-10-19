@@ -95,8 +95,6 @@ DEFAULT_REGIME_PRIORS: Dict[str, Dict[str, float]] = {
     },
 }
 
-STANDARD_AGENT_ROSTER = ["Technical", "Fundamental", "Sentiment", "Valuation", "Risk"]
-
 
 @dataclass
 class AgentAttributionMetrics:
@@ -196,9 +194,8 @@ class AdaptiveCouncilMetaLearningService:
         """
         從 decision_outcomes 表讀取已結算的歷史決策，按 Agent 計算滾動勝率與體制特化精準度。
         """
-        attributions: Dict[str, AgentAttributionMetrics] = {
-            agent: AgentAttributionMetrics(agent_name=agent) for agent in STANDARD_AGENT_ROSTER
-        }
+        # 名冊完全來自資料中出現的 agent_name；沒有結算列 -> 回傳 {}（不注入權重）
+        attributions: Dict[str, AgentAttributionMetrics] = {}
 
         try:
             with self.engine.connect() as conn:
@@ -214,7 +211,7 @@ class AdaptiveCouncilMetaLearningService:
                 """)
                 rows = conn.execute(query, {"user_id": self.user_id}).fetchall()
 
-            agent_stats: Dict[str, List[Tuple[bool, float]]] = {agent: [] for agent in STANDARD_AGENT_ROSTER}
+            agent_stats: Dict[str, List[Tuple[bool, float]]] = {}
 
             for row in rows:
                 agent = row[0]
@@ -233,18 +230,8 @@ class AdaptiveCouncilMetaLearningService:
                 else:
                     is_hit = abs(alpha) < 0.02  # Neutral call
 
-                # 標準化 agent 名稱匹配
-                matched_agent = None
-                for std_agent in STANDARD_AGENT_ROSTER:
-                    if std_agent.lower() in agent.lower():
-                        matched_agent = std_agent
-                        break
-                if not matched_agent:
-                    matched_agent = agent if agent in STANDARD_AGENT_ROSTER else "Fundamental"
-
-                if matched_agent not in agent_stats:
-                    agent_stats[matched_agent] = []
-                agent_stats[matched_agent].append((is_hit, alpha))
+                agent_stats.setdefault(agent, [])
+                agent_stats[agent].append((is_hit, alpha))
 
             # 計算各 Agent 統計量（採用拉普拉斯平滑，避免小樣本極端偏誤）
             for agent, samples in agent_stats.items():
@@ -265,7 +252,8 @@ class AdaptiveCouncilMetaLearningService:
                 )
 
         except Exception as e:
-            logger.warning(f"Error computing agent attributions (fallback to prior defaults): {e}")
+            logger.warning(f"Error computing agent attributions (no weights will be injected): {e}")
+            return {}
 
         return attributions
 
@@ -295,12 +283,13 @@ class AdaptiveCouncilMetaLearningService:
 
         if not attributions:
             attributions = self.compute_agent_attributions()
+        if not attributions:
+            return {}
 
         # 貝氏微調：Score_i = Prior_i * (1 + 0.6 * (WinRate_i - 0.5)) * exp(Alpha_i)
         unnormalized: Dict[str, float] = {}
-        for agent in STANDARD_AGENT_ROSTER:
+        for agent, attr in attributions.items():
             prior_w = priors.get(agent, 0.20)
-            attr = attributions.get(agent, AgentAttributionMetrics(agent_name=agent))
 
             # 勝率激勵項 (WinRate in [0.2, 0.8] -> scale [0.82, 1.18])
             win_factor = 1.0 + 0.6 * (attr.rolling_win_rate - 0.50)
@@ -391,14 +380,16 @@ class AdaptiveCouncilMetaLearningService:
             f"- **宏觀體制 (O1 Bayesian HMM)**: {regime} (置信度: {regime_conf*100:.1f}%)",
             f"- **黑天鵝預警 (O2 EVT)**: {alert_level} | 99.9% VaR: {var_999*100:.2f}%, CVaR: {cvar_999*100:.2f}%, 肥尾倍數: {fat_tail:.2f}x",
             f"- **投組健康狀態 (D1)**: 總分 {health_score:.1f}/100 ({health_rating}) | 建議防禦現金: {target_cash*100:.1f}%, 目標 Beta: {target_beta:.2f}",
-            f"- **當前專家動態決策影響力權重 (Meta-Weights)**:",
         ]
-        for agent in STANDARD_AGENT_ROSTER:
-            w = meta_weights.get(agent, 0.20)
-            attr = attributions.get(agent, AgentAttributionMetrics(agent_name=agent))
-            guidance_lines.append(
-                f"  • {agent}: {w*100:.1f}% (歷史滾動勝率: {attr.rolling_win_rate*100:.1f}%, 累積 Alpha: {attr.avg_alpha_contribution*100:+.2f}pp)"
-            )
+        if meta_weights:
+            guidance_lines.append("- **當前專家動態決策影響力權重 (Meta-Weights)**:")
+            for agent, w in meta_weights.items():
+                attr = attributions[agent]
+                guidance_lines.append(
+                    f"  • {agent}: {w*100:.1f}% (歷史滾動勝率: {attr.rolling_win_rate*100:.1f}%, 累積 Alpha: {attr.avg_alpha_contribution*100:+.2f}pp)"
+                )
+        else:
+            guidance_lines.append("- 尚無已結算決策，未注入專家權重（n=0）")
 
         if is_black_swan:
             guidance_lines.append(
