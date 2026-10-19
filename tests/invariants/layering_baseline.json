@@ -1,136 +1,45 @@
 {
   "max_lines": 1500,
   "violating_edges": {
-    "src/config/owner.py": [
-      "shared->adapters:src.data.database",
-      "shared->adapters:src.repositories.user_repository"
-    ],
-    "src/config/rss_config.py": [
-      "shared->application:src.services.settings_service"
-    ],
-    "src/data/providers/__init__.py": [
-      "adapters->application:src.plugins.registry"
-    ],
-    "src/data/providers/alpha_vantage_provider.py": [
-      "adapters->application:src.services.settings_service"
-    ],
-    "src/data/providers/financialdata_provider.py": [
-      "adapters->application:src.services.settings_service"
-    ],
-    "src/data/providers/finnhub_provider.py": [
-      "adapters->application:src.services.settings_service"
-    ],
-    "src/data/providers/fmp_provider.py": [
-      "adapters->application:src.services.settings_service"
-    ],
-    "src/data/providers/fred_provider.py": [
-      "adapters->application:src.services.fred_service"
-    ],
-    "src/data/providers/polygon_provider.py": [
-      "adapters->application:src.services.settings_service"
-    ],
-    "src/data/providers/readwise_provider.py": [
-      "adapters->application:src.services.settings_service"
-    ],
-    "src/data/providers/tiingo_provider.py": [
-      "adapters->application:src.services.settings_service"
-    ],
-    "src/data/providers/yfinance_provider.py": [
-      "adapters->application:src.services.settings_service"
-    ],
-    "src/domain/dynamic_strategy_contract.py": [
-      "domain->application:src.services.code_synthesis.factor_synthesizer"
-    ],
-    "src/infrastructure/agent_llm_provider.py": [
-      "infrastructure->application:src.agents.factory"
-    ],
-    "src/infrastructure/celery_app.py": [
-      "infrastructure->entrypoints:src.infrastructure.tasks"
-    ],
-    "src/infrastructure/channels/channel_factory.py": [
-      "infrastructure->application:src.plugins.registry"
-    ],
-    "src/infrastructure/channels/telegram_adapter.py": [
-      "infrastructure->application:src.services.llm_credential_cipher",
-      "infrastructure->application:src.services.notification_filters"
-    ],
-    "src/infrastructure/llm/budget_aware_model_router.py": [
-      "infrastructure->application:src.services.hard_token_budget_guard_service",
-      "infrastructure->application:src.services.llm_agent_override_service",
-      "infrastructure->application:src.services.settings_service",
-      "infrastructure->application:src.services.token_logger_service"
-    ],
-    "src/infrastructure/llm/llm_config_chain.py": [
-      "infrastructure->application:src.services.llm_credential_cipher"
-    ],
-    "src/infrastructure/memory/channel_memory_manager.py": [
-      "infrastructure->application:src.agents.factory"
-    ],
-    "src/infrastructure/memory/cognitive_memory.py": [
-      "infrastructure->application:src.services.settings_service",
-      "infrastructure->application:src.services.token_logger_service"
-    ],
-    "src/infrastructure/memory/mem0_integration.py": [
-      "infrastructure->application:src.services.settings_service"
-    ],
-    "src/infrastructure/messaging/channel_gateway.py": [
-      "infrastructure->application:src.agents.conversation_agent",
-      "infrastructure->application:src.agents.persona.persona_provider",
-      "infrastructure->application:src.services.cognitive_memory_manager",
-      "infrastructure->application:src.services.notification_service"
-    ],
-    "src/infrastructure/nlp/intent_classifier.py": [
-      "infrastructure->application:src.agents.factory"
-    ],
-    "src/infrastructure/risk_manager.py": [
-      "infrastructure->application:src.services.market_data_service",
-      "infrastructure->application:src.services.strategy_registry"
-    ],
-    "src/infrastructure/streams/polygon_stream_client.py": [
-      "infrastructure->application:src.services.settings_service"
-    ],
-    "src/infrastructure/workflow/nodes/portfolio.py": [
-      "infrastructure->application:src.agents.structured",
-      "infrastructure->application:src.services.market_data_service",
-      "infrastructure->application:src.services.rule_lifecycle_service"
-    ],
-    "src/infrastructure/workflow/stages.py": [
-      "infrastructure->application:src.services.market_data_service",
-      "infrastructure->application:src.services.workflow_service"
-    ],
-    "src/repositories/memory_repository.py": [
-      "adapters->application:src.agents.registry"
-    ],
-    "src/repositories/transaction_repository.py": [
-      "adapters->application:src.services.market_data_service"
-    ],
-    "src/repositories/user_repository.py": [
-      "adapters->application:src.services.llm_onboarding_service"
-    ],
-    "src/services/batch_cash_deployment_service.py": [
-      "application->entrypoints:src.infrastructure.tasks"
-    ],
-    "src/services/conversation_router.py": [
-      "application->entrypoints:src.infrastructure.tasks"
-    ],
-    "src/services/dashboard_router.py": [
-      "application->entrypoints:src.infrastructure.tasks"
-    ],
-    "src/services/etoro_service.py": [
-      "application->entrypoints:src.api.v1.exceptions"
-    ],
-    "src/services/portfolio_aggregator_service.py": [
-      "application->entrypoints:src.api.v1.exceptions"
-    ],
-    "src/services/sentinel_service.py": [
-      "application->entrypoints:src.api.v1.exceptions"
-    ],
-    "src/utils/cache.py": [
-      "shared->infrastructure:src.infrastructure.cache.redis_client"
-    ],
-    "src/utils/time_utils.py": [
-      "shared->adapters:src.data.database"
-    ]
+    "src/config/owner.py": ["shared->adapters:src.data.database", "shared->adapters:src.repositories.user_repository"],
+    "src/config/rss_config.py": ["shared->application:src.services.settings_service"],
+    "src/data/providers/__init__.py": ["adapters->application:src.plugins.registry"],
+    "src/data/providers/alpha_vantage_provider.py": ["adapters->application:src.services.settings_service"],
+    "src/data/providers/financialdata_provider.py": ["adapters->application:src.services.settings_service"],
+    "src/data/providers/finnhub_provider.py": ["adapters->application:src.services.settings_service"],
+    "src/data/providers/fmp_provider.py": ["adapters->application:src.services.settings_service"],
+    "src/data/providers/fred_provider.py": ["adapters->application:src.services.fred_service"],
+    "src/data/providers/polygon_provider.py": ["adapters->application:src.services.settings_service"],
+    "src/data/providers/readwise_provider.py": ["adapters->application:src.services.settings_service"],
+    "src/data/providers/tiingo_provider.py": ["adapters->application:src.services.settings_service"],
+    "src/data/providers/yfinance_provider.py": ["adapters->application:src.services.settings_service"],
+    "src/domain/dynamic_strategy_contract.py": ["domain->application:src.services.code_synthesis.factor_synthesizer"],
+    "src/infrastructure/agent_llm_provider.py": ["infrastructure->application:src.agents.factory"],
+    "src/infrastructure/celery_app.py": ["infrastructure->entrypoints:src.infrastructure.tasks"],
+    "src/infrastructure/channels/channel_factory.py": ["infrastructure->application:src.plugins.registry"],
+    "src/infrastructure/channels/telegram_adapter.py": ["infrastructure->application:src.services.llm_credential_cipher", "infrastructure->application:src.services.notification_filters"],
+    "src/infrastructure/llm/budget_aware_model_router.py": ["infrastructure->application:src.services.hard_token_budget_guard_service", "infrastructure->application:src.services.llm_agent_override_service", "infrastructure->application:src.services.settings_service", "infrastructure->application:src.services.token_logger_service"],
+    "src/infrastructure/llm/llm_config_chain.py": ["infrastructure->application:src.services.llm_credential_cipher"],
+    "src/infrastructure/memory/channel_memory_manager.py": ["infrastructure->application:src.agents.factory"],
+    "src/infrastructure/memory/cognitive_memory.py": ["infrastructure->application:src.services.settings_service", "infrastructure->application:src.services.token_logger_service"],
+    "src/infrastructure/memory/mem0_integration.py": ["infrastructure->application:src.services.settings_service"],
+    "src/infrastructure/messaging/channel_gateway.py": ["infrastructure->application:src.agents.conversation_agent", "infrastructure->application:src.agents.persona.persona_provider", "infrastructure->application:src.services.cognitive_memory_manager", "infrastructure->application:src.services.notification_service"],
+    "src/infrastructure/nlp/intent_classifier.py": ["infrastructure->application:src.agents.factory"],
+    "src/infrastructure/risk_manager.py": ["infrastructure->application:src.services.market_data_service", "infrastructure->application:src.services.strategy_registry"],
+    "src/infrastructure/streams/polygon_stream_client.py": ["infrastructure->application:src.services.settings_service"],
+    "src/infrastructure/workflow/nodes/portfolio.py": ["infrastructure->application:src.agents.structured", "infrastructure->application:src.services.market_data_service", "infrastructure->application:src.services.rule_lifecycle_service"],
+    "src/infrastructure/workflow/stages.py": ["infrastructure->application:src.services.market_data_service", "infrastructure->application:src.services.workflow_service"],
+    "src/repositories/memory_repository.py": ["adapters->application:src.agents.registry"],
+    "src/repositories/transaction_repository.py": ["adapters->application:src.services.market_data_service"],
+    "src/repositories/user_repository.py": ["adapters->application:src.services.llm_onboarding_service"],
+    "src/services/batch_cash_deployment_service.py": ["application->entrypoints:src.infrastructure.tasks"],
+    "src/services/conversation_router.py": ["application->entrypoints:src.infrastructure.tasks"],
+    "src/services/dashboard_router.py": ["application->entrypoints:src.infrastructure.tasks"],
+    "src/services/etoro_service.py": ["application->entrypoints:src.api.v1.exceptions"],
+    "src/services/portfolio_aggregator_service.py": ["application->entrypoints:src.api.v1.exceptions"],
+    "src/services/sentinel_service.py": ["application->entrypoints:src.api.v1.exceptions"],
+    "src/utils/cache.py": ["shared->infrastructure:src.infrastructure.cache.redis_client"],
+    "src/utils/time_utils.py": ["shared->adapters:src.data.database"]
   },
   "oversize_files": {
     "src/infrastructure/tasks.py": 2152,
@@ -142,5 +51,250 @@
     "src/services/staggered_dip_buying_service.py": 1586,
     "src/services/workflow_service.py": 1589
   },
-  "lazy_imports_total": 1541
+  "lazy_imports": {
+    "services/mcp_server/src/app/__init__.py": 24,
+    "src/agents/action_extractor.py": 6,
+    "src/agents/agent_loop.py": 3,
+    "src/agents/base_agent.py": 21,
+    "src/agents/cio.py": 6,
+    "src/agents/conversation_agent.py": 27,
+    "src/agents/conversation_task_decomposer.py": 7,
+    "src/agents/factory.py": 2,
+    "src/agents/fundamental.py": 3,
+    "src/agents/impls.py": 11,
+    "src/agents/orchestration/swarm_orchestrator.py": 4,
+    "src/agents/persona/persona_provider.py": 1,
+    "src/agents/registry.py": 2,
+    "src/agents/skill_router.py": 10,
+    "src/agents/skills/cash_deployment/impl.py": 5,
+    "src/agents/skills/distill_insight/impl.py": 8,
+    "src/agents/skills/evaluate_trade/impl.py": 1,
+    "src/agents/skills/event_research/impl.py": 1,
+    "src/agents/skills/extract_actions/impl.py": 1,
+    "src/agents/skills/gap_detector.py": 4,
+    "src/agents/skills/get_macro_summary/impl.py": 1,
+    "src/agents/skills/get_user_holdings/impl.py": 2,
+    "src/agents/skills/run_momentum_analysis/impl.py": 2,
+    "src/agents/skills/run_sentinel_check/impl.py": 1,
+    "src/agents/skills/skill_loader.py": 4,
+    "src/agents/skills/ticker_discovery/impl.py": 2,
+    "src/agents/swarm/fundamental_swarm.py": 1,
+    "src/agents/swarm/role_swarm.py": 1,
+    "src/agents/swarm/roster.py": 1,
+    "src/agents/swarm/sentiment_swarm.py": 1,
+    "src/agents/system_engineer_agent.py": 2,
+    "src/api/v1/dependencies.py": 1,
+    "src/api/v1/endpoints/adaptive_intelligence.py": 1,
+    "src/api/v1/endpoints/agents.py": 25,
+    "src/api/v1/endpoints/chat.py": 1,
+    "src/api/v1/endpoints/council.py": 1,
+    "src/api/v1/endpoints/dashboard.py": 5,
+    "src/api/v1/endpoints/generated_code.py": 2,
+    "src/api/v1/endpoints/llm_settings.py": 2,
+    "src/api/v1/endpoints/loop_health.py": 1,
+    "src/api/v1/endpoints/mission.py": 3,
+    "src/api/v1/endpoints/net_alpha.py": 1,
+    "src/api/v1/endpoints/settings.py": 3,
+    "src/api/v1/endpoints/ticker_universe.py": 6,
+    "src/api/v1/endpoints/workflows.py": 2,
+    "src/config/owner.py": 6,
+    "src/config/rss_config.py": 1,
+    "src/config/settings_schema.py": 1,
+    "src/data/database.py": 5,
+    "src/data/ingestor.py": 1,
+    "src/data/ingestors/factory.py": 1,
+    "src/data/providers/__init__.py": 1,
+    "src/data/providers/alpha_vantage_provider.py": 1,
+    "src/data/providers/finnhub_provider.py": 4,
+    "src/data/providers/polygon_provider.py": 1,
+    "src/data/providers/yfinance_provider.py": 2,
+    "src/domain/entities.py": 1,
+    "src/infrastructure/agent_llm_provider.py": 1,
+    "src/infrastructure/cache/redis_client.py": 2,
+    "src/infrastructure/celery_app.py": 1,
+    "src/infrastructure/channels/base_adapter.py": 2,
+    "src/infrastructure/channels/channel_factory.py": 5,
+    "src/infrastructure/channels/discord_adapter.py": 1,
+    "src/infrastructure/channels/email_notifier.py": 2,
+    "src/infrastructure/channels/google_chat_adapter.py": 2,
+    "src/infrastructure/channels/line_adapter.py": 3,
+    "src/infrastructure/channels/messenger_adapter.py": 2,
+    "src/infrastructure/channels/slack_adapter.py": 2,
+    "src/infrastructure/channels/telegram_adapter.py": 13,
+    "src/infrastructure/channels/web_adapter.py": 1,
+    "src/infrastructure/llm/arbiter_client.py": 3,
+    "src/infrastructure/llm/auto_tier.py": 1,
+    "src/infrastructure/llm/budget_aware_model_router.py": 7,
+    "src/infrastructure/llm/cost_attribution.py": 4,
+    "src/infrastructure/llm/council_tier_router.py": 1,
+    "src/infrastructure/llm/llm_config_chain.py": 8,
+    "src/infrastructure/llm/llm_gateway.py": 20,
+    "src/infrastructure/llm/resilient_pipeline.py": 1,
+    "src/infrastructure/llm/tier_config.py": 1,
+    "src/infrastructure/memory/channel_memory_manager.py": 2,
+    "src/infrastructure/memory/cognitive_memory.py": 19,
+    "src/infrastructure/memory/memory_manager.py": 2,
+    "src/infrastructure/messaging/channel_gateway.py": 3,
+    "src/infrastructure/redis_sentinel_buffer.py": 1,
+    "src/infrastructure/risk_manager.py": 4,
+    "src/infrastructure/task_telemetry.py": 3,
+    "src/infrastructure/tasks.py": 91,
+    "src/infrastructure/workflow/base.py": 4,
+    "src/infrastructure/workflow/cache.py": 1,
+    "src/infrastructure/workflow/loader.py": 2,
+    "src/infrastructure/workflow/nodes/__init__.py": 1,
+    "src/infrastructure/workflow/nodes/portfolio.py": 5,
+    "src/repositories/data_repository.py": 5,
+    "src/repositories/memory_repository.py": 13,
+    "src/repositories/position_lot_repository.py": 1,
+    "src/repositories/prompt_repository.py": 4,
+    "src/repositories/pulse_repository.py": 1,
+    "src/repositories/report_repository.py": 6,
+    "src/repositories/settings_repository.py": 3,
+    "src/repositories/snapshot_repository.py": 1,
+    "src/repositories/ticker_universe_repository.py": 1,
+    "src/repositories/transaction_repository.py": 3,
+    "src/repositories/usage_repository.py": 7,
+    "src/repositories/user_repository.py": 4,
+    "src/services/actionable_alert_service.py": 11,
+    "src/services/adaptive_council_meta_learning_service.py": 1,
+    "src/services/adaptive_execution_slippage_compensator.py": 2,
+    "src/services/alpha_decay_service.py": 1,
+    "src/services/alpha_spread_bidding_service.py": 2,
+    "src/services/analytics_service.py": 1,
+    "src/services/automated_trading_service.py": 46,
+    "src/services/autonomous_reporting_service.py": 4,
+    "src/services/backtest_service.py": 1,
+    "src/services/batch_cash_deployment_service.py": 27,
+    "src/services/bayesian_hmm_factor_service.py": 3,
+    "src/services/bayesian_jump_diffusion_guard_service.py": 2,
+    "src/services/benchmark_parking_service.py": 5,
+    "src/services/broker_factory.py": 2,
+    "src/services/calendar_blackout_service.py": 4,
+    "src/services/canary_shadow_runner.py": 5,
+    "src/services/capital_policy.py": 1,
+    "src/services/code_synthesis/backtest_adapter.py": 1,
+    "src/services/code_synthesis/factor_synthesizer.py": 3,
+    "src/services/cognitive_memory_manager.py": 21,
+    "src/services/confidence_compositor_service.py": 8,
+    "src/services/confidence_rebalance_service.py": 25,
+    "src/services/conversation_router.py": 70,
+    "src/services/council_debate_memory_service.py": 1,
+    "src/services/council_service.py": 26,
+    "src/services/cross_currency_fx_hedging_service.py": 3,
+    "src/services/cross_market_dark_pool_pricing_service.py": 4,
+    "src/services/cross_sector_harvest_rebalance_service.py": 5,
+    "src/services/daily_portfolio_summary_service.py": 8,
+    "src/services/dashboard_router.py": 15,
+    "src/services/dashboard_service.py": 2,
+    "src/services/decision_card.py": 1,
+    "src/services/deterministic_council_service.py": 3,
+    "src/services/digest_nodes.py": 1,
+    "src/services/dynamic_iv_surface_skew_hedging_service.py": 2,
+    "src/services/etoro_service.py": 22,
+    "src/services/event_aggregator.py": 2,
+    "src/services/event_impact_service.py": 1,
+    "src/services/evolution_gate.py": 1,
+    "src/services/exit_compositor_service.py": 4,
+    "src/services/experience_replay_service.py": 8,
+    "src/services/extreme_value_theory_service.py": 1,
+    "src/services/factor_drift_guard_service.py": 8,
+    "src/services/factor_genetic_evolution_engine.py": 2,
+    "src/services/factor_notification_service.py": 4,
+    "src/services/factor_orthogonal_attribution_service.py": 2,
+    "src/services/factor_orthogonalization_service.py": 2,
+    "src/services/finnhub_poll_service.py": 4,
+    "src/services/forecast_service.py": 3,
+    "src/services/fred_service.py": 7,
+    "src/services/friction_aware_tranche_sizing_service.py": 1,
+    "src/services/hard_token_budget_guard_service.py": 4,
+    "src/services/hr_service.py": 3,
+    "src/services/ibkr_service.py": 1,
+    "src/services/inference_hurdle_gate_service.py": 2,
+    "src/services/intelligence_service.py": 11,
+    "src/services/interaction_service.py": 27,
+    "src/services/intraday_cross_sector_beta_damping_service.py": 5,
+    "src/services/intraday_liquidity_circuit_breaker_service.py": 2,
+    "src/services/investment_skill_learning_service.py": 21,
+    "src/services/kalman_pairs_cointegration_service.py": 3,
+    "src/services/kelly_sizing_service.py": 1,
+    "src/services/leverage_policy_service.py": 2,
+    "src/services/litellm_spend_service.py": 3,
+    "src/services/llama_index_service.py": 6,
+    "src/services/llm_agent_override_service.py": 5,
+    "src/services/llm_credential_cipher.py": 1,
+    "src/services/llm_model_lifecycle_service.py": 1,
+    "src/services/llm_model_service.py": 1,
+    "src/services/llm_onboarding_service.py": 6,
+    "src/services/macro_event_causal_graph_service.py": 3,
+    "src/services/macro_hedging_service.py": 4,
+    "src/services/market_data_service.py": 23,
+    "src/services/market_news_filter_service.py": 6,
+    "src/services/mcp_installation_guard.py": 6,
+    "src/services/microstructure_order_flow_imbalance_service.py": 2,
+    "src/services/microstructure_spoofing_detector_service.py": 4,
+    "src/services/mission_watchdog_service.py": 4,
+    "src/services/multi_factor_convex_sharpe_optimizer_service.py": 2,
+    "src/services/net_alpha_attribution_service.py": 13,
+    "src/services/notification_service.py": 5,
+    "src/services/opportunity_cost_service.py": 1,
+    "src/services/option_gamma_exposure_gex_service.py": 2,
+    "src/services/order_inflight_lock_service.py": 4,
+    "src/services/order_reconciliation_service.py": 11,
+    "src/services/outcome_reflection_service.py": 16,
+    "src/services/performance_service.py": 8,
+    "src/services/portfolio_backtest_engine.py": 1,
+    "src/services/proposal_shadow_service.py": 8,
+    "src/services/pyramiding_service.py": 2,
+    "src/services/readwise_service.py": 1,
+    "src/services/refinement_service.py": 1,
+    "src/services/research_automation_service.py": 5,
+    "src/services/risk_keyword_service.py": 14,
+    "src/services/risk_parity_cvar_service.py": 4,
+    "src/services/rl_execution_sor_service.py": 3,
+    "src/services/rule_lifecycle_service.py": 19,
+    "src/services/sandbox/ephemeral_sandbox.py": 1,
+    "src/services/search_service.py": 9,
+    "src/services/self_ops_service.py": 17,
+    "src/services/sentinel_service.py": 92,
+    "src/services/settings_service.py": 8,
+    "src/services/shadow_ledger_service.py": 2,
+    "src/services/slippage_guard_service.py": 11,
+    "src/services/smart_money_support_service.py": 1,
+    "src/services/socket_manager.py": 2,
+    "src/services/staggered_dip_buying_service.py": 26,
+    "src/services/strategy_auto_evolution_service.py": 3,
+    "src/services/strategy_discovery_service.py": 6,
+    "src/services/strategy_lab_service.py": 2,
+    "src/services/strategy_registry.py": 3,
+    "src/services/strategy_validation_service.py": 2,
+    "src/services/stress_testing_service.py": 1,
+    "src/services/supply_chain_service.py": 1,
+    "src/services/tactical_decay_rebalancer_service.py": 5,
+    "src/services/tactical_factor_rotation_service.py": 8,
+    "src/services/task_planning_service.py": 3,
+    "src/services/ticker_universe_service.py": 12,
+    "src/services/token_logger_service.py": 4,
+    "src/services/trading_protections_service.py": 12,
+    "src/services/transaction_service.py": 3,
+    "src/services/trend_hysteresis_lockout_service.py": 3,
+    "src/services/unified_risk_gateway_service.py": 13,
+    "src/services/universe_lifecycle_service.py": 8,
+    "src/services/user_preference_service.py": 5,
+    "src/services/verification_service.py": 1,
+    "src/services/vix_panic_rebound_strategy.py": 3,
+    "src/services/vpin_toxicity_guard_service.py": 3,
+    "src/services/webhook_service.py": 37,
+    "src/services/workflow_service.py": 38,
+    "src/setup_telegram_webhook.py": 1,
+    "src/tools/llama_index_tools.py": 2,
+    "src/tools/mcp_client_adapter.py": 4,
+    "src/tools/mcp_server.py": 1,
+    "src/tools/tool_manifest.py": 1,
+    "src/utils/cache.py": 1,
+    "src/utils/format_utils.py": 1,
+    "src/utils/frontmatter.py": 2,
+    "src/utils/tracing.py": 2,
+    "src/workflow/optimizer.py": 1
+  }
 }
