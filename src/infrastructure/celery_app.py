@@ -154,6 +154,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.run_mission_watchdog",
         "schedule": crontab(hour=6, minute=0),
     },
+    # Charter change engine — daily 07:05 EST (after the 06:00 watchdog), 0-LLM; records verdicts, writes values only per charter_state
+    # 章程變更引擎：每日 07:05 EST（晚於 06:00 看門狗），0-LLM；只記錄判決，依 charter_state 才寫值。
+    "charter-parameter-engine": {
+        "task": "src.workflow.charter_tasks.run_parameter_engine",
+        "schedule": crontab(hour=7, minute=5),
+    },
     # Real LLM cost collector — every 15 minutes (LiteLLM /key/info delta -> llm_real_cost_daily)
     # 真實 LLM 成本收集：每 15 分鐘輪詢 LiteLLM /key/info 並記帳。
     "litellm-spend-collect": {

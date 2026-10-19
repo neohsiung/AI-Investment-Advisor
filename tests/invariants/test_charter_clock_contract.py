@@ -16,6 +16,9 @@ REPO = Path(__file__).resolve().parents[2]
 CHARTER_MODULES = [
     "src/services/marginal_band_evaluator.py",
     "src/services/param_policy.py",
+    "src/services/parameter_engine.py",
+    "src/evaluation/regime.py",
+    "src/workflow/charter_tasks.py",
 ]
 
 _SQL_NOW = re.compile(r"\bnow\s*\(\s*\)", re.IGNORECASE)

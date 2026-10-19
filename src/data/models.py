@@ -1493,3 +1493,4 @@ class CharterState(Base):
         CheckConstraint("mode IN ('dry_run', 'apply', 'tighten_only', 'frozen', 'human_stop')",
                         name='ck_charter_state_mode'),
     )
+from src.data.charter_models import CharterEvent  # noqa: E402,F401  (alembic 032; kept out of this file: size ratchet)

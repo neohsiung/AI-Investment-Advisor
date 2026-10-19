@@ -18,8 +18,9 @@ from src.services import threshold_band_recorder as tbr
 
 USER_ID = "charter_e2e_user"
 ALLOWED_HOSTS = ("localhost", "127.0.0.1")
-TRUNCATE_TABLES = ("parameter_values", "parameter_changes", "parameter_trials", "threshold_band_observations",
-                   "rotation_pair_observations", "decision_outcomes")
+TRUNCATE_TABLES = ("parameter_values", "parameter_changes", "parameter_trials", "charter_events",
+                   "strategy_trials", "threshold_band_observations", "rotation_pair_observations",
+                   "decision_outcomes")
 
 
 def validate_pg_url(url: str) -> str:
