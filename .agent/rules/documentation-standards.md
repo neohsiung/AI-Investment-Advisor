@@ -30,6 +30,11 @@
 - 不再要求每份文件都有完整英文版（兩份全文會各自漂移）；既有雙語文件不強制重寫（維持 additive 原則）。
 - 程式碼註解與 commit 訊息仍維持英文＋繁體中文雙語。
 
+### 1.2b PR 描述語言（2026-10-19）
+- **PR 描述以繁體中文為主、英文為輔**：變更摘要、風險、驗證說明、回滾方式都用繁體中文寫；描述頂部附 2–4 行 `English summary`。
+- 指令、檔案路徑、識別名稱（函式、資料表、設定鍵）、錯誤訊息原文保持英文，不翻譯。
+- 理由：審查者是用繁體中文讀的；只有英文描述會讓審查者得自行翻譯，審查重點容易漏看。commit 訊息仍依 `git-commit-format.md` 維持雙語。
+
 ### 1.3 視覺化與精簡原則 (Visual & Concise Rule) - **核心規則**
 - **Mermaid 優先 (Mermaid First)**: 若有方便說明的架構、狀態轉換、操作流程或組件關聯，**必須優先採用 Mermaid 圖表** (如 `graph TD`, `sequenceDiagram`, `classDiagram`) 進行表達。
 - **文字極簡化 (Text Minimalism)**: 文字應僅用於「小結 (Summaries)」與「關注重點 (Key Highlights)」。絕對避免長篇大論的文字堆砌 (Walls of Text)。

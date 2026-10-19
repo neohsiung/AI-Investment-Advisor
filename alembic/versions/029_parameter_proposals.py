@@ -1,13 +1,13 @@
-"""028_parameter_proposals: proposals to change settings, written by tuning loops instead of live writes
+"""029_parameter_proposals: proposals to change settings, written by tuning loops instead of live writes
 
-Revision ID: 028_parameter_proposals
-Revises: 027_trade_proposals
+Revision ID: 029_parameter_proposals
+Revises: 028_parameter_store
 Create Date: 2026-10-19
 """
 from alembic import op
 
-revision = "028_parameter_proposals"
-down_revision = "027_trade_proposals"
+revision = "029_parameter_proposals"
+down_revision = "028_parameter_store"
 branch_labels = None
 depends_on = None
 

@@ -31,6 +31,7 @@ from sqlalchemy import text
 from src.config.mission import load_mission
 from src.services.order_cap_policy import single_order_cap_usd
 from src.services.proposal_validator import ValidationContext, ValidationResult, validate
+from src.services.threshold_band_recorder import build_observation, record_at_boundary
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +293,28 @@ def _exists(engine: Any, user_id: str, ticker: str, direction: str, key: str) ->
                                       "direction": direction, "key": key}).fetchone() is not None
 
 
+async def _record_band(user_id: str, signal: Dict[str, Any], ticker: str, direction: str, settings_service: Any,
+                       engine: Any, price_lookup: Callable[[str], Any]) -> None:
+    """G1: record this signal against the auto-execute threshold in force (passed or not). Recording only.
+    G1：把此訊號連同當時的自動執行門檻記下來（無論通過與否）；僅記錄。"""
+    if direction not in ("BUY", "SELL"):
+        return
+    key = "auto_trade_threshold_sell" if direction == "SELL" else "auto_trade_threshold"
+    default = 6.0 if direction == "SELL" else 7.5
+    raw = settings_service.get_setting(key, default, user_id)
+    threshold = _num_or_none(default if raw is None else raw)
+    if threshold is None:
+        logger.warning("proposal_shadow: %s=%r is unreadable; band observation for %s skipped", key, raw, ticker)
+        return
+    threshold = threshold / 10.0 if threshold > 10 else threshold  # UI stores 0-100 / UI 以 0-100 儲存
+    score = _num_or_none(signal.get("score"))
+    score = score / 10.0 if score is not None and score > 10 else score
+    ob = build_observation(ticker=ticker, direction=direction, score=score, threshold=threshold,
+                           context={"intent": str(signal.get("intent") or "")})
+    await record_at_boundary(user_id, key, "event_shadow", [ob], settings_service=settings_service,
+                             engine=engine, price_lookup=price_lookup)
+
+
 # ── main entry ────────────────────────────────────────────────────────────────
 
 async def record_shadow_proposals(
@@ -335,7 +358,8 @@ async def _record(user_id: str, signals: List[Dict[str, Any]], source_label: str
 
     for signal in signals:
         try:
-            await _record_one(user_id, signal, source_label, shared, shared_error, loop, engine, price_lookup)
+            await _record_one(user_id, signal, source_label, shared, shared_error, loop, engine, price_lookup,
+                              settings_service)
         except Exception as exc:
             logger.warning("proposal_shadow: could not record %s %s: %s",
                            signal.get("action"), signal.get("ticker"), exc)
@@ -343,9 +367,13 @@ async def _record(user_id: str, signals: List[Dict[str, Any]], source_label: str
 
 async def _record_one(user_id: str, signal: Dict[str, Any], source_label: str, shared: Optional[Dict[str, Any]],
                       shared_error: Optional[str], loop: asyncio.AbstractEventLoop, engine: Any,
-                      price_lookup: Callable[[str], Any]) -> None:
+                      price_lookup: Callable[[str], Any], settings_service: Any) -> None:
     ticker = str(signal.get("ticker", "")).strip().upper()
     direction = str(signal.get("action", "")).strip().upper()
+    try:
+        await _record_band(user_id, signal, ticker, direction, settings_service, engine, price_lookup)
+    except Exception as exc:  # a recorder fault must not stop proposal recording / 紀錄器故障不得阻斷提案紀錄
+        logger.warning("proposal_shadow: band observation failed for %s %s: %s", direction, ticker, exc)
     reason = str(signal.get("reason") or "")
     intent = str(signal.get("intent") or "")
     # Only non-numeric LLM fields reach the validator. / 只有非數值的 LLM 欄位會進驗證器。
