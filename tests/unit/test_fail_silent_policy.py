@@ -36,6 +36,7 @@ DECISION_PATH_MODULES = [
     "src/services/confidence_compositor_service.py",
     "src/services/exit_compositor_service.py",
     "src/services/outcome_reflection_service.py",
+    "src/services/marginal_band_evaluator.py",
     "src/services/strategy_validation_service.py",
     "src/services/capital_policy.py",
     "src/services/proposal_validator.py",
