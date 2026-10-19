@@ -2,8 +2,12 @@
 # ==============================================================================
 # Pre-Push Quality & Safety Gate (本地預檢守衛腳本)
 # ==============================================================================
-# 於 git push 前快速執行靜態分析、作用域檢查、安全審計、核心回歸與 Wiki 鏈結校驗。
-# 耗時：~5 秒，徹底防止 CI/CD 5 分鐘遠端紅燈與作用域崩潰。
+# 於 git push 前快速執行靜態分析、作用域檢查、安全審計、Wiki 鏈結校驗與快速回歸。
+# 耗時：數十秒（步驟 1-3 約 5 秒；步驟 4 = 不變量 + config + fail-silent + 依變更檔挑選的單元測試，
+#   實測見 PR 說明）。完整的舊 75 檔清單（約 8 分鐘）改為 PRE_PUSH_FULL=1 才跑；完整測試以 CI 為準。
+# Duration: tens of seconds. Steps 1-3 ~5 s; step 4 = invariants + config + fail-silent policy
+#   + unit tests selected from files changed vs origin/main (scripts/pre_push_select_tests.py).
+#   The old fixed 75-file list (~8 min) now runs only with PRE_PUSH_FULL=1. CI is the full-suite authority.
 # ==============================================================================
 
 set -e
@@ -93,83 +97,103 @@ echo -e "\n${YELLOW}[3/4] Validating Wiki Flat-Links Integrity...${NC}"
 $PYTHON .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
 echo -e "${GREEN}✓ Wiki internal links verified${NC}"
 
-# 4. Core Quantitative & Protections Regression Test Suite
-echo -e "\n${YELLOW}[4/4] Running Core Regression Test Suite...${NC}"
-$PYTEST tests/unit/services/test_actionable_alert_service.py \
-        tests/unit/services/test_adaptive_execution_slippage_compensator.py \
-        tests/unit/services/test_council_diversity_entropy_service.py \
-        tests/unit/services/test_counterfactual_reasoning_service.py \
-        tests/unit/services/test_cross_market_contagion_service.py \
-        tests/unit/services/test_cross_asset_volatility_spillover_service.py \
-        tests/unit/services/test_dynamic_debate_termination_service.py \
-        tests/unit/services/test_intraday_liquidity_circuit_breaker_service.py \
-        tests/unit/services/test_intraday_liquidity_hunt_guard_service.py \
-        tests/unit/services/test_macro_surprise_service.py \
-        tests/unit/services/test_order_book_toxicity_detector_service.py \
-        tests/unit/services/test_shadow_ledger_service.py \
-        tests/unit/services/test_shadow_promotion_orchestrator.py \
-        tests/unit/services/test_smart_money_support_service.py \
-        tests/unit/services/test_sentinel_position_exits.py \
-        tests/unit/services/test_protections_*.py \
-        tests/unit/services/test_exit_compositor.py \
-        tests/unit/services/test_webhook_telegram.py \
-        tests/unit/services/test_dynamic_volatility_rebalance.py \
-        tests/unit/services/test_correlation_clustering_and_beta.py \
-        tests/unit/services/test_opportunity_cost_and_alpha_decay.py \
-        tests/unit/services/test_portfolio_backtest_and_kelly.py \
-        tests/unit/services/test_stress_testing_and_cvar.py \
-        tests/unit/services/test_multi_factor_ensemble.py \
-        tests/unit/services/test_smart_order_routing.py \
-        tests/unit/services/test_order_execution_feedback.py \
-        tests/unit/services/test_strategy_auto_evolution.py \
-        tests/unit/services/test_regime_hmm.py \
-        tests/unit/services/test_portfolio_adaptive_intelligence.py \
-        tests/unit/services/test_extreme_value_theory.py \
-        tests/unit/services/test_intelligence_service.py \
-        tests/unit/services/test_adaptive_council_meta_learning.py \
-        tests/unit/services/test_cognitive_blindspot_service.py \
-        tests/unit/services/test_council_debate_memory_service.py \
-        tests/unit/services/test_macro_hedging_service.py \
-        tests/unit/services/test_tactical_factor_rotation_service.py \
-        tests/unit/services/test_factor_rotation_replay_engine.py \
-        tests/unit/services/test_order_lifecycle_guard.py \
-        tests/unit/services/test_order_inflight_lock_service.py \
-        tests/unit/services/test_order_reconciliation_service.py \
-        tests/unit/services/test_self_ops_dispatcher_divergence.py \
-        tests/unit/services/test_candidate_pool_lifecycle.py \
-        tests/unit/services/test_universe_lifecycle_service.py \
-        tests/unit/services/test_sector_drift_and_convex_kelly.py \
-        tests/unit/services/test_cross_sector_momentum_funnel.py \
-        tests/unit/services/test_cross_sector_stalking_and_reprice.py \
-        tests/unit/services/test_alpha_spread_bidding_service.py \
-        tests/unit/services/test_intraday_cross_sector_beta_damping.py \
-        tests/unit/services/test_cross_sector_harvest_and_anti_hunt.py \
-        tests/unit/services/test_dark_pool_and_convex_sharpe.py \
-        tests/unit/services/test_dynamic_iv_surface_skew_hedging_service.py \
-        tests/unit/services/test_microstructure_order_flow_imbalance_service.py \
-        tests/unit/services/test_phase61_integration_and_routing.py \
-        tests/unit/services/test_staggered_dip_buying_service.py \
-        tests/unit/services/test_staggered_stalking_and_moc.py \
-        tests/unit/services/test_slippage_guard_and_batch_deployment.py \
-        tests/unit/services/test_risk_parity_cvar_service.py \
-        tests/unit/services/test_sentinel_alert_email_formatting.py \
-        tests/unit/services/test_flip_flop_lockout_guard.py \
-        tests/unit/services/test_option_gamma_exposure_gex_service.py \
-        tests/unit/services/test_kalman_pairs_cointegration_service.py \
-        tests/unit/services/test_friction_aware_tranche_sizing_service.py \
-        tests/unit/services/test_cross_currency_fx_hedging_service.py \
-        tests/unit/services/test_factor_orthogonal_attribution_service.py \
-        tests/unit/services/test_tactical_decay_rebalancer_service.py \
-        tests/unit/services/test_sentinel_capital_rotation_hotfix.py \
-        tests/unit/services/test_multi_factor_stress_test_service.py \
-        tests/unit/core/test_conversation_router_p62.py \
-        tests/unit/core/test_conversation_router_p63.py \
-        tests/unit/core/test_conversation_router_p64.py \
-        tests/unit/core/test_conversation_router_p65.py \
-        tests/unit/core/test_conversation_router_p66.py \
-        tests/unit/core/test_conversation_router_p67.py \
-        tests/unit/core/test_conversation_router_p68.py \
-        tests/unit/config/test_settings_schema.py -q
+# 4. Fast Regression: always-run gates + tests for files changed vs origin/main
+if [ "${PRE_PUSH_FULL:-0}" = "1" ]; then
+    echo -e "\n${YELLOW}[4/4] PRE_PUSH_FULL=1: Running legacy 75-file Core Regression Suite (~8 min)...${NC}"
+    $PYTEST tests/unit/services/test_actionable_alert_service.py \
+            tests/unit/services/test_adaptive_execution_slippage_compensator.py \
+            tests/unit/services/test_council_diversity_entropy_service.py \
+            tests/unit/services/test_counterfactual_reasoning_service.py \
+            tests/unit/services/test_cross_market_contagion_service.py \
+            tests/unit/services/test_cross_asset_volatility_spillover_service.py \
+            tests/unit/services/test_dynamic_debate_termination_service.py \
+            tests/unit/services/test_intraday_liquidity_circuit_breaker_service.py \
+            tests/unit/services/test_intraday_liquidity_hunt_guard_service.py \
+            tests/unit/services/test_macro_surprise_service.py \
+            tests/unit/services/test_order_book_toxicity_detector_service.py \
+            tests/unit/services/test_shadow_ledger_service.py \
+            tests/unit/services/test_shadow_promotion_orchestrator.py \
+            tests/unit/services/test_smart_money_support_service.py \
+            tests/unit/services/test_sentinel_position_exits.py \
+            tests/unit/services/test_protections_*.py \
+            tests/unit/services/test_exit_compositor.py \
+            tests/unit/services/test_webhook_telegram.py \
+            tests/unit/services/test_dynamic_volatility_rebalance.py \
+            tests/unit/services/test_correlation_clustering_and_beta.py \
+            tests/unit/services/test_opportunity_cost_and_alpha_decay.py \
+            tests/unit/services/test_portfolio_backtest_and_kelly.py \
+            tests/unit/services/test_stress_testing_and_cvar.py \
+            tests/unit/services/test_multi_factor_ensemble.py \
+            tests/unit/services/test_smart_order_routing.py \
+            tests/unit/services/test_order_execution_feedback.py \
+            tests/unit/services/test_strategy_auto_evolution.py \
+            tests/unit/services/test_regime_hmm.py \
+            tests/unit/services/test_portfolio_adaptive_intelligence.py \
+            tests/unit/services/test_extreme_value_theory.py \
+            tests/unit/services/test_intelligence_service.py \
+            tests/unit/services/test_adaptive_council_meta_learning.py \
+            tests/unit/services/test_cognitive_blindspot_service.py \
+            tests/unit/services/test_council_debate_memory_service.py \
+            tests/unit/services/test_macro_hedging_service.py \
+            tests/unit/services/test_tactical_factor_rotation_service.py \
+            tests/unit/services/test_factor_rotation_replay_engine.py \
+            tests/unit/services/test_order_lifecycle_guard.py \
+            tests/unit/services/test_order_inflight_lock_service.py \
+            tests/unit/services/test_order_reconciliation_service.py \
+            tests/unit/services/test_self_ops_dispatcher_divergence.py \
+            tests/unit/services/test_candidate_pool_lifecycle.py \
+            tests/unit/services/test_universe_lifecycle_service.py \
+            tests/unit/services/test_sector_drift_and_convex_kelly.py \
+            tests/unit/services/test_cross_sector_momentum_funnel.py \
+            tests/unit/services/test_cross_sector_stalking_and_reprice.py \
+            tests/unit/services/test_alpha_spread_bidding_service.py \
+            tests/unit/services/test_intraday_cross_sector_beta_damping.py \
+            tests/unit/services/test_cross_sector_harvest_and_anti_hunt.py \
+            tests/unit/services/test_dark_pool_and_convex_sharpe.py \
+            tests/unit/services/test_dynamic_iv_surface_skew_hedging_service.py \
+            tests/unit/services/test_microstructure_order_flow_imbalance_service.py \
+            tests/unit/services/test_phase61_integration_and_routing.py \
+            tests/unit/services/test_staggered_dip_buying_service.py \
+            tests/unit/services/test_staggered_stalking_and_moc.py \
+            tests/unit/services/test_slippage_guard_and_batch_deployment.py \
+            tests/unit/services/test_risk_parity_cvar_service.py \
+            tests/unit/services/test_sentinel_alert_email_formatting.py \
+            tests/unit/services/test_flip_flop_lockout_guard.py \
+            tests/unit/services/test_option_gamma_exposure_gex_service.py \
+            tests/unit/services/test_kalman_pairs_cointegration_service.py \
+            tests/unit/services/test_friction_aware_tranche_sizing_service.py \
+            tests/unit/services/test_cross_currency_fx_hedging_service.py \
+            tests/unit/services/test_factor_orthogonal_attribution_service.py \
+            tests/unit/services/test_tactical_decay_rebalancer_service.py \
+            tests/unit/services/test_sentinel_capital_rotation_hotfix.py \
+            tests/unit/services/test_multi_factor_stress_test_service.py \
+            tests/unit/core/test_conversation_router_p62.py \
+            tests/unit/core/test_conversation_router_p63.py \
+            tests/unit/core/test_conversation_router_p64.py \
+            tests/unit/core/test_conversation_router_p65.py \
+            tests/unit/core/test_conversation_router_p66.py \
+            tests/unit/core/test_conversation_router_p67.py \
+            tests/unit/core/test_conversation_router_p68.py \
+            tests/unit/config/test_settings_schema.py -q
+else
+    echo -e "\n${YELLOW}[4/4] Running Fast Regression (invariants + config + fail-silent + changed-file tests)...${NC}"
+    BASE_REF="origin/main"
+    if ! git rev-parse --verify -q "$BASE_REF" >/dev/null; then
+        echo -e "${YELLOW}⚠️ $BASE_REF not found; changed-file selection skipped (always-run gates only)${NC}"
+        CHANGED=""
+    else
+        CHANGED="$(git diff --name-only "$BASE_REF"...HEAD || true)"
+    fi
+    SELECTED=()
+    while IFS= read -r t; do
+        [ -n "$t" ] && SELECTED+=("$t")
+    done < <(printf '%s\n' "$CHANGED" | $PYTHON scripts/pre_push_select_tests.py)
+    echo "Always: tests/invariants tests/unit/config tests/unit/test_fail_silent_policy.py"
+    echo "Selected from changed files (${#SELECTED[@]}, cap 40):"
+    for t in ${SELECTED[@]+"${SELECTED[@]}"}; do echo "  - $t"; done
+    $PYTEST tests/invariants tests/unit/config tests/unit/test_fail_silent_policy.py \
+            ${SELECTED[@]+"${SELECTED[@]}"} -q
+fi
 
 echo -e "\n${GREEN}======================================================${NC}"
 echo -e "${GREEN}   ✨  ALL PRE-PUSH CHECKS PASSED! READY TO PUSH.     ${NC}"

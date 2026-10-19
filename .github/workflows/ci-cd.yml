@@ -1,9 +1,9 @@
 name: CI/CD Pipeline
 
 on:
-  push:
-    branches-ignore:
-      - main
+  # No `push` trigger: it used to fire in addition to `pull_request` on every PR-branch push, so the whole
+  # workflow ran twice per push. Prd runs only on workflow_dispatch, so nothing depends on `push`.
+  # 不設 `push`：PR 分支每次推送會與 pull_request 各跑一次（重複）。Prd 只由 workflow_dispatch 觸發，與 push 無關。
   pull_request:
     branches: [main]
   workflow_dispatch:
