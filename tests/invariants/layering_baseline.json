@@ -138,9 +138,9 @@
     "src/services/batch_cash_deployment_service.py": 1620,
     "src/services/conversation_router.py": 2539,
     "src/services/etoro_service.py": 1504,
-    "src/services/sentinel_service.py": 5004,
+    "src/services/sentinel_service.py": 4999,
     "src/services/staggered_dip_buying_service.py": 1586,
     "src/services/workflow_service.py": 1589
   },
-  "lazy_imports_total": 1546
+  "lazy_imports_total": 1541
 }

@@ -912,6 +912,35 @@ class ParameterProposal(Base):
     )
 
 
+class RotationPairObservation(Base):
+    """`rotation_pair_observations` — alembic 030. One rotation decision linking sell leg and buy leg (G1b)."""
+    __tablename__ = 'rotation_pair_observations'
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
+    obs_date = Column(Date, nullable=False)
+    sell_ticker = Column(String, nullable=False)
+    buy_ticker = Column(String, nullable=False)
+    decision = Column(String, nullable=False)
+    holding_score = Column(Numeric(10, 4))
+    candidate_score = Column(Numeric(10, 4))
+    score_delta = Column(Numeric(10, 4))
+    holding_age_days = Column(Numeric(10, 4))
+    min_score_delta = Column(Numeric(10, 4), nullable=False)
+    min_holding_days = Column(Numeric(10, 4), nullable=False)
+    friction_pct = Column(Numeric(10, 4))
+    sell_price = Column(Numeric(18, 8))
+    buy_price = Column(Numeric(18, 8))
+    data_marker = Column(String)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'sell_ticker', 'buy_ticker', 'obs_date', 'decision',
+                         name='uq_rotation_pair_obs'),
+        Index('ix_rotation_pair_obs_date', 'obs_date'),
+    )
+
+
 class BacktestRun(Base):
     """`backtest_runs` — alembic 008."""
     __tablename__ = 'backtest_runs'
