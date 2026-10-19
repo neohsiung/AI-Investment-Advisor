@@ -64,6 +64,10 @@ DELETED_MODULES = [
     "src.services.portfolio_optimizer_service",
     "src.infrastructure.memory.three_tier_memory",
     "src.services.memory_factory",
+    # 2026-10 (M-B1): their containers were removed 2026-08-02; the Celery beat
+    # tasks replaced both. No importer remained.
+    "src.services.scheduler_service",
+    "src.services.memory_distillation_service",
     # 2026-08-23: dead module carrying a hardcoded Fernet key as its
     # "insecure default". Nothing imported it; the key still tripped a
     # local gitleaks scan (CI only scans the PR commit range, so it
@@ -86,7 +90,6 @@ def test_live_memory_modules_are_still_importable():
     for module in [
         "src.services.cognitive_memory_manager",
         "src.services.memory_service",
-        "src.services.memory_distillation_service",
         "src.services.unified_memory_service",
         "src.infrastructure.memory.memory_manager",
         "src.infrastructure.memory.channel_memory_manager",
