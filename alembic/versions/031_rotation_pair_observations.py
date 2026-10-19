@@ -1,15 +1,15 @@
-"""030_rotation_pair_observations: one record per rotation decision linking sell and buy legs (G1b)
+"""031_rotation_pair_observations: one record per rotation decision linking sell and buy legs (G1b)
 
-Revision ID: 030_rotation_pair_observations
-Revises: 028_parameter_store, 028_parameter_proposals
+Revision ID: 031_rotation_pair_observations
+Revises: 030_threshold_band_observations
 Create Date: 2026-10-19
 
 Additive only: one new table. 僅新增一張表。
 """
 from alembic import op
 
-revision = "030_rotation_pair_observations"
-down_revision = ("028_parameter_store", "028_parameter_proposals")  # also merges the two 028 heads / 同時合併兩個 028 head
+revision = "031_rotation_pair_observations"
+down_revision = "030_threshold_band_observations"
 branch_labels = None
 depends_on = None
 
