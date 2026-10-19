@@ -49,8 +49,9 @@ def test_apply_mode_genuine_effect_writes_engine_version(pg_engine, frozen_clock
     set_charter_state(pg_engine, "apply")
     monkeypatch.setattr(pe, "evaluate_key", make_evaluator({KEY: GOOD}))
     pe.run_once(USER_ID, pg_engine, frozen_clock.now(), notify=notify_sink, closes_provider=_closes(closes_provider))
-    row = pg_engine.connect().execute(text(
-        "SELECT version, source, value_json, change_id FROM parameter_values WHERE key = :k"), {"k": KEY}).one()
+    with pg_engine.connect() as conn:
+        row = conn.execute(text(
+            "SELECT version, source, value_json, change_id FROM parameter_values WHERE key = :k"), {"k": KEY}).one()
     assert (row.version, row.source, float(row.value_json)) == (1, "engine", 5.0) and row.change_id is not None
     assert get_param(KEY, engine=pg_engine).value == 5.0
     assert _scalar(pg_engine, "SELECT count(*) FROM charter_events WHERE kind = 'apply'") == 1
