@@ -8,7 +8,9 @@ Contract / 契約:
   * Evidence can tighten further: n >= N_MIN and mean + se < 0 drops trust one level and raises score_delta;
     any K-breach flag, validator errors, or repeated execution failures force mode 'observe'.
   * Missing / NaN / malformed input -> most conservative result with `_insufficient_data=True`.
-  * Loosening is a human decision (settings write), never computed here.
+  * Loosening is never computed here. Under ADR-003 it belongs to the charter change engine (five-condition
+    test, registered keys only); outside that engine it stays a human settings write.
+  * 放寬永不在此計算；依 ADR-003 由章程變更引擎（五條件檢定、僅限登錄鍵）處理，引擎之外仍為人工設定寫入。
 """
 from __future__ import annotations
 

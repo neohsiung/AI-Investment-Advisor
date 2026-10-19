@@ -4,9 +4,12 @@ Mission watchdog — evaluates the kill criteria in config/mission.yaml against 
 
 Each criterion returns one of: ok | breach | not_measurable. "not_measurable" is explicit on purpose: a check that
 cannot run is reported as such, never as "ok" (fail-silent rule). The watchdog only REPORTS (alert + API); it does
-not flip trading off by itself. Auto-halt is an R3 behaviour behind `mission_auto_halt_enabled` (default false).
+not flip trading off by itself. Auto-halt is an R3 behaviour defined by ADR-003: a K1/K3/K4 breach sets the
+separate `charter_state` to frozen (no new non-safety orders, no auto-liquidation, auto-resume at `clears_on`),
+never `ai_trading_enabled`. Until milestone G7 wires it, this service only reports.
 每條標準回傳 ok | breach | not_measurable；無法量測就明說，絕不假裝 ok。看門狗只回報（警報＋API），
-不會自行停止交易；自動停機屬 R3 行為，由 mission_auto_halt_enabled（預設 false）控制。
+不會自行停止交易；自動停機屬 R3 行為，依 ADR-003 設定獨立的 charter_state 為 frozen（停非安全新單、
+不自動清倉、到 clears_on 自動恢復），不借用 ai_trading_enabled；G7 接線前本服務只回報。
 """
 from __future__ import annotations
 
