@@ -1334,3 +1334,81 @@ class StrategyTrial(Base):
     __table_args__ = (
         Index('ix_strategy_trials_family', 'family'),
     )
+
+
+# ── Charter parameter store (alembic 028) ─────────────────────────────────────────────────────────────────────
+# Versioned values of the thresholds listed in config/parameter_registry.yaml, the trial ledger that feeds
+# multiple-testing correction, the audit trail of every change, and the single-row charter state.
+# Nothing reads these in the trading path until milestone G10.
+# 章程參數儲存：登錄檔門檻的版本化數值、多重檢定用的試驗帳本、每次變更的稽核軌跡、單列的章程狀態。
+# G10 之前交易路徑不讀這些表。
+class ParameterChange(Base):
+    """`parameter_changes` — one row per proposed/applied change, with the evidence that justified it."""
+    __tablename__ = 'parameter_changes'
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    key = Column(String(128), nullable=False)
+    from_value_json = Column(JSON)
+    to_value_json = Column(JSON)
+    direction = Column(String(8), nullable=False)
+    test_statistic = Column(Numeric(18, 6))
+    window_series_json = Column(JSON)
+    verdict = Column(String(16), nullable=False)
+    applied_at = Column(DateTime(timezone=True))
+    rolled_back_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("direction IN ('tighten', 'loosen')", name='ck_parameter_changes_direction'),
+        Index('ix_parameter_changes_key_created', 'key', 'created_at'),
+    )
+
+
+class ParameterValue(Base):
+    """`parameter_values` — append-only versions; the highest version of a key is its stored value."""
+    __tablename__ = 'parameter_values'
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    key = Column(String(128), nullable=False)
+    version = Column(Integer, nullable=False)
+    value_json = Column(JSON, nullable=False)
+    effective_from = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    source = Column(String(8), nullable=False)
+    change_id = Column(BigInteger().with_variant(Integer, "sqlite"), ForeignKey('parameter_changes.id'))
+
+    __table_args__ = (
+        CheckConstraint("source IN ('seed', 'engine', 'human', 'rollback')", name='ck_parameter_values_source'),
+        UniqueConstraint('key', 'version', name='uq_parameter_values_key_version'),
+    )
+
+
+class ParameterTrial(Base):
+    """`parameter_trials` — each grid value ever put on trial, with the cumulative trial count N at registration."""
+    __tablename__ = 'parameter_trials'
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    key = Column(String(128), nullable=False)
+    grid_value = Column(Numeric(18, 6), nullable=False)
+    n_cum = Column(Integer, nullable=False)
+    registered_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('key', 'grid_value', name='uq_parameter_trials_key_value'),
+    )
+
+
+class CharterState(Base):
+    """`charter_state` — singleton row (id = 1): the engine's operating mode and the human stop flag."""
+    __tablename__ = 'charter_state'
+
+    id = Column(Integer, primary_key=True)
+    mode = Column(String(16), nullable=False, server_default=text("'dry_run'"))
+    reason = Column(Text)
+    since = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    human_stop = Column(Boolean, nullable=False, server_default=text("false"))
+
+    __table_args__ = (
+        CheckConstraint("id = 1", name='ck_charter_state_singleton'),
+        CheckConstraint("mode IN ('dry_run', 'apply', 'tighten_only', 'frozen', 'human_stop')",
+                        name='ck_charter_state_mode'),
+    )
