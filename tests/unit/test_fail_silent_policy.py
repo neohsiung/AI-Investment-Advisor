@@ -46,6 +46,7 @@ DECISION_PATH_MODULES = [
     "src/workflow/charter_tasks.py",
     "src/services/charter_digest_service.py",
     "src/services/charter_state_service.py",
+    "src/services/enablement_checker.py",
     "src/services/proposal_shadow_service.py",
     "src/services/self_ops_service.py",
     "src/services/unified_risk_gateway_service.py",

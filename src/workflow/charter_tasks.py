@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 from src.config.owner import resolve_user_id
 from src.data.database import get_db_engine
 from src.infrastructure.celery_app import app
-from src.services import charter_digest_service, charter_state_service, parameter_engine
+from src.services import charter_digest_service, charter_state_service, enablement_checker, parameter_engine
 from src.services.mission_watchdog_service import MissionWatchdogService
 from src.services.market_data_service import MarketDataService
 from src.services.notification_service import NotificationService
@@ -99,3 +99,25 @@ def apply_charter_halt(user_id: Optional[str] = None, now: Optional[datetime] = 
         return {"error": str(e), "transition": None}
     logger.info("apply_charter_halt: overall=%s transition=%s", result.get("overall"), transition)
     return {"transition": transition, "overall": result.get("overall")}
+
+
+@app.task(name="src.workflow.charter_tasks.run_enablement_check", soft_time_limit=300, time_limit=360)
+def run_enablement_check(user_id: Optional[str] = None, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Daily G11 pass: when all six ADR-003 (6) criteria hold and the mode is dry_run, switch to apply once. The operator's
+    veto is the human stop. beat calls it without arguments. An error is returned and logged at error level; nothing is
+    enabled on error (fail closed). 每日啟用檢查：六條件齊備且為 dry_run 才切到 apply（只一次）；否決手段是人工停止；錯誤時不啟用。"""
+    user_id = resolve_user_id(user_id)
+    now = now or datetime.now(timezone.utc)
+    engine = get_db_engine()
+
+    def emit(kind: str, key: Optional[str], payload: Dict[str, Any]) -> None:
+        charter_digest_service.notify_event(engine, user_id, kind, key, payload, now)
+
+    try:
+        res = enablement_checker.enable(engine, now, emit)
+    except Exception as e:
+        logger.error("run_enablement_check failed: %s", e, exc_info=True)
+        return {"error": str(e), "enabled": False}
+    logger.info("run_enablement_check: enabled=%s reason=%s missing=%s", res["enabled"], res["reason"],
+                [m["criterion"] for m in res["missing"]])
+    return {"enabled": res["enabled"], "reason": res["reason"], "missing": [m["criterion"] for m in res["missing"]]}

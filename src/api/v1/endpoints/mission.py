@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.v1.dependencies import get_current_user_id
 from src.data.database import get_db_engine
-from src.services import charter_digest_service, charter_state_service
+from src.services import charter_digest_service, charter_state_service, enablement_checker
 from src.utils.logger import setup_logger
 
 logger = setup_logger("API_Mission")
@@ -105,4 +105,16 @@ async def post_charter_release(user_id: str = Depends(get_current_user_id)) -> D
         return {"status": "success", "data": _state_dict(charter_state_service.read_state(engine))}
     except Exception as e:
         logger.error(f"post_charter_release failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Mission API request failed")
+
+
+@router.post("/charter/drill")
+async def post_charter_drill(user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    """Halt drill (ADR-003 (6) criterion 4): freeze, check the real gate refuses a non-safety BUY and allows a stop_loss
+    SELL, then restore the previous state. Operator-triggered only; never scheduled. / 停機演練，只由操作者觸發，從不排程。"""
+    try:
+        engine, now = get_db_engine(), datetime.now(timezone.utc)
+        return {"status": "success", "data": enablement_checker.drill(engine, now, _emitter(engine, user_id, now))}
+    except Exception as e:
+        logger.error(f"post_charter_drill failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Mission API request failed")

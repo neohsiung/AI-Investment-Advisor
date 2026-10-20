@@ -21,6 +21,7 @@ CHARTER_MODULES = [
     "src/workflow/charter_tasks.py",
     "src/services/charter_digest_service.py",
     "src/services/charter_state_service.py",
+    "src/services/enablement_checker.py",
 ]
 
 _SQL_NOW = re.compile(r"\bnow\s*\(\s*\)", re.IGNORECASE)

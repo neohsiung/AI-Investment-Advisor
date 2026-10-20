@@ -19,6 +19,7 @@ from src.config.mission import load_mission
 from src.config.parameter_registry import Parameter, load_registry
 from src.data.models import (CharterEvent, CharterState, ParameterChange, ParameterTrial, RotationPairObservation,
                              StrategyTrial, ThresholdBandObservation)
+from src.services import enablement_checker
 from src.services.marginal_band_evaluator import evaluate_key
 from src.services.mission_watchdog_service import MissionWatchdogService
 from src.services.notification_service import NotificationService
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 UNKNOWN = "unknown"
 DIGEST_KIND = "digest"
-REALTIME_KINDS = ("apply", "rollback", "freeze", "resume", "degrade")
+REALTIME_KINDS = ("apply", "rollback", "freeze", "resume", "degrade", "enable", "drill")
 RATE_WINDOW_DAYS = 30            # observed rate = decisions observed in this window / its length / 近 30 日觀察率
 LOOSEN_QUARTER_QUOTA = 1         # same rule as parameter_engine.budget_gate quarter_quota_ok / 與 budget_gate 同規則
 LAST_LOOSENINGS = 4              # the engine's degrade window / 引擎降級視窗
@@ -42,6 +43,8 @@ _TITLES = {
     "freeze": "🧊 章程引擎凍結 / Charter engine frozen",
     "resume": "▶️ 章程引擎恢復 / Charter engine resumed",
     "degrade": "🛑 章程引擎降級為僅收緊 / Charter engine degraded to tighten-only",
+    "enable": "✅ 章程引擎自動啟用（dry_run → apply） / Charter engine enabled (dry_run to apply)",
+    "drill": "🧪 章程停機演練結果 / Charter halt drill result",
 }
 
 Notify = Callable[[str, str], None]
@@ -169,6 +172,16 @@ def _recent_events(engine: Any, now: datetime) -> List[Dict[str, Any]]:
                 for r in rows]
 
 
+def _enablement(engine: Any, now: datetime) -> Dict[str, Any]:
+    """ADR-003 (6) status: the criteria still missing before dry_run switches to apply. A failure is kept as an error."""
+    try:
+        ok, missing = enablement_checker.check(engine, now)
+        return {"ok": ok, "missing": missing}
+    except Exception as e:
+        logger.warning("charter digest: enablement check unavailable: %s", e)
+        return {"error": str(e)}
+
+
 def build_digest(engine: Any, user_id: str, now: datetime, watchdog: Optional[Callable[[date], Dict]] = None
                  ) -> Dict[str, Any]:
     """Structured digest. ``watchdog(today)`` defaults to MissionWatchdogService.evaluate; a failure is kept as
@@ -191,6 +204,7 @@ def build_digest(engine: Any, user_id: str, now: datetime, watchdog: Optional[Ca
         "quota": _quota(engine, now),
         "watchdog": k_status,
         "engine": _engine_stats(engine),
+        "enablement": _enablement(engine, now),
         "events_7d": _recent_events(engine, now),
     }
 
@@ -238,6 +252,14 @@ def render_digest(d: Dict[str, Any]) -> str:
     e = d["engine"]
     lines += ["", "## 引擎",
               f"- 已套用放寬 {e['applied_loosenings']} 次；最近 {e['last_count']} 次中回滾 {e['rollbacks_in_last']} 次"]
+    en = d["enablement"]
+    lines += ["", "## 啟用條件（ADR-003 (6)）"]
+    if "error" in en:
+        lines.append(f"- 啟用檢查不可用：{en['error']}")
+    elif en["ok"]:
+        lines.append("- 六項條件皆成立（dry_run 時下次檢查會自動切到 apply）")
+    else:
+        lines += [f"- 未滿足 {m['criterion']}：{m['status']}（{m['value']}）" for m in en["missing"]]
     lines += ["", "## 近 7 日事件"]
     lines += [f"- {ev['at']} {ev['kind']} {ev['key'] or ''}".rstrip() for ev in d["events_7d"]] or ["- 無"]
     return "\n".join(lines) + "\n"
