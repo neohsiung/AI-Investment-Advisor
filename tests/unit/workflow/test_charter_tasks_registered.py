@@ -12,3 +12,14 @@ def test_task_registered_and_beat_entry():
     assert entry["task"] == name
     sched = entry["schedule"]
     assert isinstance(sched, crontab) and sched.hour == {7} and sched.minute == {5}
+
+
+def test_weekly_digest_task_registered_and_saturday_beat_entry():
+    from src.infrastructure.celery_app import app
+    app.loader.import_default_modules()
+    name = "src.workflow.charter_tasks.run_charter_weekly_digest"
+    assert name in app.tasks
+    entry = app.conf.beat_schedule["charter-weekly-digest"]
+    assert entry["task"] == name
+    sched = entry["schedule"]
+    assert isinstance(sched, crontab) and sched.hour == {10} and sched.minute == {35} and sched.day_of_week == {6}

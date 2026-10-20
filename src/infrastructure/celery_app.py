@@ -160,6 +160,12 @@ app.conf.beat_schedule = {
         "task": "src.workflow.charter_tasks.run_parameter_engine",
         "schedule": crontab(hour=7, minute=5),
     },
+    # Charter weekly digest — Saturday 10:35 EST (after the 10:00 weekly report), 0-LLM; reads and notifies only
+    # 章程週報：週六 10:35 EST（晚於 10:00 週報），0-LLM；只讀與通知。
+    "charter-weekly-digest": {
+        "task": "src.workflow.charter_tasks.run_charter_weekly_digest",
+        "schedule": crontab(hour=10, minute=35, day_of_week="6"),
+    },
     # Real LLM cost collector — every 15 minutes (LiteLLM /key/info delta -> llm_real_cost_daily)
     # 真實 LLM 成本收集：每 15 分鐘輪詢 LiteLLM /key/info 並記帳。
     "litellm-spend-collect": {

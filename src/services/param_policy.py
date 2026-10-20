@@ -223,3 +223,8 @@ def evidence_clock_start(key: str, engine: Any = None) -> Optional[datetime]:
     with sessionmaker(bind=_engine(engine))() as s:
         row = _latest_row(s, key)
         return _as_aware(row.effective_from) if row is not None else None
+
+
+def seed_value(key: str) -> Any:
+    """Seed (clean-install) value of a registry key, for display only. / 登錄鍵的 seed 值，僅供顯示。"""
+    return _seed(_param(key))
