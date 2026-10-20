@@ -76,11 +76,21 @@ def test_estimate_zero_gamma_flip_point():
 
 @pytest.mark.anyio
 async def test_evaluate_ticker_gex_regimes():
-    """Verify regime classification logic."""
-    service = OptionGammaExposureGEXService(user_id="test_user")
+    """Verify regime classification with a real chain, and the report for it."""
+    chain = []
+    for stk in (210.0, 220.0, 230.0, 240.0, 250.0):
+        chain.append({"type": "CALL", "strike": stk, "open_interest": 1500.0, "implied_volatility": 0.35, "days_to_expiry": 14})
+        chain.append({"type": "PUT", "strike": stk, "open_interest": 900.0, "implied_volatility": 0.38, "days_to_expiry": 14})
+    md = MagicMock()
 
-    # Positive Gamma Regime (default synthetic with balanced OI)
+    async def _chain(_t):
+        return chain
+
+    md.get_options_chain = _chain
+    service = OptionGammaExposureGEXService(user_id="test_user", market_data_service=md)
+
     metric = await service.evaluate_ticker_gex("NVDA", spot_price=230.0)
+    assert metric.fallback_reason is None
     assert metric.ticker == "NVDA"
     assert metric.spot_price == 230.0
     assert metric.regime in (

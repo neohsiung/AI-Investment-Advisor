@@ -35,6 +35,8 @@ from datetime import datetime, timezone
 import json
 import logging
 import math
+import random
+import zlib
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.config.owner import resolve_user_id
@@ -63,6 +65,9 @@ class KalmanPairsMetric:
     evaluated_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    # Set when the series was synthetic (no real price history): the numbers are NOT a measurement
+    # and must never drive a decision. 序列為合成（無真實歷史價）時必填，數值不得作為決策輸入。
+    fallback_reason: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -81,6 +86,7 @@ class KalmanPairsMetric:
             "requires_circuit_breaker": self.requires_circuit_breaker,
             "rationale": self.rationale,
             "evaluated_at": self.evaluated_at,
+            "fallback_reason": self.fallback_reason,
         }
 
     @classmethod
@@ -101,6 +107,7 @@ class KalmanPairsMetric:
             requires_circuit_breaker=bool(data.get("requires_circuit_breaker", False)),
             rationale=str(data.get("rationale", "")),
             evaluated_at=data.get("evaluated_at") or datetime.now(timezone.utc).isoformat(),
+            fallback_reason=data.get("fallback_reason"),
         )
 
 
@@ -117,6 +124,8 @@ class KalmanPairsCointegrationService:
     ACTION_CLOSE = "CLOSE_PAIR_POSITIONS"
     ACTION_HOLD = "HOLD_EQUILIBRIUM"
     ACTION_STOP_LOSS = "EMERGENCY_PAIR_STOP_LOSS"
+
+    FALLBACK_SYNTHETIC = "synthetic_series"
 
     REDIS_CACHE_TTL_SECONDS = 300
     REDIS_KEY_PREFIX = "kalman_pairs:metric"
@@ -283,14 +292,11 @@ class KalmanPairsCointegrationService:
         if b >= 0.0:
             return 999.0  # Diverging / Non-stationary
 
-        try:
-            # Half-life = -ln(2) / ln(1 + b)
-            if 1.0 + b <= 0.0001:
-                return 1.0  # Extreme mean reversion within 1 day
-            half_life = -math.log(2.0) / math.log(1.0 + b)
-            return max(0.5, min(999.0, half_life))
-        except Exception:
-            return -math.log(2.0) / b if b < 0 else 999.0
+        # Half-life = -ln(2) / ln(1 + b); b < 0 here and 1 + b > 0.0001 is checked first, so log is safe.
+        if 1.0 + b <= 0.0001:
+            return 1.0  # Extreme mean reversion within 1 day
+        half_life = -math.log(2.0) / math.log(1.0 + b)
+        return max(0.5, min(999.0, half_life))
 
     # -------------------------------------------------------------
     # 核心數學演算法 3：滾動價差 Z-Score
@@ -322,9 +328,10 @@ class KalmanPairsCointegrationService:
         ticker_y: str,
         ticker_x: str,
         periods: int = 60,
-    ) -> Tuple[List[float], List[float]]:
+    ) -> Tuple[List[float], List[float], bool]:
         """
-        獲取配對資產的收盤價格序列 (Y 與 X)。
+        獲取配對資產的收盤價格序列 (Y 與 X)，並回報是否為合成序列 (is_synthetic)。
+        Returns (series_y, series_x, is_synthetic); a synthetic series is deterministic per pair.
         """
         sy = ticker_y.upper().strip()
         sx = ticker_x.upper().strip()
@@ -336,7 +343,7 @@ class KalmanPairsCointegrationService:
                 hist_x = await self.market_data_service.get_historical_prices(sx, days=periods)
                 if hist_y and hist_x and len(hist_y) >= 15 and len(hist_x) >= 15:
                     n = min(len(hist_y), len(hist_x))
-                    return hist_y[-n:], hist_x[-n:]
+                    return hist_y[-n:], hist_x[-n:], False
             except Exception as e:
                 logger.debug(f"Direct history fetch failed for pair ({sy}, {sx}): {e}")
 
@@ -365,8 +372,8 @@ class KalmanPairsCointegrationService:
         series_x = []
         series_y = []
         # Generate synthetic co-integrated random walk
-        import random
-        rnd = random.Random(hash(sy + sx) % 100000)
+        # Stable seed: builtin hash() of str varies per process (PYTHONHASHSEED); crc32 does not.
+        rnd = random.Random(zlib.crc32((sy + sx).encode("utf-8")) & 0xFFFF)
         curr_x = px * 0.95
         spread = 0.0
 
@@ -386,7 +393,7 @@ class KalmanPairsCointegrationService:
         series_x[-1] = px
         series_y[-1] = py
 
-        return series_y, series_x
+        return series_y, series_x, True
 
     # -------------------------------------------------------------
     # 診斷與配對體制判定 (Regime Evaluation)
@@ -403,7 +410,7 @@ class KalmanPairsCointegrationService:
         sx = ticker_x.upper().strip()
 
         # 1. 取得配對價格序列
-        series_y, series_x = await self.get_price_series_pair(sy, sx, periods=60)
+        series_y, series_x, is_synthetic = await self.get_price_series_pair(sy, sx, periods=60)
         py = series_y[-1] if series_y else 100.0
         px = series_x[-1] if series_x else 100.0
 
@@ -477,6 +484,16 @@ class KalmanPairsCointegrationService:
                 f"暫無統計套利進場優勢，維持長線均衡觀望。"
             )
 
+        fallback_reason: Optional[str] = None
+        if is_synthetic:
+            # Synthetic series is not evidence of a structural break: never trip the breaker on it.
+            # 合成序列不構成結構性破裂證據：不得據此熔斷。
+            fallback_reason = self.FALLBACK_SYNTHETIC
+            requires_circuit_breaker = False
+            logger.warning(
+                f"Kalman pairs {sy}/{sx}: no real price history, result marked {fallback_reason}"
+            )
+
         metric = KalmanPairsMetric(
             ticker_y=sy,
             ticker_x=sx,
@@ -492,6 +509,7 @@ class KalmanPairsCointegrationService:
             target_hedge_ratio_x_per_y=target_hedge_ratio,
             requires_circuit_breaker=requires_circuit_breaker,
             rationale=rationale,
+            fallback_reason=fallback_reason,
         )
 
         return metric
@@ -503,6 +521,13 @@ class KalmanPairsCointegrationService:
         """
         格式化卡爾曼協整與統計套利戰報，恪守 Telegram HTML 與 Email nl2br 規範。
         """
+        if metric.fallback_reason:
+            return (
+                f"<b>📈 卡爾曼配對協整</b>\n\n"
+                f"🎯 <b>配對</b>：<code>{metric.ticker_y}/{metric.ticker_x}</code>\n"
+                f"⚪ <b>不適用</b>：無真實歷史價格，序列為合成，未提供體制或信號 "
+                f"(<code>{metric.fallback_reason}</code>)"
+            )
         regime_badges = {
             self.REGIME_EQUILIBRIUM: "🟢 常態協整均衡 (Equilibrium Normal)",
             self.REGIME_DIVERGENCE: "🟠 價差發散套利機會 (Stat-Arb Opportunity)",

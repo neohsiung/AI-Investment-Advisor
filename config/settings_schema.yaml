@@ -4174,7 +4174,7 @@ settings:
   - key: enable_option_gamma_exposure_gex
     group: trading
     type: bool
-    default: true
+    default: false
     label_en: Enable Option Gamma Exposure (GEX) & Pinning Forecasting
     label_zh: 啟用做市商淨伽馬暴露與波動率釘盤預測引擎
     help_en: Measures dealer Net GEX, zero-gamma flip point S*, and OpEx pinning gravity to forecast volatility regimes.
