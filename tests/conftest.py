@@ -140,6 +140,22 @@ def isolate_trading_mode(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def open_charter_gate(request):
+    """
+    G7: the risk gateway now fails CLOSED when charter_state is unreadable, and unit tests run on an empty sqlite with
+    no charter_state row. Open the gate by default so tests of OTHER guards keep testing those guards; tests of the
+    gate itself opt out with @pytest.mark.real_charter_gate (the charter E2E suite always does).
+    G7：風控閘門在 charter_state 讀不到時 fail-closed；單元測試的 sqlite 沒有該列。預設放行，讓其他護欄的測試照舊；
+    測閘門本身的測試以 real_charter_gate 標記退出。
+    """
+    if request.node.get_closest_marker("real_charter_gate") or "tests/e2e/charter" in str(request.node.fspath).replace("\\", "/"):
+        yield
+        return
+    with patch("src.services.charter_state_service.trading_allowed", return_value=(True, "test: gate open")):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def mock_build_config_chain():
     """
     Global test fixture: patch build_config_chain to return a MockLLMGateway candidate.

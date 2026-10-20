@@ -6,7 +6,7 @@ Each criterion returns one of: ok | breach | not_measurable. "not_measurable" is
 cannot run is reported as such, never as "ok" (fail-silent rule). The watchdog only REPORTS (alert + API); it does
 not flip trading off by itself. Auto-halt is an R3 behaviour defined by ADR-003: a K1/K3/K4 breach sets the
 separate `charter_state` to frozen (no new non-safety orders, no auto-liquidation, auto-resume at `clears_on`),
-never `ai_trading_enabled`. Until milestone G7 wires it, this service only reports.
+never `ai_trading_enabled`. The transition lives in src/services/charter_state_service.py (G7); this service only reports.
 每條標準回傳 ok | breach | not_measurable；無法量測就明說，絕不假裝 ok。看門狗只回報（警報＋API），
 不會自行停止交易；自動停機屬 R3 行為，依 ADR-003 設定獨立的 charter_state 為 frozen（停非安全新單、
 不自動清倉、到 clears_on 自動恢復），不借用 ai_trading_enabled；G7 接線前本服務只回報。
@@ -26,9 +26,11 @@ logger = logging.getLogger("MissionWatchdog")
 MIN_HISTORY_DAYS_FOR_ALPHA = 252
 
 
-def _row(kid: str, name: str, status: str, value: Optional[float], threshold: float, unit: str, note: str = "") -> Dict[str, Any]:
+def _row(kid: str, name: str, status: str, value: Optional[float], threshold: float, unit: str, note: str = "",
+         clears_on: Optional[str] = None) -> Dict[str, Any]:
+    """`clears_on` is the structured ISO date a history-driven K3/K4 breach rolls off (None = unknown / not applicable)."""
     return {"id": kid, "name": name, "status": status, "value": None if value is None else round(value, 4),
-            "threshold": threshold, "unit": unit, "note": note}
+            "threshold": threshold, "unit": unit, "note": note, "clears_on": clears_on}
 
 
 class MissionWatchdogService:
@@ -184,16 +186,22 @@ class MissionWatchdogService:
                 return (sum(t["amount"] for t in win) / 2.0) / nav * (365.0 / 30.0) > c4.threshold
 
             k3_note = f"worst day in 30d: {worst_n} tickers (limit {max_n}); safety exits not separated"
+            k3_clr = None
             if b3:
                 clr = self._clears_on(trades, today, nav, 30, _k3_bad)
+                k3_clr = clr.isoformat() if clr else None
                 k3_note += f"; history-driven, clears {clr.isoformat() if clr else '>60d'} if no new offending day"
-            results.append(_row("K3", c3.name, "breach" if b3 else "ok", worst_pct, c3.threshold, c3.unit, k3_note))
+            results.append(_row("K3", c3.name, "breach" if b3 else "ok", worst_pct, c3.threshold, c3.unit, k3_note,
+                                clears_on=k3_clr))
             turnover = (sum(t["amount"] for t in trades) / 2.0) / nav * (365.0 / 30.0)
             k4_note = "annualised from the last 30 days"
+            k4_clr = None
             if turnover > c4.threshold:
                 clr = self._clears_on(trades, today, nav, 30, _k4_bad)
+                k4_clr = clr.isoformat() if clr else None
                 k4_note += f"; clears {clr.isoformat() if clr else '>60d'} if no new trades"
-            results.append(_row("K4", c4.name, "breach" if turnover > c4.threshold else "ok", turnover, c4.threshold, c4.unit, k4_note))
+            results.append(_row("K4", c4.name, "breach" if turnover > c4.threshold else "ok", turnover, c4.threshold, c4.unit, k4_note,
+                                clears_on=k4_clr))
         except Exception as e:
             results.append(_row("K3", c3.name, "not_measurable", None, c3.threshold, c3.unit, str(e)))
             results.append(_row("K4", c4.name, "not_measurable", None, c4.threshold, c4.unit, str(e)))
