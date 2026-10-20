@@ -166,6 +166,13 @@ app.conf.beat_schedule = {
         "task": "src.workflow.charter_tasks.run_parameter_engine",
         "schedule": crontab(hour=7, minute=5),
     },
+    # Charter enablement check (G11) — daily 07:20 EST (after the 07:05 engine), 0-LLM; flips dry_run to apply once when all
+    # six ADR-003 (6) criteria hold; the operator's veto is the human stop
+    # 章程啟用檢查：每日 07:20 EST（晚於 07:05 引擎），0-LLM；ADR-003 (6) 六條件齊備才把 dry_run 切到 apply（只一次）；否決手段是人工停止。
+    "charter-enablement": {
+        "task": "src.workflow.charter_tasks.run_enablement_check",
+        "schedule": crontab(hour=7, minute=20),
+    },
     # Charter weekly digest — Saturday 10:35 EST (after the 10:00 weekly report), 0-LLM; reads and notifies only
     # 章程週報：週六 10:35 EST（晚於 10:00 週報），0-LLM；只讀與通知。
     "charter-weekly-digest": {

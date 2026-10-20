@@ -77,14 +77,14 @@ def test_days_to_min_n_unknown_without_settlement_rate(engine, monkeypatch):
 def test_realtime_only_on_apply_rollback_halt(engine):
     sent = []
     notify = lambda title, content: sent.append(title)
-    for kind in ("apply", "rollback", "freeze", "resume", "degrade"):
+    for kind in ("apply", "rollback", "freeze", "resume", "degrade", "enable", "drill"):
         cds.notify_event(engine, USER, kind, KEY, {"from": 5.5, "to": 5.0}, NOW, notify=notify)
-    assert len(sent) == 5
-    assert len([r for r in _rows(engine, CharterEvent)]) == 5
-    for kind in ("verdict", "digest", "drill", "enable"):
+    assert len(sent) == 7
+    assert len([r for r in _rows(engine, CharterEvent)]) == 7
+    for kind in ("verdict", "digest"):
         with pytest.raises(ValueError):
             cds.notify_event(engine, USER, kind, KEY, {}, NOW, notify=notify)
-    assert len(sent) == 5 and len(_rows(engine, CharterEvent)) == 5   # nothing written or sent for the rest
+    assert len(sent) == 7 and len(_rows(engine, CharterEvent)) == 7   # nothing written or sent for the rest
 
 
 def test_weekly_digest_skips_second_write_in_same_week(engine):

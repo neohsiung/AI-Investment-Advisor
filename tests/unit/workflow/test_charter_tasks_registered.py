@@ -34,3 +34,14 @@ def test_charter_halt_task_registered_and_0610_beat_entry():
     assert entry["task"] == name
     sched = entry["schedule"]
     assert isinstance(sched, crontab) and sched.hour == {6} and sched.minute == {10}
+
+
+def test_enablement_task_registered_and_0720_beat_entry():
+    from src.infrastructure.celery_app import app
+    app.loader.import_default_modules()
+    name = "src.workflow.charter_tasks.run_enablement_check"
+    assert name in app.tasks
+    entry = app.conf.beat_schedule["charter-enablement"]
+    assert entry["task"] == name
+    sched = entry["schedule"]
+    assert isinstance(sched, crontab) and sched.hour == {7} and sched.minute == {20}
