@@ -230,22 +230,27 @@ def test_order_cap_helper_default_and_fallback():
     default = float(_schema_entries()["batch_deploy_max_order_usd"]["default"])
     assert schema_default("batch_deploy_max_order_usd") == default
 
-    svc = MagicMock()
-    svc.get_setting.return_value = None  # absent
-    assert single_order_cap_usd(svc, "u1") == default
+    from src.services.param_policy import ParamResult
 
-    svc.get_setting.return_value = 40
-    assert single_order_cap_usd(svc, "u1") == 40.0
+    def cap(value, why=None):  # G10: the cap is read through param_policy.get_param / 單筆上限改經 get_param 讀取
+        res = ParamResult("batch_deploy_max_order_usd", value, "engine", why)
+        with patch("src.services.order_cap_policy.get_param", return_value=res):
+            return single_order_cap_usd(MagicMock(), "u1")
+
+    assert cap(None) == default  # absent
+    assert cap(40) == 40.0
 
     for bad in (0, -5, "abc", float("nan")):
-        svc.get_setting.return_value = bad
         with patch("src.services.order_cap_policy.logger") as lg:
-            assert single_order_cap_usd(svc, "u1") == default
+            assert cap(bad) == default
             assert lg.warning.called, f"no warning for {bad!r}"
 
-    svc.get_setting.side_effect = RuntimeError("db down")
-    with patch("src.services.order_cap_policy.logger") as lg:
-        assert single_order_cap_usd(svc, "u1") == default
+    with patch("src.services.order_cap_policy.logger") as lg:  # a substituted value is logged, then still used
+        assert cap(100.0, "read_failed: db down") == 100.0
+        assert lg.warning.called
+    with patch("src.services.order_cap_policy.get_param", side_effect=RuntimeError("db down")), \
+            patch("src.services.order_cap_policy.logger") as lg:
+        assert single_order_cap_usd(MagicMock(), "u1") == default
         assert lg.warning.called
 
 

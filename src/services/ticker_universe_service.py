@@ -11,6 +11,7 @@ from src.repositories.ticker_universe_repository import (
 from src.services.portfolio_aggregator_service import PortfolioAggregatorService
 from src.utils.logger import setup_logger
 from src.config.owner import resolve_user_id
+from src.services.param_policy import get_param
 
 logger = setup_logger("TickerUniverseService")
 
@@ -454,6 +455,11 @@ class TickerUniverseService:
         spy_returns = self.calculate_ticker_returns("SPY", days=60)
         returns_map: Dict[str, List[float]] = {}
         ticker_scores = {}
+        # G10: read once per call, not per ticker. / G10：每次呼叫讀一次，不在每檔迴圈內讀。
+        age = get_param("universe_research_max_age_days")
+        if age.fallback_reason:
+            logger.warning("universe_research_max_age_days fallback (%s)", age.fallback_reason)
+        max_age_days = float(age.value) if age.value is not None else 14.0
         for t in active:
             ticker = t["ticker"]
             research = self.repo.get_research(self.user_id, ticker, limit=5)
@@ -476,10 +482,6 @@ class TickerUniverseService:
             # 只採最新一筆研究（max() 會讓過期高分蓋過新分數）；超齡研究視為未研究（中性 0.5）。
             latest = research[0] if research else None
             if latest is not None:
-                try:
-                    max_age_days = float(self.settings_service.get_setting("universe_research_max_age_days", 14))
-                except Exception:
-                    max_age_days = 14.0
                 created = latest.get("created_at")
                 age_days = None
                 try:

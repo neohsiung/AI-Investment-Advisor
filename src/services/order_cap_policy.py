@@ -22,6 +22,7 @@ import math
 from typing import Any, Optional
 
 from src.config.settings_schema import schema_default
+from src.services.param_policy import get_param
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,12 @@ def single_order_cap_usd(settings_service: Any, user_id: Optional[str]) -> float
     """Current single-order USD cap (always > 0). / 目前的單筆金額上限（恆大於 0）。"""
     default = default_single_order_cap_usd()
     try:
-        if user_id is None:
-            raw = settings_service.get_setting(SINGLE_ORDER_CAP_KEY, default)
-        else:
-            raw = settings_service.get_setting(SINGLE_ORDER_CAP_KEY, default, user_id)
+        # G10: read through param_policy (settings_service/user_id kept for signature compatibility).
+        # G10：改經 param_policy 讀取（保留 settings_service/user_id 以維持簽章）。
+        r = get_param(SINGLE_ORDER_CAP_KEY)
+        raw = r.value
+        if r.fallback_reason:
+            logger.warning("%s fallback (%s); value %r", SINGLE_ORDER_CAP_KEY, r.fallback_reason, raw)
         if raw is None:
             return default
         val = float(raw)

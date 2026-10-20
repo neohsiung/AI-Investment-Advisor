@@ -71,6 +71,7 @@ def test_redis_fault_treated_as_seen():
 
 
 def test_event_budget_gate_caps_and_doubles_for_held():
+    from src.services.param_policy import ParamResult
     from src.services.workflow_service import EventAnalysisWorkflow
 
     class R:
@@ -82,6 +83,8 @@ def test_event_budget_gate_caps_and_doubles_for_held():
     wf = EventAnalysisWorkflow.__new__(EventAnalysisWorkflow)
     wf.user_id = "u"; wf.logger = MagicMock()
     with patch("src.services.settings_service.SettingsService") as SS, \
+         patch("src.services.workflow_service.get_param",   # G10: the cap now comes from param_policy
+               return_value=ParamResult("event_analysis_daily_cap", 2, "engine")), \
          patch("src.infrastructure.cache.redis_client.get_redis_sync", return_value=r):
         SS.return_value.get_setting.return_value = 2
         assert wf._event_budget_exceeded(False) == ""
