@@ -7,6 +7,7 @@ reader code with its other collaborators stubbed and returns the observed value.
 from __future__ import annotations
 
 import asyncio
+import importlib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
@@ -20,6 +21,12 @@ MODULES = (
     "src.services.ticker_universe_service",
     "src.services.workflow_service",
 )
+
+# Import the reader modules now, before any test starts a frozen clock: freezegun replaces datetime.date and a
+# first import of pydantic.v1 (pulled in by workflow_service) under it fails with a metaclass conflict.
+# 現在就匯入讀取點模組：測試啟動凍結時鐘後才首次匯入 pydantic.v1（workflow_service 會帶入）會因 freezegun 取代 date 而失敗。
+for _module in MODULES:
+    importlib.import_module(_module)
 
 
 def wire(mp: Any, get: Callable[..., Any]) -> None:
@@ -135,6 +142,7 @@ def _universe(mp: Any) -> float:
     old = datetime.now(timezone.utc) - timedelta(days=100)       # always stale: the warning carries max_age_days
     svc.repo.get_research.return_value = [{"confidence_score": 0.8, "expected_return": 0.15, "created_at": old}]
     svc.repo.upsert_target.return_value = True
+    m.logger.warning.reset_mock()      # the site may be driven twice in one test (before/after) / 同一測試可能驅動兩次
     svc.optimize_allocations()
     stale = [c for c in m.logger.warning.call_args_list if c.args and "treating as unresearched" in str(c.args[0])]
     return stale[0].args[3]
