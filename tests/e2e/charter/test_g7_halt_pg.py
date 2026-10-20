@@ -14,6 +14,9 @@ from sqlalchemy import create_engine, inspect, text
 
 from src.services import charter_digest_service as cds
 from src.services import charter_state_service as css
+from src.services.actionable_alert_service import ActionableAlertHubService  # noqa: F401  imported before any frozen clock (pydantic.v1 under freezegun)
+from src.services.trading_protections_service import TradingProtectionsService  # noqa: F401
+from src.services.webhook_service import telegram_bot_webhook  # noqa: F401
 from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
 
 from .factories import USER_ID, set_charter_state
@@ -88,9 +91,6 @@ async def test_manual_resume_paths_cannot_clear_charter_state(pg_engine, frozen_
     _freeze(pg_engine, frozen_clock, "K3")
     before = _state(pg_engine)
 
-    from src.services.actionable_alert_service import ActionableAlertHubService
-    from src.services.trading_protections_service import TradingProtectionsService
-    from src.services.webhook_service import telegram_bot_webhook
 
     ss = MagicMock()
     ss.find_user_by_channel_id.return_value = USER_ID
@@ -104,7 +104,11 @@ async def test_manual_resume_paths_cannot_clear_charter_state(pg_engine, frozen_
         assert (await ActionableAlertHubService(USER_ID).execute_action("resume_trading"))["ok"] is True
         TradingProtectionsService(user_id=USER_ID).reset_lockout()
         await telegram_bot_webhook(request)
-        await asyncio.sleep(0.2)                                      # the /resume handler runs as a task
+        # The /resume handler runs as a task. asyncio.sleep(0.2) would never return under the frozen clock (the loop
+        # timer reads the frozen monotonic time), so wait for the pending tasks instead.
+        # /resume 處理器以 task 執行；凍結時鐘下 asyncio.sleep(0.2) 永遠不會醒（事件迴圈計時器讀到凍結時間），改為等待待處理 task。
+        pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), timeout=None) if pending else None
     writes = [c.args for c in ss.save_setting.call_args_list if c.args[0] == "ai_trading_enabled"]
     assert writes.count(("ai_trading_enabled", "true")) == 3
 
