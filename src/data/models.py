@@ -1477,20 +1477,4 @@ class ParameterTrial(Base):
         UniqueConstraint('key', 'grid_value', name='uq_parameter_trials_key_value'),
     )
 
-
-class CharterState(Base):
-    """`charter_state` — singleton row (id = 1): the engine's operating mode and the human stop flag."""
-    __tablename__ = 'charter_state'
-
-    id = Column(Integer, primary_key=True)
-    mode = Column(String(16), nullable=False, server_default=text("'dry_run'"))
-    reason = Column(Text)
-    since = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
-    human_stop = Column(Boolean, nullable=False, server_default=text("false"))
-
-    __table_args__ = (
-        CheckConstraint("id = 1", name='ck_charter_state_singleton'),
-        CheckConstraint("mode IN ('dry_run', 'apply', 'tighten_only', 'frozen', 'human_stop')",
-                        name='ck_charter_state_mode'),
-    )
-from src.data.charter_models import CharterEvent  # noqa: E402,F401  (alembic 032; kept out of this file: size ratchet)
+from src.data.charter_models import CharterEvent, CharterState  # noqa: E402,F401  (alembic 032/033; kept out of this file: size ratchet)

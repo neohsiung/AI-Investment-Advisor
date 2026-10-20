@@ -97,6 +97,20 @@ def test_k3_k4_report_when_history_clears():
     assert res["K4"]["status"] == "breach" and "clears 2026-11-" in res["K4"]["note"]
 
 
+def test_k3_breach_row_carries_structured_clears_on():
+    from datetime import date, timedelta
+    from src.services.mission_watchdog_service import MissionWatchdogService
+    today = date(2026, 10, 16)
+    svc = MissionWatchdogService("u", nav_usd=1000.0, llm_cost_30d_usd=0.0, monthly_subscription_usd=0.0,
+                                 local_cash_usd=0.0, broker_cash_usd=0.0)
+    svc._trades = lambda since: [{"date": today - timedelta(days=2), "ticker": f"T{i}", "action": "SELL", "amount": 200.0} for i in range(5)]
+    svc._trial_stats = lambda: (0, 0)
+    res = {r["id"]: r for r in svc.evaluate(today)["criteria"]}
+    assert res["K3"]["status"] == "breach" and date.fromisoformat(res["K3"]["clears_on"]) > today
+    assert date.fromisoformat(res["K4"]["clears_on"]) > today
+    assert res["K1"]["clears_on"] is None and res["K2"]["clears_on"] is None
+
+
 def test_k1_breach_note_names_top_spenders():
     from datetime import date
     from src.services.mission_watchdog_service import MissionWatchdogService

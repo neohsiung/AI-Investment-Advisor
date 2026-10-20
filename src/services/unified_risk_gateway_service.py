@@ -32,6 +32,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from src.config.owner import resolve_user_id
+from src.services import charter_state_service
 from src.utils.logger import setup_logger
 
 logger = setup_logger("UnifiedRiskGatewayService")
@@ -91,6 +92,21 @@ class UnifiedRiskGatewayService:
         reasons: List[str] = []
         guard_details: Dict[str, Any] = {}
         is_buy = act in ("BUY", "STRONG_BUY", "ADD", "ACCUMULATE")
+
+        # 0. Charter halt (G7, R3): frozen / human_stop / unreadable state blocks NEW non-safety BUYs only.
+        # 章程停機：凍結、人工停止或狀態讀不到，只擋非安全的新買單；賣單與安全控制不受影響。
+        if is_buy:
+            halt_ok, halt_why = charter_state_service.order_allowed(act, strategy_name, datetime.now(timezone.utc))
+            if not halt_ok:
+                guard_details["charter_halt"] = {"passed": False, "reason": halt_why}
+                return RiskGatewayResult(
+                    allowed=False,
+                    severity=RiskSeverity.BLOCKED,
+                    primary_blocker="CharterHalt",
+                    reasons=[f"[Charter] {halt_why}"],
+                    guard_details=guard_details,
+                    evaluated_at=now_iso,
+                )
 
         # ---------------------------------------------------------
         # 1. Trading Protections (Drawdown, Lockout, Cooldown, Churn, Flip-Flop)

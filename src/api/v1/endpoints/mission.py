@@ -2,11 +2,14 @@
 Mission status API — kill-criteria watchdog + the mission file version. 0-LLM, read-only.
 使命狀態 API — kill criteria 看門狗與使命檔版本；0-LLM、唯讀。
 """
-from typing import Any, Dict
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.v1.dependencies import get_current_user_id
+from src.data.database import get_db_engine
+from src.services import charter_digest_service, charter_state_service
 from src.utils.logger import setup_logger
 
 logger = setup_logger("API_Mission")
@@ -54,4 +57,52 @@ async def get_strategy_trials(user_id: str = Depends(get_current_user_id)) -> Di
         logger.error(f"get_strategy_trials failed: {e}", exc_info=True)
         # Generic detail: the cause is in the log above, never echoed to the client (CodeQL py/stack-trace-exposure).
         # 對外只回通用訊息；原因已記錄在上方日誌。
+        raise HTTPException(status_code=500, detail="Mission API request failed")
+
+
+def _state_dict(st: charter_state_service.State) -> Dict[str, Any]:
+    return {"mode": st.mode, "human_stop": st.human_stop, "reason": st.reason,
+            "since": st.since.isoformat() if st.since else None,
+            "clears_on": st.clears_on.isoformat() if st.clears_on else None,
+            "breach_ids": list(st.breach_ids), "resume_mode": st.resume_mode}
+
+
+def _emitter(engine: Any, user_id: str, now: datetime):
+    def emit(kind: str, key: Optional[str], payload: Dict[str, Any]) -> None:
+        charter_digest_service.notify_event(engine, user_id, kind, key, payload, now)
+    return emit
+
+
+@router.get("/charter/state")
+async def get_charter_state(user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    """charter_state (G7): mode, human stop flag, what froze it and when it clears. Read-only. / 章程停機狀態，唯讀。"""
+    try:
+        return {"status": "success", "data": _state_dict(charter_state_service.read_state(get_db_engine()))}
+    except Exception as e:
+        logger.error(f"get_charter_state failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Mission API request failed")
+
+
+@router.post("/charter/stop")
+async def post_charter_stop(reason: str = "operator emergency stop",
+                            user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    """Human emergency stop: blocks new non-safety BUYs until /charter/release. Never sells. / 人工緊急停止，只擋非安全新買單。"""
+    try:
+        engine, now = get_db_engine(), datetime.now(timezone.utc)
+        charter_state_service.human_stop(engine, now, reason, _emitter(engine, user_id, now))
+        return {"status": "success", "data": _state_dict(charter_state_service.read_state(engine))}
+    except Exception as e:
+        logger.error(f"post_charter_stop failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Mission API request failed")
+
+
+@router.post("/charter/release")
+async def post_charter_release(user_id: str = Depends(get_current_user_id)) -> Dict[str, Any]:
+    """Clear only the human stop; a still-active K breach re-freezes on the next watchdog pass. / 只解除人工停止。"""
+    try:
+        engine, now = get_db_engine(), datetime.now(timezone.utc)
+        charter_state_service.human_release(engine, now, _emitter(engine, user_id, now))
+        return {"status": "success", "data": _state_dict(charter_state_service.read_state(engine))}
+    except Exception as e:
+        logger.error(f"post_charter_release failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Mission API request failed")

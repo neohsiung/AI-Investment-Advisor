@@ -154,6 +154,12 @@ app.conf.beat_schedule = {
         "task": "src.infrastructure.tasks.run_mission_watchdog",
         "schedule": crontab(hour=6, minute=0),
     },
+    # Charter halt — daily 06:10 EST (after the 06:00 watchdog), 0-LLM; K1/K3/K4 breach freezes new non-safety BUYs, never sells
+    # 章程停機：每日 06:10 EST（晚於 06:00 看門狗），0-LLM；K1／K3／K4 違規只凍結非安全新買單，不賣出。
+    "charter-halt": {
+        "task": "src.workflow.charter_tasks.apply_charter_halt",
+        "schedule": crontab(hour=6, minute=10),
+    },
     # Charter change engine — daily 07:05 EST (after the 06:00 watchdog), 0-LLM; records verdicts, writes values only per charter_state
     # 章程變更引擎：每日 07:05 EST（晚於 06:00 看門狗），0-LLM；只記錄判決，依 charter_state 才寫值。
     "charter-parameter-engine": {

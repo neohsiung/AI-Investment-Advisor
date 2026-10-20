@@ -12,7 +12,8 @@ from typing import Any, Dict, Optional
 from src.config.owner import resolve_user_id
 from src.data.database import get_db_engine
 from src.infrastructure.celery_app import app
-from src.services import charter_digest_service, parameter_engine
+from src.services import charter_digest_service, charter_state_service, parameter_engine
+from src.services.mission_watchdog_service import MissionWatchdogService
 from src.services.market_data_service import MarketDataService
 from src.services.notification_service import NotificationService
 from src.services.settings_service import SettingsService
@@ -76,3 +77,25 @@ def run_charter_weekly_digest(user_id: Optional[str] = None, now: Optional[datet
     except Exception as e:
         logger.warning("run_charter_weekly_digest failed: %s", e, exc_info=True)
         return {"error": str(e), "written": False}
+
+
+@app.task(name="src.workflow.charter_tasks.apply_charter_halt", soft_time_limit=300, time_limit=360)
+def apply_charter_halt(user_id: Optional[str] = None, now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Daily halt pass (G7): watchdog result -> freeze / resume of charter_state. beat calls it without arguments.
+    An error is returned and logged at error level; an unreadable state already blocks BUYs at the gate (fail closed).
+    每日停機判定：看門狗結果 → 凍結或恢復；錯誤以 error 記錄，閘門端狀態讀不到本來就擋買單。"""
+    user_id = resolve_user_id(user_id)
+    now = now or datetime.now(timezone.utc)
+    engine = get_db_engine()
+
+    def emit(kind: str, key: Optional[str], payload: Dict[str, Any]) -> None:
+        charter_digest_service.notify_event(engine, user_id, kind, key, payload, now)
+
+    try:
+        result = MissionWatchdogService(user_id, engine=engine).evaluate(today=now.date())
+        transition = charter_state_service.apply_watchdog(result, now, engine, emit)
+    except Exception as e:
+        logger.error("apply_charter_halt failed: %s", e, exc_info=True)
+        return {"error": str(e), "transition": None}
+    logger.info("apply_charter_halt: overall=%s transition=%s", result.get("overall"), transition)
+    return {"transition": transition, "overall": result.get("overall")}

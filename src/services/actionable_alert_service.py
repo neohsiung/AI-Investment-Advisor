@@ -368,6 +368,7 @@ class ActionableAlertHubService:
             }
 
         elif action == "resume_trading":
+            # G7: this writes only the ai_trading_enabled setting; it must NOT touch charter_state (the charter halt lives in the risk gateway).
             ss.save_setting("ai_trading_enabled", "true")
             return {
                 "ok": True,

@@ -857,6 +857,7 @@ async def telegram_bot_webhook(request: Request):
         async def _resume():
             try:
                 from src.services.settings_service import SettingsService
+                # G7: this writes only the ai_trading_enabled setting; it must NOT touch charter_state (the charter halt lives in the risk gateway).
                 SettingsService(user_id=user_id).save_setting("ai_trading_enabled", "true")
                 await _reply("▶️ AI 自動交易已恢復。")
             except Exception as e:

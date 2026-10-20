@@ -195,5 +195,6 @@ def set_charter_state(engine: Any, mode: str = "dry_run", *, reason: str = "char
     with engine.begin() as conn:
         conn.execute(text(
             "INSERT INTO charter_state (id, mode, reason, since, human_stop) VALUES (1, :m, :r, :s, :h) "
-            "ON CONFLICT (id) DO UPDATE SET mode = :m, reason = :r, since = :s, human_stop = :h"),
+            "ON CONFLICT (id) DO UPDATE SET mode = :m, reason = :r, since = :s, human_stop = :h, "
+            "clears_on = NULL, breach_ids = NULL, resume_mode = NULL, updated_at = NULL"),     # 033 halt fields reset too
             {"m": mode, "r": reason, "s": since or datetime(2026, 1, 1, tzinfo=timezone.utc), "h": human_stop})
