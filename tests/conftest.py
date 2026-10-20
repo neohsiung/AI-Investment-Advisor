@@ -78,6 +78,14 @@ def pytest_configure(config):
     if "PYTEST_CURRENT_TEST" not in os.environ:
         os.environ["PYTEST_CURRENT_TEST"] = "collection"
         
+    # pytest-xdist: isolate_redis below flushes the whole Redis DB between tests, so workers sharing DB 0 wipe each
+    # other's keys mid-test (order:inflight locks vanished). Give every worker its own DB index; serial runs unchanged.
+    # xdist 下 isolate_redis 會 flushdb，多個 worker 共用 DB 0 會互相清空；每個 worker 用自己的 DB index，單機串行不變。
+    _worker = os.getenv("PYTEST_XDIST_WORKER", "")
+    if _worker.startswith("gw") and _worker[2:].isdigit() and not os.getenv("REDIS_URL") and os.getenv("REDIS_HOST"):
+        os.environ["REDIS_URL"] = (
+            f"redis://{os.environ['REDIS_HOST']}:{os.getenv('REDIS_PORT', '6379')}/{int(_worker[2:]) % 16}")
+
     # Unset Postgres variables if they exist in .env to prevent leaky defaults
     for env_var in ["DB_HOST", "DB_USER", "DB_PASS", "DB_NAME"]:
         if env_var in os.environ:
@@ -220,3 +228,50 @@ def isolate_redis():
         except Exception:
             pass
 
+
+
+@pytest.fixture(autouse=True)
+def ensure_current_event_loop():
+    """
+    Sync tests that call asyncio.get_event_loop() assumed an ambient loop left behind by an earlier async test in the
+    same process; under pytest-xdist a worker may reach them first ("There is no current event loop"). Provide a
+    private loop when none is usable and close it afterwards.
+    同步測試呼叫 asyncio.get_event_loop() 時依賴前一個 async 測試遺留的 loop；xdist 下 worker 可能先跑到它們而失敗。
+    沒有可用 loop 時提供私有 loop，測試後關閉。
+    """
+    import asyncio
+    import warnings
+
+    owned = None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("closed")
+    except RuntimeError:
+        owned = asyncio.new_event_loop()
+        asyncio.set_event_loop(owned)
+    yield
+    if owned is not None and not owned.is_closed():
+        owned.close()
+        asyncio.set_event_loop(None)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def warm_llm_provider_registry():
+    """
+    Load LLMGatewayFactory's registry and the provider catalog once per process, before any test patches `open` or
+    `os.path.exists`. The first load is lazy and permanent: tests such as test_base_agent_coverage patch both while
+    constructing an agent, which made the YAML read parse junk, cached an empty ProviderCatalog and left the registry at
+    {'mock'} for the rest of that worker. Serially an earlier test always loaded it first; under pytest-xdist the
+    worker's first test may be the patched one.
+    在任何測試 patch open / os.path.exists 之前先載入一次。首次載入是延遲且永久的；被 patch 的測試若剛好是 worker 的第一個，
+    會把空目錄與只有 mock 的 registry 固定下來。串行時總有更早的測試先載入，xdist 不保證。
+    """
+    try:
+        from src.infrastructure.llm.llm_gateway import LLMGatewayFactory
+        LLMGatewayFactory._ensure_loaded()
+    except Exception as exc:  # never hide a broken registry: tests that need it will fail loudly
+        print(f"WARN: could not warm LLM provider registry: {exc}")
+    yield
