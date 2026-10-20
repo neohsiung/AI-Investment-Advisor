@@ -36,12 +36,35 @@ def validate_pg_url(url: str) -> str:
     return url
 
 
+def _worker_db_name(name: str) -> str:
+    """Per-xdist-worker database name (charter_e2e -> charter_e2e_gw1); unchanged without PYTEST_XDIST_WORKER.
+    每個 xdist worker 用自己的資料庫（TRUNCATE 才不會互撞）；沒有 PYTEST_XDIST_WORKER 時維持原名。"""
+    worker = os.getenv("PYTEST_XDIST_WORKER")
+    return f"{name}_{worker}" if worker else name
+
+
+def _ensure_database(admin_url: Any, name: str) -> None:
+    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as c:
+            if not c.execute(text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": name}).fetchone():
+                c.execute(text(f'CREATE DATABASE "{name}"'))
+    finally:
+        admin.dispose()
+
+
 def resolve_pg_url() -> Optional[str]:
-    """CHARTER_E2E_PG_URL, else GitHub-Actions DB_* (creating database charter_e2e), else None.
-    CHARTER_E2E_PG_URL → GitHub Actions 的 DB_*（自建 charter_e2e）→ None。"""
+    """CHARTER_E2E_PG_URL, else GitHub-Actions DB_* (creating database charter_e2e), else None. Under pytest-xdist a
+    charter_e2e* database gets a _<worker> suffix and is created on demand; 'portfolio' is never suffixed.
+    CHARTER_E2E_PG_URL → GitHub Actions 的 DB_*（自建 charter_e2e）→ None；xdist 下 charter_e2e* 加 worker 後綴並自動建立。"""
     explicit = os.getenv("CHARTER_E2E_PG_URL")
     if explicit:
-        return validate_pg_url(explicit)
+        url = make_url(validate_pg_url(explicit))
+        if os.getenv("PYTEST_XDIST_WORKER") and (url.database or "").startswith("charter_e2e"):
+            name = _worker_db_name(url.database)
+            _ensure_database(url.set(database="postgres"), name)
+            return validate_pg_url(url.set(database=name).render_as_string(hide_password=False))
+        return explicit
     if os.getenv("GITHUB_ACTIONS") == "true":
         # tests/conftest.py deletes DB_HOST/DB_USER/DB_PASS/DB_NAME at collection, so do not read them: use the
         # lab job's postgres service defaults (ci-cd.yml). DB_PORT survives. / 該 conftest 會刪掉 DB_*，改用 service 預設值。
@@ -49,12 +72,9 @@ def resolve_pg_url() -> Optional[str]:
             username="postgres", password="postgres", host="localhost",
             port=int(os.getenv("DB_PORT", "5432")), database="portfolio")
         validate_pg_url(base.render_as_string(hide_password=False))
-        admin = create_engine(base, isolation_level="AUTOCOMMIT")
-        with admin.connect() as c:
-            if not c.execute(text("SELECT 1 FROM pg_database WHERE datname = 'charter_e2e'")).fetchone():
-                c.execute(text("CREATE DATABASE charter_e2e"))
-        admin.dispose()
-        return validate_pg_url(base.set(database="charter_e2e").render_as_string(hide_password=False))
+        name = _worker_db_name("charter_e2e")
+        _ensure_database(base, name)
+        return validate_pg_url(base.set(database=name).render_as_string(hide_password=False))
     return None
 
 
