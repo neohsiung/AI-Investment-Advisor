@@ -30,6 +30,7 @@ from sqlalchemy import text
 
 from src.config.mission import load_mission
 from src.services.order_cap_policy import single_order_cap_usd
+from src.services.param_policy import get_param
 from src.services.proposal_validator import ValidationContext, ValidationResult, validate
 from src.services.threshold_band_recorder import build_observation, record_at_boundary
 
@@ -199,6 +200,9 @@ async def _build_shared(user_id: str, need_sells: bool, settings_service: Any, d
     if gateway is None:
         from src.services.unified_risk_gateway_service import UnifiedRiskGatewayService
         gateway = UnifiedRiskGatewayService(user_id=user_id)
+    age = get_param("universe_research_max_age_days")
+    if age.fallback_reason:
+        logger.warning("universe_research_max_age_days fallback (%s)", age.fallback_reason)
     return {
         "tradable": float(tradable),
         # The executor bounds cash by tradable capital too (automated_trading_service BUY sizing guard).
@@ -207,7 +211,7 @@ async def _build_shared(user_id: str, need_sells: bool, settings_service: Any, d
         "mission": deps.get("mission") or load_mission(),
         "holdings": holdings,
         "research": research,
-        "max_age": float(settings_service.get_setting("universe_research_max_age_days")),
+        "max_age": float(age.value),
         "per_order_cap": single_order_cap_usd(settings_service, None),
         "parking": _as_bool(settings_service.get_setting("benchmark_parking_enabled")),
         "sold_count": sold_count,

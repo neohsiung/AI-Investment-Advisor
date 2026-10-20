@@ -25,6 +25,7 @@ import pytz
 
 from src.config.owner import resolve_user_id
 from src.services.order_cap_policy import single_order_cap_usd
+from src.services.param_policy import get_param
 from src.services.threshold_band_recorder import band_collector, record_at_boundary
 from src.utils.logger import setup_logger
 
@@ -363,7 +364,9 @@ class BatchCashDeploymentService:
             str(u.get("ticker") or "").upper()
             for u in repo.get_all(self.user_id, status="active")
         }
-        min_conf = self._setting_float("batch_deploy_min_confidence", 5.5)
+        r = get_param("batch_deploy_min_confidence")
+        r.fallback_reason and logger.warning("batch_deploy_min_confidence fallback (%s)", r.fallback_reason)
+        min_conf = float(r.value)
         observer, seen = band_collector("BUY", min_conf)
         ranked = self.rank_candidates(
             observer=observer,
@@ -429,13 +432,11 @@ class BatchCashDeploymentService:
         status = await self.get_portfolio_status()
         deployable = status.get("deployable_cash", 0.0)
         total_equity = status.get("total_equity", 0.0)
-
         # 讀取標的庫目標配置
         from src.repositories.ticker_universe_repository import TickerUniverseRepository
         repo = TickerUniverseRepository()
         target_records = repo.get_target_allocations(self.user_id)
         targets_map = {t["ticker"]: t for t in target_records if t.get("ticker") not in ("", "CASH")}
-
         # 讀取券商現有持倉
         broker = await self._get_broker()
         current_holdings = {}
@@ -447,7 +448,6 @@ class BatchCashDeploymentService:
                     if sym.endswith(suffix):
                         sym = sym[:-len(suffix)]
                 current_holdings[sym] = float(getattr(p, "market_value", 0.0) or 0.0)
-
         # 候選由 universe 目標與研究信心動態決定（不再使用寫死的 8 檔批次）
         selected_batch = await self._select_dynamic_candidates(
             total_equity=float(total_equity or 0.0),

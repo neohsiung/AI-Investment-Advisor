@@ -30,6 +30,7 @@ async def safe_run(agent, ctx):
 
 logger = setup_logger("WorkflowService")
 
+from src.services.param_policy import get_param
 from src.services.task_planning_service import TaskPlanningService
 from src.services.memory_service import MemoryService
 from src.repositories.memory_repository import AlchemyMemoryRepository
@@ -1237,7 +1238,6 @@ class WeeklyWorkflow(BaseWorkflow):
             if deployment_mem and deployment_mem.recent_items:
                 latest = deployment_mem.recent_items[0]
                 cash_deployment_context = f"\n\n[WEEKLY CAPITAL UTILIZATION REVIEW]:\n{latest.compressed_summary or latest.full_content[:2000]}"
-
         cio_context = {
             "macro_report": macro_report,
             "ticker_data": self.context.get('ticker_reports', {}),
@@ -1246,7 +1246,6 @@ class WeeklyWorkflow(BaseWorkflow):
             "cash_deployment_context": cash_deployment_context, # Inject deployment insight
             "user_id": self.user_id
         }
-        
         # PAD Phase 2: Replace AgentFactory with _call_agent_llm
         final_report = await self._call_agent_llm("CIO", cio_context, tier="smart", max_tokens=3000)
         return final_report
@@ -1297,7 +1296,12 @@ class EventAnalysisWorkflow(BaseWorkflow):
         """Return a reason string when today's full-analysis budget is spent, else ''. Counts this event if allowed."""
         try:
             from src.services.settings_service import SettingsService
-            cap = int(SettingsService(user_id=self.user_id).get_setting("event_analysis_daily_cap", 8))
+            # 0 = unlimited is a special value get_param never returns: read the raw setting for it (G10).
+            # 0＝不設限是 get_param 不會回傳的特殊值，故先讀原始設定判斷。
+            raw = SettingsService(user_id=self.user_id).get_setting("event_analysis_daily_cap", None)
+            r = get_param("event_analysis_daily_cap")
+            r.fallback_reason and logger.warning("event_analysis_daily_cap fallback (%s)", r.fallback_reason)
+            cap = 0 if raw is not None and int(raw) <= 0 else int(r.value)
         except (TypeError, ValueError):
             cap = 8
         if cap <= 0:
@@ -1331,17 +1335,14 @@ class EventAnalysisWorkflow(BaseWorkflow):
         news_msg = self.event_data.get("msg") or self.event_data.get("message") or ""
         news_url = self.event_data.get("url") or self.event_data.get("link") or ""
         news_content = self.event_data.get("content") or ""
-
         self.logger.info(
             f"EventAnalysisWorkflow: Ingesting event from {self.event_source} "
             f"(ticker={self.ticker}, title='{news_msg[:60]}')"
         )
-
         try:
             # Fetch user holdings upfront
             holdings = self.transaction_service.get_holdings_map(self.user_id)
             user_holding_tickers = {k.upper() for k, v in holdings.items() if v.get("quantity", 0) > 0}
-
             # ── Stage 1 & 2: 去重與極速篩選 (Pre-filter Dedup & Fast Relevance Gate) ──
             from src.services.market_news_filter_service import MarketNewsFilterService
             filter_svc = MarketNewsFilterService(user_id=self.user_id)
@@ -1354,7 +1355,6 @@ class EventAnalysisWorkflow(BaseWorkflow):
                 signal=self.target_action,
                 holdings=user_holding_tickers,
             )
-
             if filter_res.should_drop:
                 self.logger.info(
                     f"EventAnalysisWorkflow: Event from {self.event_source} dropped by filter. "

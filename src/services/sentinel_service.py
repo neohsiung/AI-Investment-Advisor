@@ -21,6 +21,7 @@ from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.repositories.snapshot_repository import AlchemySnapshotRepository
 from src.services.settings_service import SettingsService
 from src.services.risk_keyword_service import RiskKeywordService
+from src.services.param_policy import get_param
 from src.services.rotation_pair_recorder import DECISION_APPROVED, DECISION_REJECTED_DELTA, record_rotation_decision, record_young_blocked
 from src.domain.entities import RiskKeyword
 
@@ -4487,9 +4488,9 @@ class SentinelService:
             rotation_enabled = self.settings_service.get_setting("capital_rotation_enabled", True, self.user_id)
             if str(rotation_enabled).lower() not in ("true", "1"):
                 return []
-
-            rotation_min_delta = float(self.settings_service.get_setting("rotation_min_score_delta", 2.0, self.user_id) or 2.0)
-
+            rd = get_param("rotation_min_score_delta")
+            rd.fallback_reason and logger.warning("rotation_min_score_delta fallback (%s)", rd.fallback_reason)
+            rotation_min_delta = float(rd.value)
             # Filter valid holdings
             active_holdings = {}
             from src.services.core_holdings import is_core as _is_core
@@ -4500,10 +4501,8 @@ class SentinelService:
                 price = float(info.get("current_price", 0) or 0)
                 if shares > 0.0001 and price > 0:
                     active_holdings[ticker] = info
-
             if not active_holdings:
                 return []
-
             # Cooldown per user rotation evaluation (prevent continuous heavy rotation checks)
             cooldown_key = f"capital_rotation_eval:{self.user_id}"
             if not await self._acquire_cooldown(cooldown_key, 1800, fail_open=False):
@@ -4562,22 +4561,24 @@ class SentinelService:
             # Only consider rotation if the new candidate is genuinely strong (e.g. >= 7.0)
             if not best_candidate or best_cand_score < 7.0:
                 return []
-
             # 3. Evaluate retention conviction for each holding
             from src.services.exit_compositor_service import ExitCompositorService
             exit_compositor = ExitCompositorService(
                 user_id=self.user_id, settings_service=self.settings_service
             )
-
             weakest_ticker = None
             weakest_conviction = 999.0
             weakest_exit_decision = None
             weakest_info = None
-
             # Minimum holding period: a position cannot be rotated out until it has been held long enough
             # to outlast round-trip friction. Unknown age fails closed (no sell on absent evidence).
             # 最短持有期：持倉須先撐過來回摩擦才可被換出；年齡未知則不賣（缺證據不當作可賣）。
-            min_hold = float(self.settings_service.get_setting("rotation_min_holding_days", 5, self.user_id) or 0)
+            # 0 = check disabled is a special value get_param never returns: keep the raw setting for it (G10).
+            # 0＝關閉檢查是 get_param 不會回傳的特殊值，故保留原始設定判斷。
+            raw_hold = self.settings_service.get_setting("rotation_min_holding_days", 5, self.user_id)
+            mh = get_param("rotation_min_holding_days")
+            mh.fallback_reason and logger.warning("rotation_min_holding_days fallback (%s)", mh.fallback_reason)
+            min_hold = 0.0 if raw_hold is not None and float(raw_hold) <= 0 else float(mh.value)
             sellable, young = {}, {}  # young: age known but < min_hold, recorded for G1b / 年齡不足者供 G1b 記錄
             for t_, i_ in active_holdings.items():
                 age = self._holding_age_days(t_, i_)
@@ -4592,7 +4593,6 @@ class SentinelService:
                                        self._research_score, rotation_min_delta, min_hold)
             if not sellable:
                 return []
-
             for ticker, info in sellable.items():
                 shares = float(info.get("shares", 0) or info.get("quantity", 0) or 0)
                 current_price = float(info.get("current_price", 0) or 0)
