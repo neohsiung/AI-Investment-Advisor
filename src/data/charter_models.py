@@ -5,7 +5,7 @@ src.data.models re-exports it so ``from src.data.models import CharterEvent`` an
 from sqlalchemy import (BigInteger, Boolean, CheckConstraint, Column, Date, DateTime, Index, Integer, JSON, String, Text,
                         func, text)
 
-from src.data.models import Base
+from src.data.base import Base
 
 
 class CharterEvent(Base):

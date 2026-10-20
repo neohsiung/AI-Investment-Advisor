@@ -29,7 +29,7 @@ def _UUID():
     # PG 原生 uuid；SQLite 退回 String，讓測試用的記憶體資料庫仍能建表。
     return String(36).with_variant(postgresql.UUID(as_uuid=False), "postgresql")
 
-Base = declarative_base()
+from src.data.base import Base  # noqa: E402  (shared Base; lets charter_models import without a cycle / 共用 Base)
 
 class User(Base):
     __tablename__ = 'users'
