@@ -8,7 +8,9 @@ Clock contract: every function takes ``now``; the only clock read is in src/work
 所有函式收 now；時鐘只在 charter_tasks 讀取。
 """
 import asyncio
+import json
 import logging
+from pathlib import Path
 import math
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -172,6 +174,53 @@ def _recent_events(engine: Any, now: datetime) -> List[Dict[str, Any]]:
                 for r in rows]
 
 
+
+BACKUP_STATUS_PATH = Path(__file__).resolve().parents[2] / "config" / ".backup_status.json"
+BACKUP_STALE_DAYS = 2
+CRITERION_LABELS = {"adr": "ADR-003 已合併", "dry_run_90d": "dry_run 滿 90 天", "zero_effect_sim": "零效應誤放寬率 ≤ α",
+                    "drill": "停機演練通過", "8_digests": "連續 8 週週報", "no_freeze_30d": "近 30 天無 K 違規凍結"}
+
+
+def _backup_status(now: datetime, path: Optional[Path] = None) -> Dict[str, Any]:
+    """Last nightly backup as recorded by scripts/backup_db.sh in config/.backup_status.json (the worker mounts ./config
+    but not ./backups). Missing or unreadable is reported as such, never as fine. / 讀不到就如實回報，不當成正常。"""
+    p = path or BACKUP_STATUS_PATH
+    try:
+        st = json.loads(p.read_text(encoding="utf-8"))
+        at = datetime.fromisoformat(str(st["at"]).replace("Z", "+00:00"))
+        age_days = (now - at).total_seconds() / 86400.0
+        return {"ok": bool(st["ok"]), "file": st.get("file") or "", "mb": round(float(st.get("bytes", 0)) / 1e6, 1),
+                "at": str(st["at"]), "age_days": round(age_days, 1), "reason": st.get("reason") or "",
+                "stale": age_days > BACKUP_STALE_DAYS}
+    except Exception as e:
+        logger.warning("charter digest: backup status unreadable (%s): %s", p, e)
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
+def _readable_missing(m: Dict[str, Any]) -> str:
+    """One missing enablement criterion in plain Traditional Chinese. / 單一未滿足啟用條件的中文說明。"""
+    name = CRITERION_LABELS.get(m["criterion"], m["criterion"])
+    v = m.get("value") or {}
+    status = "無法量測" if m.get("status") == "not_measurable" else "未滿足"
+    if m["criterion"] == "dry_run_90d":
+        detail = f"已 {v.get('days')} 天／需 {v.get('required_days')} 天" if v.get("days") is not None else "尚無判決紀錄"
+        if v.get("keys_without_verdict"):
+            detail += f"；尚無判決的參數：{', '.join(v['keys_without_verdict'])}"
+    elif m["criterion"] == "8_digests":
+        detail = f"已連續 {v.get('consecutive_weeks')} 週／需 {v.get('required')} 週"
+    elif m["criterion"] == "drill":
+        detail = f"演練 {v.get('drills')} 次、通過 {v.get('passed')} 次（需操作者呼叫 POST /charter/drill）"
+    elif m["criterion"] == "no_freeze_30d":
+        detail = f"近 {v.get('lookback_days')} 天內有 {v.get('freezes')} 次凍結"
+    elif m["criterion"] == "zero_effect_sim":
+        detail = f"誤放寬率 {v.get('rate')}／α {v.get('alpha')}"
+    elif m["criterion"] == "adr":
+        detail = "mission.yaml 找不到 ADR-003"
+    else:
+        detail = str(v)
+    return f"- {status}：{name}（{detail}）"
+
+
 def _enablement(engine: Any, now: datetime) -> Dict[str, Any]:
     """ADR-003 (6) status: the criteria still missing before dry_run switches to apply. A failure is kept as an error."""
     try:
@@ -205,6 +254,7 @@ def build_digest(engine: Any, user_id: str, now: datetime, watchdog: Optional[Ca
         "watchdog": k_status,
         "engine": _engine_stats(engine),
         "enablement": _enablement(engine, now),
+        "backup": _backup_status(now),
         "events_7d": _recent_events(engine, now),
     }
 
@@ -259,7 +309,15 @@ def render_digest(d: Dict[str, Any]) -> str:
     elif en["ok"]:
         lines.append("- 六項條件皆成立（dry_run 時下次檢查會自動切到 apply）")
     else:
-        lines += [f"- 未滿足 {m['criterion']}：{m['status']}（{m['value']}）" for m in en["missing"]]
+        lines += [_readable_missing(m) for m in en["missing"]]
+    bk = d.get("backup")
+    lines += ["", "## 夜間備份"]
+    if bk is None or "error" in bk:
+        lines.append(f"- {UNKNOWN}：找不到備份狀態檔（{(bk or {}).get('error', '未提供')}）；夜間備份可能沒有執行")
+    elif not bk["ok"]:
+        lines.append(f"- 失敗：{bk['reason']}（{bk['at']}）")
+    else:
+        lines.append(f"- 最近一次成功：{bk['file']}（{bk['mb']} MB，{bk['age_days']} 天前）" + ("；**已超過 2 天沒有新備份**" if bk["stale"] else ""))
     lines += ["", "## 近 7 日事件"]
     lines += [f"- {ev['at']} {ev['kind']} {ev['key'] or ''}".rstrip() for ev in d["events_7d"]] or ["- 無"]
     return "\n".join(lines) + "\n"
