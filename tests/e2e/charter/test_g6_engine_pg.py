@@ -37,9 +37,9 @@ def _scalar(engine, sql, **p):
 
 def test_dry_run_day_writes_verdicts_for_every_adaptive_key_and_no_values(pg_engine, frozen_clock, closes_provider):
     verdicts = pe.run_once(USER_ID, pg_engine, frozen_clock.now(), closes_provider=_closes(closes_provider))
-    assert len(verdicts) == 6 and not any(v.applied for v in verdicts)
-    assert _scalar(pg_engine, "SELECT count(*) FROM charter_events WHERE kind = 'verdict'") == 6
-    assert _scalar(pg_engine, "SELECT count(*) FROM parameter_changes") == 6
+    assert len(verdicts) == 3 and not any(v.applied for v in verdicts)
+    assert _scalar(pg_engine, "SELECT count(*) FROM charter_events WHERE kind = 'verdict'") == 3
+    assert _scalar(pg_engine, "SELECT count(*) FROM parameter_changes") == 3
     assert _scalar(pg_engine, "SELECT count(*) FROM parameter_changes WHERE applied_at IS NOT NULL") == 0
     assert _scalar(pg_engine, "SELECT count(*) FROM parameter_values") == 0
 

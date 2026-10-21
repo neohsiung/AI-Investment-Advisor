@@ -49,50 +49,35 @@ parameters:
     store: settings
     class: A
     risk_direction: 1          # more analyses per day = more LLM spend / 每日分析越多，LLM 花費越高
-    policy: adaptive
+    policy: tighten_only
     owner: event_pipeline
     rollback_value: 8
     special_values: [0]        # 0 = unlimited; a step must never land on or cross it / 0＝不設限，不得落在或跨過
     bounds: {min: 4, max: 16}
     grid: [4, 6, 8, 12, 16]
-    cooldown_days: 63
-    evidence:
-      metric: llm_cost_per_useful_decision
-      horizons_days: [5, 63]
-      min_n: 30
-      counterfactual_source: llm_real_cost_daily
+    untestable_reason: "No outcome recorder links this cap to a measurable per-decision result: the only evidence would be LLM cost per useful decision, which nothing records. Keep the default and only tighten (lower) it on cost evidence. 沒有任何記錄器把此上限連到可量測的決策結果；暫時維持預設，只允許依成本證據收緊。"
   # ── 研究分數最大有效天數：超過就當作「未研究」。越大代表容忍越舊的研究，風險越高。
   - key: universe_research_max_age_days
     store: settings
     class: B
     risk_direction: 1          # older research tolerated = riskier / 容忍越舊的研究，風險越高
-    policy: adaptive
+    policy: tighten_only
     owner: proposal_validator
     rollback_value: 14
     bounds: {min: 7, max: 30}
     grid: [7, 10, 14, 21, 30]
-    cooldown_days: 63
-    evidence:
-      metric: net_signed_alpha_marginal_band
-      horizons_days: [5, 63]
-      min_n: 30
-      counterfactual_source: trade_proposals_stale_score
+    untestable_reason: "The shadow recorder rows for stale research scores are not mapped to a band evaluator, so no settled evidence exists for changing the age limit. Keep the default and only tighten it. 過期研究分數的影子紀錄尚未接到邊際區間評估器，沒有可驗證的證據；維持預設，只允許收緊。"
   # ── 分批建倉單筆上限（USD）：越大單筆曝險越高。
   - key: batch_deploy_max_order_usd
     store: settings
     class: B
     risk_direction: 1
-    policy: adaptive
+    policy: tighten_only
     owner: order_cap_policy
     rollback_value: 100.0
     bounds: {min: 50, max: 200}
     grid: [50.0, 75.0, 100.0, 150.0, 200.0]
-    cooldown_days: 63
-    evidence:
-      metric: drawdown_contribution_and_below_min_order_share
-      horizons_days: [5, 63]
-      min_n: 30
-      counterfactual_source: proposal_shadow_below_min_order
+    untestable_reason: "Whether a larger or smaller single-order cap helps has no outcome recorder (only the below-minimum-order share is shadowed, not its return). Keep the default and only tighten it. 單筆上限放大或縮小是否有益沒有結果記錄器；維持預設，只允許收緊。"
   # ── 建倉最低研究信心（0-10）：門檻越低，被投入資金的候選越多，風險越高。
   - key: batch_deploy_min_confidence
     store: settings
