@@ -61,14 +61,16 @@ def _check(name: str, text: str):
     assert text == path.read_text(encoding="utf-8"), f"digest changed vs {name}; review and UPDATE_SNAPSHOTS=1"
 
 
-def test_snapshot_empty(monkeypatch):
+def test_snapshot_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(cds, "BACKUP_STATUS_PATH", tmp_path / "absent.json")   # independent of a real backup status file
     eng = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(eng, tables=[Base.metadata.tables[t] for t in TABLES])
     monkeypatch.setattr(cds, "evaluate_key", make_evaluator({}))
     _check("charter_digest_empty.txt", cds.render_digest(cds.build_digest(eng, "u1", NOW, watchdog=_watchdog_down)))
 
 
-def test_snapshot_full(monkeypatch):
+def test_snapshot_full(monkeypatch, tmp_path):
+    monkeypatch.setattr(cds, "BACKUP_STATUS_PATH", tmp_path / "absent.json")
     monkeypatch.setattr(cds, "evaluate_key", make_evaluator({KEY: GOOD}))
     eng = _engine_full()
     _check("charter_digest_full.txt", cds.render_digest(cds.build_digest(eng, "u1", NOW, watchdog=_watchdog_full)))

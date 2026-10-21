@@ -26,6 +26,13 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/db_backup_${TIMESTAMP}.sql"
 TMP_FILE="${BACKUP_FILE}.partial"
 MARKER="${BACKUP_DIR}/BACKUP_FAILED"
+# Status file read by the weekly charter digest. The worker mounts ./config read-only but not ./backups, so the status
+# lives in config/ (gitignored). / 週報讀取的狀態檔；worker 只掛載 ./config，不掛載 ./backups，所以放在 config/（已 gitignore）。
+STATUS_FILE="${PROJECT_ROOT}/config/.backup_status.json"
+write_status() {  # write_status <ok:true|false> <file-or-empty> <bytes> <reason>
+  printf '{"ok": %s, "file": "%s", "bytes": %s, "at": "%s", "reason": "%s"}\n' "$1" "$2" "${3:-0}" "$(date -u +%FT%TZ)" "$(printf %s "$4" | tr -d '"\\')" \
+    > "${STATUS_FILE}.tmp" 2>/dev/null && mv "${STATUS_FILE}.tmp" "${STATUS_FILE}" 2>/dev/null || true
+}
 
 mkdir -p "${BACKUP_DIR}"
 
@@ -33,6 +40,7 @@ fail() {
   echo "Backup FAILED: $1"
   rm -f "${TMP_FILE}"
   printf '%s %s\n' "$(date -u +%FT%TZ)" "$1" > "${MARKER}"
+  write_status false "" 0 "$1"
   exit 1
 }
 
@@ -48,6 +56,7 @@ tail -n 5 "${TMP_FILE}" | grep -q "PostgreSQL database dump complete" || fail "d
 
 mv "${TMP_FILE}" "${BACKUP_FILE}"
 rm -f "${MARKER}"
+write_status true "$(basename "${BACKUP_FILE}")" "$(wc -c < "${BACKUP_FILE}" | tr -d ' ')" ""
 echo "Backup successful: ${BACKUP_FILE} ($(du -h "${BACKUP_FILE}" | cut -f1))"
 
 # Retention: drop the 0-byte files the old cron left behind, and nightly dumps older than KEEP_DAYS.
