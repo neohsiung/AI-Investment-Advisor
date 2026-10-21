@@ -100,3 +100,6 @@ QODER.md
 .mcp.json
 .opencode.json
 workspace/pad/
+# written by scripts/backup_db.sh, read by the weekly charter digest
+config/.backup_status.json
+config/.backup_status.json.tmp

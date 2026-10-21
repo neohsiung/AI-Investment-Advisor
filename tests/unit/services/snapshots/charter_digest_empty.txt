@@ -32,9 +32,12 @@
 - 已套用放寬 0 次；最近 0 次中回滾 0 次
 
 ## 啟用條件（ADR-003 (6)）
-- 未滿足 dry_run_90d：not_ok（{'days': None, 'required_days': 90, 'keys_without_verdict': ['event_analysis_daily_cap', 'universe_research_max_age_days', 'batch_deploy_max_order_usd', 'batch_deploy_min_confidence', 'rotation_min_score_delta', 'rotation_min_holding_days']}）
-- 未滿足 drill：not_ok（{'drills': 0, 'passed': 0}）
-- 未滿足 8_digests：not_ok（{'consecutive_weeks': 0, 'required': 8, 'weeks_since_latest': None}）
+- 未滿足：dry_run 滿 90 天（尚無判決紀錄；尚無判決的參數：event_analysis_daily_cap, universe_research_max_age_days, batch_deploy_max_order_usd, batch_deploy_min_confidence, rotation_min_score_delta, rotation_min_holding_days）
+- 未滿足：停機演練通過（演練 0 次、通過 0 次（需操作者呼叫 POST /charter/drill））
+- 未滿足：連續 8 週週報（已連續 0 週／需 8 週）
+
+## 夜間備份
+- unknown：找不到備份狀態檔（FileNotFoundError）；夜間備份可能沒有執行
 
 ## 近 7 日事件
 - 無
