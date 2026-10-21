@@ -107,11 +107,11 @@ def test_unavailable_series_never_loosens():
 def test_dry_run_records_verdict_but_never_writes_parameter_values(engine, monkeypatch):
     _mode(engine, "dry_run")
     vs = _run(engine, default=GOOD, monkeypatch=monkeypatch)
-    assert len(vs) == 6 and not any(v.applied for v in vs)
+    assert len(vs) == 3 and not any(v.applied for v in vs)
     assert _rows(engine, ParameterValue) == []
     changes = _rows(engine, ParameterChange)
-    assert len(changes) == 6 and all(c.applied_at is None for c in changes)
-    assert len(_rows(engine, CharterEvent, kind="verdict")) == 6
+    assert len(changes) == 3 and all(c.applied_at is None for c in changes)
+    assert len(_rows(engine, CharterEvent, kind="verdict")) == 3
     assert _by_key(vs)[KEY].direction == "loosen"                      # recorded as a loosen verdict, just not applied
 
 
@@ -119,7 +119,7 @@ def test_dry_run_registers_trials_and_consumes_quota(engine, monkeypatch):
     _mode(engine)
     _run(engine, default=GOOD, monkeypatch=monkeypatch)
     trials = _rows(engine, ParameterTrial)
-    assert len(trials) == 6 and trials[-1].n_cum == 6
+    assert len(trials) == 3 and trials[-1].n_cum == 3
 
 
 def test_register_trial_idempotent(engine):

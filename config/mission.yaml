@@ -87,6 +87,26 @@ adr:
       放寬約需 120–450 筆獨立決策（sigma 與訊號量未驗證），所以預期一年放寬 0 到 1 次，且常見「不動」或收緊，這是
       設計的行為。合併本變更即為操作者核准；在 G11 條件成立前，這些行為都不會生效。
 
+  - id: ADR-004
+    date: 2026-10-22
+    decision: >-
+      Registry amendment under ADR-003 (7). Three registered parameters that have no outcome recorder and therefore
+      no way to ever pass the loosening test are changed from policy adaptive to tighten_only with an
+      untestable_reason: event_analysis_daily_cap, universe_research_max_age_days and batch_deploy_max_order_usd. Their
+      grids, bounds and rollback values are unchanged; the change engine no longer judges them (three verdicts per
+      day instead of six) and they may only move toward less risk on evidence. The three parameters with a recorder
+      (batch_deploy_min_confidence, rotation_min_score_delta, rotation_min_holding_days) stay adaptive.
+      繁體中文：依 ADR-003 (7) 修訂登錄檔。三個沒有結果記錄器、因此永遠通不過放寬檢定的登錄參數（event_analysis_daily_cap、
+      universe_research_max_age_days、batch_deploy_max_order_usd）由 adaptive 改為 tighten_only 並附 untestable_reason；格點、
+      範圍與回滾值不變；變更引擎不再判這三個（每天由六筆判決變三筆），它們只能依證據往更低風險移動。有記錄器的三個參數
+      （batch_deploy_min_confidence、rotation_min_score_delta、rotation_min_holding_days）仍是 adaptive。
+    reason: >-
+      Registering a parameter as adaptive without any evidence source only consumes trial quota and produces empty
+      verdicts, and it suggests adaptation that cannot happen. Demoting it is the honest state; a recorder can promote
+      it again later through the same R3 path. Merging this change is the operator's approval.
+      繁體中文：登錄為 adaptive 卻沒有任何證據來源，只會消耗試驗額度與產生空判決，還暗示了不可能發生的自我調整；降級才是誠實的
+      狀態，日後補上記錄器可再經同一條 R3 路徑升級。合併本變更即為操作者核准。
+
 objective:
   benchmark: SPY
   metric: net_excess_return_vs_benchmark   # after LLM, data subscription and broker costs; beta-adjusted

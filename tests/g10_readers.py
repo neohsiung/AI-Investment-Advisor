@@ -178,17 +178,17 @@ class Site:
     key: str
     module: str
     drive: Callable[[Any], Any]
-    engine_value: Any       # a grid value different from today's default / 與現值不同的格點值
+    engine_value: Any       # a grid value different from today's default; tighten_only keys use a LESS risky value (get_param never returns a riskier one) / 與現值不同的格點值
 
 
 SITES = (
-    Site("order_cap_policy", "batch_deploy_max_order_usd", "src.services.order_cap_policy", _order_cap, 150.0),
+    Site("order_cap_policy", "batch_deploy_max_order_usd", "src.services.order_cap_policy", _order_cap, 75.0),
     Site("batch_deploy", "batch_deploy_min_confidence", "src.services.batch_cash_deployment_service",
          _batch_min_conf, 6.5),
     Site("sentinel_delta", "rotation_min_score_delta", "src.services.sentinel_service", _rotation_delta, 3.0),
     Site("sentinel_hold", "rotation_min_holding_days", "src.services.sentinel_service", _rotation_hold, 7),
     Site("proposal_shadow", "universe_research_max_age_days", "src.services.proposal_shadow_service",
-         _shadow_max_age, 21),
-    Site("ticker_universe", "universe_research_max_age_days", "src.services.ticker_universe_service", _universe, 21),
-    Site("workflow_cap", "event_analysis_daily_cap", "src.services.workflow_service", _event_cap, 12),
+         _shadow_max_age, 10),
+    Site("ticker_universe", "universe_research_max_age_days", "src.services.ticker_universe_service", _universe, 10),
+    Site("workflow_cap", "event_analysis_daily_cap", "src.services.workflow_service", _event_cap, 6),
 )

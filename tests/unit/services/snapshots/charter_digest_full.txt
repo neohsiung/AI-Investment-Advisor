@@ -7,14 +7,14 @@
 ## 參數（adaptive）
 | 參數 | 類別 | 目前值 | seed | n 5d | n 63d | min_n | 預估達 min_n 天數 | 最近判決 | 理由 |
 |---|---|---|---|---|---|---|---|---|---|
-| event_analysis_daily_cap | A | 8 | 8 | 0 | 0 | 30 | unknown（no_settlement_rate） | unknown | no_verdict_row |
-| universe_research_max_age_days | B | 14 | 14 | 0 | 0 | 30 | unknown（no_settlement_rate） | unknown | no_verdict_row |
-| batch_deploy_max_order_usd | B | 100.0 | 100.0 | 0 | 0 | 30 | unknown（no_settlement_rate） | unknown | no_verdict_row |
 | batch_deploy_min_confidence | B | 5.5 | 5.5 | 140 | 140 | 30 | 0 | hold | at_grid_edge |
 | rotation_min_score_delta | B | 2.0 | 2.0 | 0 | 0 | 30 | unknown（no_settlement_rate） | unknown | no_verdict_row |
 | rotation_min_holding_days | B | 5 | 5 | 0 | 0 | 30 | unknown（no_settlement_rate） | unknown | no_verdict_row |
 
 ## 不可試驗參數
+- event_analysis_daily_cap（A 類，policy tighten_only）：不可試驗：No outcome recorder links this cap to a measurable per-decision result: the only evidence would be LLM cost per useful decision, which nothing records. Keep the default and only tighten (lower) it on cost evidence. 沒有任何記錄器把此上限連到可量測的決策結果；暫時維持預設，只允許依成本證據收緊。
+- universe_research_max_age_days（B 類，policy tighten_only）：不可試驗：The shadow recorder rows for stale research scores are not mapped to a band evaluator, so no settled evidence exists for changing the age limit. Keep the default and only tighten it. 過期研究分數的影子紀錄尚未接到邊際區間評估器，沒有可驗證的證據；維持預設，只允許收緊。
+- batch_deploy_max_order_usd（B 類，policy tighten_only）：不可試驗：Whether a larger or smaller single-order cap helps has no outcome recorder (only the below-minimum-order share is shadowed, not its return). Keep the default and only tighten it. 單筆上限放大或縮小是否有益沒有結果記錄器；維持預設，只允許收緊。
 - benchmark_parking_max_order_usd（A 類，policy tighten_only）：不可試驗：Parking buys the benchmark only; the cap bounds deployment speed, not selectivity, so no outcome metric separates values.
 - tradable_capital_pct（C 類，policy tighten_only）：不可試驗：Net alpha of the active sleeve is not demonstrated at this account size (years_to_significance is in decades); keep the default and only tighten on risk evidence.
 - stop_loss_pct（C 類，policy tighten_only）：不可試驗：Too few stop events to validate a value; exits are safety controls and may only be tightened.
@@ -35,7 +35,7 @@
 - 已套用放寬 0 次；最近 0 次中回滾 0 次
 
 ## 啟用條件（ADR-003 (6)）
-- 未滿足：dry_run 滿 90 天（已 1 天／需 90 天；尚無判決的參數：event_analysis_daily_cap, universe_research_max_age_days, batch_deploy_max_order_usd, rotation_min_score_delta, rotation_min_holding_days）
+- 未滿足：dry_run 滿 90 天（已 1 天／需 90 天；尚無判決的參數：rotation_min_score_delta, rotation_min_holding_days）
 - 未滿足：停機演練通過（演練 0 次、通過 0 次（需操作者呼叫 POST /charter/drill））
 - 未滿足：連續 8 週週報（已連續 0 週／需 8 週）
 
