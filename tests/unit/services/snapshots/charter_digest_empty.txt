@@ -37,7 +37,7 @@
 - 未滿足：連續 8 週週報（已連續 0 週／需 8 週）
 
 ## 夜間備份
-- unknown：找不到備份狀態檔（FileNotFoundError: [Errno 2] No such file or directory: '/private/tmp/claude-501/-Users-neohsiung-Work-Projects-investment-advisor/60f05eb4-5b70-40f7-8ffa-69448959d235/scratchpad/wt-dg/config/.backup_status.json'）；夜間備份可能沒有執行
+- unknown：找不到備份狀態檔（FileNotFoundError）；夜間備份可能沒有執行
 
 ## 近 7 日事件
 - 無

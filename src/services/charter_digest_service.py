@@ -194,7 +194,9 @@ def _backup_status(now: datetime, path: Optional[Path] = None) -> Dict[str, Any]
                 "stale": age_days > BACKUP_STALE_DAYS}
     except Exception as e:
         logger.warning("charter digest: backup status unreadable (%s): %s", p, e)
-        return {"error": f"{type(e).__name__}: {e}"}
+        # Only the exception type goes into the digest: the message carries an absolute path, which differs per machine
+        # and would make the golden snapshot environment-dependent. / 週報只放例外類型：訊息含絕對路徑，會讓黃金檔隨環境而變。
+        return {"error": type(e).__name__}
 
 
 def _readable_missing(m: Dict[str, Any]) -> str:
