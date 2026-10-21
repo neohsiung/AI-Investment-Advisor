@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 
 from src.config.mission import load_mission
+from src.services.k1_projection import project_k1_clear, trailing_average
 
 logger = logging.getLogger("MissionWatchdog")
 
@@ -36,7 +37,8 @@ def _row(kid: str, name: str, status: str, value: Optional[float], threshold: fl
 class MissionWatchdogService:
     def __init__(self, user_id: str, engine: Any = None, nav_usd: Optional[float] = None,
                  llm_cost_30d_usd: Optional[float] = None, monthly_subscription_usd: Optional[float] = None,
-                 local_cash_usd: Optional[float] = None, broker_cash_usd: Optional[float] = None):
+                 local_cash_usd: Optional[float] = None, broker_cash_usd: Optional[float] = None,
+                 llm_daily_history: Optional[Dict[date, float]] = None):
         self.user_id = user_id
         self._engine = engine
         # Injection points (tests / callers that already hold the numbers). None -> read from the system.
@@ -45,6 +47,7 @@ class MissionWatchdogService:
         self._sub = monthly_subscription_usd
         self._local_cash = local_cash_usd
         self._broker_cash = broker_cash_usd
+        self._llm_daily = llm_daily_history
 
     @property
     def engine(self):
@@ -65,6 +68,29 @@ class MissionWatchdogService:
             rows = c.execute(text("SELECT trade_date, ticker, action, amount FROM transactions WHERE user_id = :u "
                                   "AND entry_category = 'trade' AND trade_date >= :d"), {"u": self.user_id, "d": since}).fetchall()
         return [{"date": r[0], "ticker": r[1], "action": r[2], "amount": float(r[3] or 0.0)} for r in rows]
+
+    def _llm_daily_history(self, today: date, days: int = 40) -> Dict[date, float]:
+        """Billed LLM spend per day (llm_real_cost_daily, the table the K1 total is built from). / 每日計費 LLM 花費。"""
+        with self.engine.connect() as c:
+            rows = c.execute(text("SELECT day, SUM(spend_usd) FROM llm_real_cost_daily WHERE day > :s AND day <= :t "
+                                  "GROUP BY day"), {"s": today - timedelta(days=days), "t": today}).fetchall()
+        return {r[0]: float(r[1] or 0.0) for r in rows}
+
+    def _k1_projection(self, today: date, nav: float, threshold: float, sub: float):
+        """(note, structured clears_on) for a K1 breach: when the ratio falls under the threshold at the trailing 7-day
+        average spend, and at zero spend (the earliest possible). History unreadable -> ('', None), never a guess.
+        K1 違規時的預計解除日：依近 7 日平均花費、以及零花費（最早可能）；讀不到歷史就不推測。"""
+        try:
+            hist = self._llm_daily if self._llm_daily is not None else self._llm_daily_history(today)
+            avg7 = trailing_average(hist, today, 7)
+            at_avg = project_k1_clear(hist, today, nav, threshold, sub, avg7)
+            at_zero = project_k1_clear(hist, today, nav, threshold, sub, 0.0)
+        except Exception as e:
+            logger.warning("watchdog: K1 projection unavailable: %s", e)
+            return "", None
+        fmt = lambda d: d.isoformat() if d else "beyond 90 days / 超過 90 天"
+        note = (f"; projected clear / 預計解除日: {fmt(at_avg)} at 7d avg ${avg7:.2f}/day, earliest {fmt(at_zero)} at zero spend")
+        return note, at_avg.isoformat() if at_avg else None
 
     def _trial_stats(self):
         """(number of trials ever recorded, shadow candidates lacking a DSR). / （累計試驗數, 缺少 DSR 的候選數）"""
@@ -137,8 +163,12 @@ class MissionWatchdogService:
                 raise RuntimeError("NAV unavailable")
             annual = llm30 * (365.0 / 30.0) + sub * 12.0
             ratio = annual / nav * 100.0
+            proj_note, proj_date = (self._k1_projection(today, nav, c1.threshold, sub)
+                                    if ratio > c1.threshold and (self._llm30 is None or self._llm_daily is not None)
+                                    else ("", None))
             results.append(_row("K1", c1.name, "breach" if ratio > c1.threshold else "ok", ratio, c1.threshold, c1.unit,
-                                f"annualised cost ${annual:.0f} on NAV ${nav:.0f}" + (self._top_cost_agents() if ratio > c1.threshold else "")))
+                                f"annualised cost ${annual:.0f} on NAV ${nav:.0f}" + proj_note
+                                + (self._top_cost_agents() if ratio > c1.threshold else ""), clears_on=proj_date))
         except Exception as e:
             results.append(_row("K1", c1.name, "not_measurable", None, c1.threshold, c1.unit, str(e)))
 
