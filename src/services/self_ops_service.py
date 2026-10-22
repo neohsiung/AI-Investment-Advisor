@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 from src.config.owner import resolve_user_id
+from src.services import backup_status
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,14 @@ _NAMED_CHECKS: Dict[str, Dict[str, Any]] = {
         "ok_when": lambda count: count == 0,
         "detail": "decisions past horizon+5d still unresolved",
         "critical": False,
+    },
+    "nightly_backup_fresh": {
+        # File probe, not SQL: scripts/backup_db.sh leaves its verdict in config/.backup_status.json. A failed or >36h
+        # old backup is critical (direct notification); an unknown status is a warning. Without this the failure only
+        # showed in the Saturday digest, after a week of silent 0-byte dumps.
+        # 檔案探針而非 SQL：失敗或超過 36 小時為 critical（直接通知），讀不到狀態為 warning。
+        "probe": backup_status.probe,
+        "detail": "nightly backup",
     },
 }
 
@@ -352,6 +361,11 @@ class SelfOpsService:
         if spec is None:
             return {"name": name, "severity": "warning",
                     "detail": f"named check '{key}' referenced in DB but not defined in code (drift)"}
+        if "probe" in spec:
+            ok, detail, severity = spec["probe"]()
+            if ok:
+                return None
+            return {"name": name, "severity": severity, "detail": f"{spec['detail']}: {detail}"}
         value = conn.execute(text(spec["sql"])).fetchone()[0]
         if spec["ok_when"](value):
             return None
