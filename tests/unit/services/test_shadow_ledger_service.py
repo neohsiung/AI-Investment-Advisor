@@ -373,3 +373,54 @@ class TestShadowLedgerService:
             assert res["graduated_count"] == 1
             mock_batch.assert_called_once_with(auto_promote=True)
 
+
+
+class TestAdmissionFailsClosed:
+    """An unreadable or missing universe_require_shadow_validation must route a candidate to shadow, never straight to
+    the live pool. / 設定讀不到或缺漏時，候選標的必須先進影子軌道，不得直接進實盤池。"""
+
+    @staticmethod
+    def _service(get_setting):
+        from src.services.quality_gate_service import QualityAssessment
+        from src.services.universe_lifecycle_service import UniverseLifecycleService
+        repo = MagicMock()
+        repo.get_all.return_value = []
+        repo.upsert.return_value = True
+        qg = MagicMock()
+        qg.evaluate_ticker = AsyncMock(return_value=QualityAssessment(
+            ticker="TSLA", passed=True, overall_score=8.5, hard_gates_passed=True, hard_gate_details={},
+            fundamental_score=8.0, technical_score=9.0, liquidity_score=8.5, reasons=[], metrics={}))
+        market = MagicMock()
+        market.get_financials.return_value = {}
+        svc = UniverseLifecycleService(user_id="u", repo=repo, market=market, quality_gate=qg)
+        settings = MagicMock()
+        settings.get_setting.side_effect = get_setting
+        svc.settings = settings
+        return svc, repo
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("reader,expected", [
+        (lambda k: {"universe_max_active_tickers": 5, "universe_min_quality_score": 6.5}.get(k), "shadow"),   # missing
+        (lambda k: {"universe_max_active_tickers": 5, "universe_min_quality_score": 6.5,
+                    "universe_require_shadow_validation": True}.get(k), "shadow"),
+        (lambda k: {"universe_max_active_tickers": 5, "universe_min_quality_score": 6.5,
+                    "universe_require_shadow_validation": False}.get(k), "active"),                          # explicit
+    ])
+    async def test_missing_or_explicit_setting(self, reader, expected):
+        svc, repo = self._service(reader)
+        with patch("src.services.shadow_ledger_service.ShadowLedgerService.open_shadow_position",
+                   new_callable=AsyncMock):
+            admitted = await svc.screen_and_admit_candidates(candidate_pool=["TSLA"], max_active=5)
+        assert admitted and admitted[0]["status"] == expected
+
+    @pytest.mark.asyncio
+    async def test_unreadable_setting_goes_to_shadow(self):
+        def reader(k):
+            if k == "universe_require_shadow_validation":
+                raise RuntimeError("settings db down")
+            return {"universe_max_active_tickers": 5, "universe_min_quality_score": 6.5}.get(k)
+        svc, repo = self._service(reader)
+        with patch("src.services.shadow_ledger_service.ShadowLedgerService.open_shadow_position",
+                   new_callable=AsyncMock):
+            admitted = await svc.screen_and_admit_candidates(candidate_pool=["TSLA"], max_active=5)
+        assert admitted and admitted[0]["status"] == "shadow"

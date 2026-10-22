@@ -781,11 +781,16 @@ class UniverseLifecycleService:
             min_quality_score = 6.5
 
         if require_shadow_validation is None:
+            # Fail closed: an unreadable or missing setting means "validate in shadow first" (the schema default is true).
+            # Admitting straight to the live pool is a loosening and must be an explicit, readable "false".
+            # 讀不到設定時要求先影子驗證（schema 預設為 true）；直接進實盤池是放寬，必須是讀得到的明確 false。
             try:
                 val = self.settings.get_setting("universe_require_shadow_validation")
-                require_shadow_validation = str(val).lower() in ("true", "1", "yes") if val is not None else False
-            except Exception:
-                require_shadow_validation = False
+                require_shadow_validation = str(val).lower() not in ("false", "0", "no") if val is not None else True
+            except Exception as e:
+                logger.warning("UniverseLifecycle: universe_require_shadow_validation unreadable (%s); "
+                               "requiring shadow validation / 設定讀取失敗，改要求影子驗證", e)
+                require_shadow_validation = True
 
         effective_min_score = min_quality_score + regime_adjustment
 
