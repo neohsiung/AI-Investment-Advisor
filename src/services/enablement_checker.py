@@ -191,7 +191,9 @@ def enable(engine: Any, now: datetime, emit: Optional[Emit] = None) -> Dict[str,
 def drill(engine: Any, now: datetime, emit: Optional[Emit] = None) -> Dict[str, Any]:
     """Halt drill: set frozen, check that a non-safety BUY is refused and a stop_loss SELL is allowed by the real gate,
     restore the previous state in ``finally`` and record a 'drill' event with ok true/false. Never scheduled. A state
-    that is already frozen / human_stop is left untouched and the drill is recorded as failed.
+    that is already frozen / human_stop is left untouched and the drill is recorded as failed. The freeze records the prior
+    mode as ``resume_mode``, so if the process dies before ``finally`` runs, the next watchdog pass resumes to that mode
+    instead of falling back to dry_run. / 凍結時一併記下原模式，程序中途死掉時，看門狗解除後回到原模式而非 dry_run。
     停機演練：設 frozen，確認非安全買單被擋、stop_loss 賣單放行，finally 還原原狀態並記一筆 drill 事件。從不排程。"""
     result: Dict[str, Any] = {"ok": False, "buy_refused": None, "stop_loss_allowed": None, "error": None}
     try:
@@ -209,7 +211,7 @@ def drill(engine: Any, now: datetime, emit: Optional[Emit] = None) -> Dict[str, 
         with sessionmaker(bind=engine)() as s:
             n = s.execute(update(CharterState).where(
                 CharterState.id == 1, CharterState.human_stop.is_(False), CharterState.mode.notin_(BLOCKING_MODES)
-            ).values(mode="frozen", reason="drill", since=now, updated_at=now)).rowcount
+            ).values(mode="frozen", reason="drill", resume_mode=prior.mode, since=now, updated_at=now)).rowcount
             s.commit()
         if not n:
             raise RuntimeError("could not set frozen (state changed concurrently)")

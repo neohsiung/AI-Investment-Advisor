@@ -330,3 +330,15 @@ def test_digest_enablement_failure_is_kept_not_hidden(engine, monkeypatch):
         raise RuntimeError("x")
     monkeypatch.setattr(cds.enablement_checker, "check", boom)
     assert cds._enablement(engine, NOW) == {"error": "x"}
+
+
+def test_crashed_drill_resumes_to_prior_mode_not_dry_run(engine, monkeypatch):
+    """The process dies after the drill froze the state (``finally`` never ran). The next watchdog pass with no breach
+    must put back the mode the drill started from. / 演練凍結後程序死掉：看門狗解除時要回到演練前的模式。"""
+    from src.services import charter_state_service as css
+    _set_state(engine, mode="apply")
+    monkeypatch.setattr(ec, "_restore", lambda *a, **k: None)          # simulate the crash: no restore
+    ec.drill(engine, NOW)
+    assert _mode(engine) == ("frozen", False)
+    assert css.apply_watchdog({"breaches": []}, NOW + timedelta(hours=1), engine) == "resume"
+    assert _mode(engine) == ("apply", False)
