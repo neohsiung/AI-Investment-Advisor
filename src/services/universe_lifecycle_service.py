@@ -517,6 +517,18 @@ class UniverseLifecycleService:
             ],
         }
 
+    def _shadow_validation_required(self) -> bool:
+        """Is shadow validation required before a ticker enters the live pool? Fails closed: an unreadable or missing
+        setting means "validate in shadow first" (the schema default is true); skipping it must be an explicit, readable
+        "false". / 是否要求先影子驗證才能進實盤池。讀不到設定時要求驗證（schema 預設 true）；略過必須是讀得到的明確 false。"""
+        try:
+            val = self.settings.get_setting("universe_require_shadow_validation")
+            return str(val).lower() not in ("false", "0", "no") if val is not None else True
+        except Exception as e:
+            logger.warning("UniverseLifecycle: universe_require_shadow_validation unreadable (%s); "
+                           "requiring shadow validation / 設定讀取失敗，改要求影子驗證", e)
+            return True
+
     async def evolve_active_pool(
         self,
         max_active: Optional[int] = None,
@@ -563,6 +575,23 @@ class UniverseLifecycleService:
         current_active = self.repo.get_all(self.user_id, status="active")
         pinned_active = [t for t in current_active if t.get("is_pinned")]
         unpinned_active = [t for t in current_active if not t.get("is_pinned")]
+
+        # A quality-score rotation promotes a candidate straight to 'active' with no shadow evidence, which is a
+        # loosening. While shadow validation is required, rotation goes through the shadow promotion path instead
+        # (ShadowPromotionOrchestrator: shadow-QUALIFIED candidates with an opportunity-cost hurdle).
+        # 品質分數輪替會讓候選標的不經影子證據直接進 active，屬於放寬；要求影子驗證時，輪替改走影子晉升路徑。
+        if self._shadow_validation_required():
+            logger.info("UniverseLifecycle: active rotation skipped, shadow validation is required "
+                        "(promotion goes through the shadow promotion path) / 要求影子驗證，略過品質分數輪替")
+            return {
+                "success": True,
+                "rotations": [],
+                "rotation_count": 0,
+                "total_active": len(current_active),
+                "pinned_active_count": len(pinned_active),
+                "unpinned_active_count": len(unpinned_active),
+                "message": "Rotation skipped: shadow validation is required before a ticker enters the active pool.",
+            }
 
         if not unpinned_active:
             logger.info(
@@ -781,16 +810,7 @@ class UniverseLifecycleService:
             min_quality_score = 6.5
 
         if require_shadow_validation is None:
-            # Fail closed: an unreadable or missing setting means "validate in shadow first" (the schema default is true).
-            # Admitting straight to the live pool is a loosening and must be an explicit, readable "false".
-            # 讀不到設定時要求先影子驗證（schema 預設為 true）；直接進實盤池是放寬，必須是讀得到的明確 false。
-            try:
-                val = self.settings.get_setting("universe_require_shadow_validation")
-                require_shadow_validation = str(val).lower() not in ("false", "0", "no") if val is not None else True
-            except Exception as e:
-                logger.warning("UniverseLifecycle: universe_require_shadow_validation unreadable (%s); "
-                               "requiring shadow validation / 設定讀取失敗，改要求影子驗證", e)
-                require_shadow_validation = True
+            require_shadow_validation = self._shadow_validation_required()
 
         effective_min_score = min_quality_score + regime_adjustment
 
