@@ -39,5 +39,8 @@
 ## 夜間備份
 - unknown：找不到備份狀態檔（FileNotFoundError）；夜間備份可能沒有執行
 
+## 議會與停機略過（近 7 日）
+- unknown：讀不到議會紀錄（OperationalError）
+
 ## 近 7 日事件
 - 無

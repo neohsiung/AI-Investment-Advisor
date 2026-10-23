@@ -46,3 +46,25 @@ def test_readable_missing_dry_run_and_drill_in_plain_chinese():
 def test_readable_missing_marks_not_measurable():
     m = _readable_missing({"criterion": "no_freeze_30d", "status": "not_measurable", "value": {"error": "x"}})
     assert m.startswith("- 無法量測")
+
+
+def test_council_counts_and_unreadable_are_reported():
+    """The digest shows councils run and skipped by the halt gate; a failed read is 'unknown', never zero.
+    週報顯示議會場數與停機略過次數；讀不到是未知，不是 0。"""
+    from sqlalchemy import create_engine, text
+    from datetime import datetime, timedelta, timezone
+    from src.services import charter_digest_service as cds
+    from src.services.council_halt_gate import SKIP_MARKER
+    now = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
+    eng = create_engine("sqlite:///:memory:")
+    with eng.begin() as c:
+        c.execute(text("CREATE TABLE event_logs (title TEXT, created_at TIMESTAMP)"))
+        c.execute(text("CREATE TABLE council_minutes (created_at TIMESTAMP)"))
+        for d in (1, 2, 3, 20):
+            c.execute(text("INSERT INTO event_logs VALUES (:t, :s)"), {"t": SKIP_MARKER, "s": now - timedelta(days=d)})
+        c.execute(text("INSERT INTO event_logs VALUES ('other', :s)"), {"s": now - timedelta(days=1)})
+        for d in (1, 2, 30):
+            c.execute(text("INSERT INTO council_minutes VALUES (:s)"), {"s": now - timedelta(days=d)})
+    assert cds._council_skipped(eng, now) == {"skipped": 3, "ran": 2}      # the 20-day-old and 30-day-old rows are outside
+    bad = cds._council_skipped(create_engine("sqlite:///:memory:"), now)
+    assert "error" in bad
