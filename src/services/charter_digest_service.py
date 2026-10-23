@@ -15,6 +15,7 @@ import math
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
 from src.config.mission import load_mission
@@ -22,6 +23,7 @@ from src.config.parameter_registry import Parameter, load_registry
 from src.data.models import (CharterEvent, CharterState, ParameterChange, ParameterTrial, RotationPairObservation,
                              StrategyTrial, ThresholdBandObservation)
 from src.services import enablement_checker
+from src.services.council_halt_gate import SKIP_MARKER
 from src.services.marginal_band_evaluator import evaluate_key
 from src.services.mission_watchdog_service import MissionWatchdogService
 from src.services.notification_service import NotificationService
@@ -233,6 +235,21 @@ def _enablement(engine: Any, now: datetime) -> Dict[str, Any]:
         return {"error": str(e)}
 
 
+def _council_skipped(engine: Any, now: datetime) -> Dict[str, Any]:
+    """Councils run and councils skipped by the halt gate over the last EVENT_WINDOW_DAYS days (read-only). A failed read is
+    reported as an error, never as zero. / 近 7 日議會場數與停機閘門略過次數；讀不到就回 error，不當成 0。"""
+    since = now - timedelta(days=EVENT_WINDOW_DAYS)
+    try:
+        with engine.connect() as conn:
+            skipped = conn.execute(text("SELECT COUNT(*) FROM event_logs WHERE title = :t AND created_at >= :s"),
+                                   {"t": SKIP_MARKER, "s": since}).scalar()
+            ran = conn.execute(text("SELECT COUNT(*) FROM council_minutes WHERE created_at >= :s"), {"s": since}).scalar()
+        return {"skipped": int(skipped or 0), "ran": int(ran or 0)}
+    except Exception as e:
+        logger.warning("charter digest: council counts unavailable: %s", type(e).__name__)
+        return {"error": type(e).__name__}
+
+
 def build_digest(engine: Any, user_id: str, now: datetime, watchdog: Optional[Callable[[date], Dict]] = None
                  ) -> Dict[str, Any]:
     """Structured digest. ``watchdog(today)`` defaults to MissionWatchdogService.evaluate; a failure is kept as
@@ -257,6 +274,7 @@ def build_digest(engine: Any, user_id: str, now: datetime, watchdog: Optional[Ca
         "engine": _engine_stats(engine),
         "enablement": _enablement(engine, now),
         "backup": _backup_status(now),
+        "councils_7d": _council_skipped(engine, now),
         "events_7d": _recent_events(engine, now),
     }
 
@@ -320,6 +338,12 @@ def render_digest(d: Dict[str, Any]) -> str:
         lines.append(f"- 失敗：{bk['reason']}（{bk['at']}）")
     else:
         lines.append(f"- 最近一次成功：{bk['file']}（{bk['mb']} MB，{bk['age_days']} 天前）" + ("；**已超過 2 天沒有新備份**" if bk["stale"] else ""))
+    cs = d.get("councils_7d")
+    lines += ["", "## 議會與停機略過（近 7 日）"]
+    if cs is None or "error" in cs:
+        lines.append(f"- {UNKNOWN}：讀不到議會紀錄（{(cs or {}).get('error', '未提供')}）")
+    else:
+        lines.append(f"- 開了 {cs['ran']} 場議會；停機期間因標的未持有而略過 {cs['skipped']} 次")
     lines += ["", "## 近 7 日事件"]
     lines += [f"- {ev['at']} {ev['kind']} {ev['key'] or ''}".rstrip() for ev in d["events_7d"]] or ["- 無"]
     return "\n".join(lines) + "\n"
