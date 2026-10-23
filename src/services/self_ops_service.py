@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
 from src.config.owner import resolve_user_id
+from src.infrastructure.llm import credit_signal
 from src.services import backup_status
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,13 @@ _NAMED_CHECKS: Dict[str, Dict[str, Any]] = {
         # 檔案探針而非 SQL：失敗或超過 36 小時為 critical（直接通知），讀不到狀態為 warning。
         "probe": backup_status.probe,
         "detail": "nightly backup",
+    },
+    "llm_credit_available": {
+        # A weekly or total credit limit set upstream makes every LLM call fail from then on; new decisions that need an
+        # LLM are paused. The pipeline records the refusal; this reads it. Critical: alert the same day.
+        # 上游設了週額度或總額度後，所有 LLM 呼叫都會失敗，需要 LLM 的新決策會暫停；管線記下拒絕，這裡讀取並當天告警。
+        "probe": credit_signal.probe,
+        "detail": "LLM credit",
     },
 }
 

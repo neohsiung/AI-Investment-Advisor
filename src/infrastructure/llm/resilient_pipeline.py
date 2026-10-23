@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from src.domain.interfaces import ILLMGateway, LLMConfig, Message
+from src.infrastructure.llm import credit_signal
 from src.infrastructure.llm.error_classifier import (
     ErrorCategory,
     classify_error,
@@ -273,6 +274,8 @@ class ResilientLLMPipeline:
             except Exception as exc:
                 duration_ms = (time.monotonic() - t0) * 1000
                 category = classify_error(exc)
+                if category == ErrorCategory.CREDIT_LIMIT:
+                    credit_signal.record()
 
                 attempts.append(AttemptRecord(
                     model_id=candidate.model_id,

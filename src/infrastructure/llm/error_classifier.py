@@ -25,6 +25,10 @@ class ErrorCategory(str, Enum):
     CONTENT_POLICY = "CONTENT_POLICY"
     MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
     NETWORK_ERROR = "NETWORK_ERROR"
+    # The key's credit / spend limit is used up (HTTP 402, or a message such as "key limit exceeded"). Not fallback-eligible:
+    # another candidate on the same key fails the same way, and a different provider would bypass the spend cap.
+    # 金鑰額度用盡（HTTP 402 或「key limit exceeded」類訊息）。不做備援：同一把金鑰上的其他候選一樣會失敗，換供應商會繞過花費上限。
+    CREDIT_LIMIT = "CREDIT_LIMIT"
     UNKNOWN = "UNKNOWN"
 
 
@@ -44,6 +48,14 @@ _HTTP_STATUS_MAP: dict[int, ErrorCategory] = {
     503: ErrorCategory.SERVER_ERROR,
     504: ErrorCategory.TIMEOUT,
 }
+
+# Credit / spend-limit wording, checked BEFORE the HTTP status map and the rate-limit patterns because providers answer
+# this with 402, 403 or 429. Deliberately narrow: a bare "limit exceeded" is still a rate limit. Not verified against a
+# live response yet. / 額度用盡的字眼，先於狀態碼與速率限制判斷（供應商可能回 402、403 或 429）；刻意收窄，單純的
+# "limit exceeded" 仍屬速率限制。尚未對照真實回應驗證。
+_CREDIT_LIMIT_PATTERNS = ["key limit exceeded", "insufficient credits", "insufficient_credits", "out of credits",
+                          "credit limit", "budget exceeded", "budget_exceeded", "weekly limit", "spend limit",
+                          "payment required"]
 
 # Keywords in error messages → ErrorCategory
 _MESSAGE_PATTERNS: list[tuple[list[str], ErrorCategory]] = [
@@ -107,8 +119,12 @@ def classify_error(exc: Exception) -> ErrorCategory:
       3. Error message keyword matching
       4. UNKNOWN fallback
     """
-    # 1. HTTP status code
+    # 0. Credit / spend limit used up
     status_code = _extract_http_status(exc)
+    if status_code == 402 or any(kw in _extract_message(exc) for kw in _CREDIT_LIMIT_PATTERNS):
+        return ErrorCategory.CREDIT_LIMIT
+
+    # 1. HTTP status code
     if status_code is not None:
         category = _HTTP_STATUS_MAP.get(status_code)
         if category is not None and category != ErrorCategory.UNKNOWN:
