@@ -21,6 +21,7 @@ def mock_lifecycle_deps():
         "universe_max_active_tickers": 8,
         "universe_max_candidate_tickers": 5,  # test with 5 for brevity
         "pyramid_screener_enabled": False,     # test without pyramid dependency
+        "universe_require_shadow_validation": False,   # explicit operator opt-out; the default is fail-closed (below)
     }.get(k, default)
 
     return repo, market, quality_gate, settings
@@ -404,3 +405,48 @@ async def test_evolve_active_pool_respects_pinned_immunity(mock_lifecycle_deps):
         # No rotations occurred because all active are pinned
         assert len(res["rotations"]) == 0
 
+
+
+class TestRotationRequiresShadowValidation:
+    """While shadow validation is required (default, missing or unreadable setting), the quality-score rotation must not
+    promote a candidate straight to 'active'. / 要求影子驗證時（預設、缺漏或讀不到），品質分數輪替不得讓候選標的直接進 active。"""
+
+    @staticmethod
+    def _service(mock_lifecycle_deps, require):
+        repo, market, quality_gate, settings = mock_lifecycle_deps
+        base = settings.get_setting.side_effect
+
+        def reader(k, default=None):
+            if k == "universe_require_shadow_validation":
+                if require == "raise":
+                    raise RuntimeError("settings db down")
+                return None if require == "missing" else require
+            return base(k, default)
+        settings.get_setting.side_effect = reader
+        repo.get_all.side_effect = lambda uid, status: {
+            "active": [{"ticker": "WEAK_ACT", "status": "active", "is_pinned": False}],
+            "candidate": [{"ticker": "SUPER_CAND", "status": "candidate", "is_pinned": False}],
+        }.get(status, [])
+        repo.upsert.return_value = True
+        repo.add_log.return_value = True
+        market.get_financials.return_value = {"shortName": "Super Corp", "sector": "Tech"}
+        scores = {"WEAK_ACT": 5.0, "SUPER_CAND": 8.8}
+        quality_gate.evaluate_ticker = AsyncMock(side_effect=lambda t: QualityAssessment(
+            ticker=t, passed=True, overall_score=scores[t], hard_gates_passed=True, hard_gate_details={},
+            fundamental_score=scores[t], technical_score=scores[t], liquidity_score=scores[t], reasons=[], metrics={}))
+        with patch("src.services.universe_lifecycle_service.SettingsService", return_value=settings):
+            return UniverseLifecycleService(user_id="u", repo=repo, market=market, quality_gate=quality_gate), repo
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("require", [True, "missing", "raise"])
+    async def test_rotation_skipped_when_validation_required(self, mock_lifecycle_deps, require):
+        service, repo = self._service(mock_lifecycle_deps, require)
+        res = await service.evolve_active_pool(max_active=1, rotation_hurdle=1.5, max_rotations=1)
+        assert res["success"] is True and res["rotation_count"] == 0 and res["rotations"] == []
+        repo.upsert.assert_not_called()                           # nothing demoted, nothing promoted
+
+    @pytest.mark.asyncio
+    async def test_explicit_false_keeps_rotation(self, mock_lifecycle_deps):
+        service, repo = self._service(mock_lifecycle_deps, False)
+        res = await service.evolve_active_pool(max_active=1, rotation_hurdle=1.5, max_rotations=1)
+        assert res["rotation_count"] == 1
