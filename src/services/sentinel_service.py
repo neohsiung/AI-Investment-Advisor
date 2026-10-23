@@ -21,6 +21,7 @@ from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.repositories.snapshot_repository import AlchemySnapshotRepository
 from src.services.settings_service import SettingsService
 from src.services.risk_keyword_service import RiskKeywordService
+from src.services import council_halt_gate
 from src.services.param_policy import get_param
 from src.services.rotation_pair_recorder import DECISION_APPROVED, DECISION_REJECTED_DELTA, record_rotation_decision, record_young_blocked
 from src.domain.entities import RiskKeyword
@@ -1764,12 +1765,9 @@ class SentinelService:
             display_text = t.get("text", "Unknown signal")
             
             # v6.1 Pending Order Guard: Suppress trigger if a pending order exists for this ticker
-            ticker = t.get("ticker")
-            if not ticker and "_" in trigger_id:
-                 parts = trigger_id.split("_")
-                 if len(parts) >= 2 and parts[1].isupper():
-                     ticker = parts[1]
-                     
+            ticker = council_halt_gate.trigger_ticker(t)
+            if council_halt_gate.skip_for_halt(t, ticker, self.transaction_service, self.repo, user_id):
+                continue
             if ticker and ticker in pending_symbols:
                 _safe_trig_id = redact_secrets(str(trigger_id)[:64])
                 _safe_ticker = redact_pii(str(ticker)[:16])
