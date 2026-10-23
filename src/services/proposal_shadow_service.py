@@ -37,6 +37,8 @@ from src.services.threshold_band_recorder import build_observation, record_at_bo
 logger = logging.getLogger(__name__)
 
 VALIDATOR_VERSION = "wp4-v1"
+# Half-width of the recorded research-age band, in days (registry bounds are 7..30). / 研究年齡紀錄帶半寬（天）。
+RESEARCH_AGE_BAND_DAYS = 7.0
 SOURCE = "event"
 STRATEGY_ID = "proposal_event"
 COUNTERFACTUAL_AGENT = "proposal_shadow"
@@ -319,6 +321,33 @@ async def _record_band(user_id: str, signal: Dict[str, Any], ticker: str, direct
                              engine=engine, price_lookup=price_lookup)
 
 
+async def _record_research_age_band(user_id: str, ticker: str, direction: str, shared: Optional[Dict[str, Any]],
+                                    settings_service: Any, engine: Any, price_lookup: Callable[[str], Any]) -> None:
+    """Record how old this BUY's research is against universe_research_max_age_days (passed or not). Recording only.
+    The age is stored negated (score = -age, threshold = -max_age) so the recorder's rule passed = score >= threshold
+    reads "age <= max age", and a lower threshold means a looser limit, like every other band key. A missing research
+    row is recorded with a data marker, not a default age.
+    記錄此買進訊號的研究年齡與 universe_research_max_age_days 的關係（無論通過與否）；僅記錄。年齡取負值，使
+    passed = score >= threshold 讀作「年齡 <= 上限」；缺研究列以標記記錄，不補預設年齡。"""
+    if direction != "BUY" or shared is None:
+        return
+    max_age = _num_or_none(shared.get("max_age"))
+    if max_age is None:
+        logger.warning("proposal_shadow: research max age unreadable; age band observation for %s skipped", ticker)
+        return
+    try:
+        looked = shared["research"](ticker)
+        age = _num_or_none(looked[1]) if looked else None
+    except Exception as exc:
+        logger.warning("proposal_shadow: research lookup failed for %s (marked, not defaulted): %s", ticker, exc)
+        age = None
+    ob = build_observation(ticker=ticker, direction=direction, score=None if age is None else -age,
+                           threshold=-max_age, band_halfwidth=RESEARCH_AGE_BAND_DAYS,
+                           context={"research_age_days": age, "max_age_days": max_age})
+    await record_at_boundary(user_id, "universe_research_max_age_days", "event_shadow_research_age", [ob],
+                             settings_service=settings_service, engine=engine, price_lookup=price_lookup)
+
+
 # ── main entry ────────────────────────────────────────────────────────────────
 
 async def record_shadow_proposals(
@@ -378,6 +407,10 @@ async def _record_one(user_id: str, signal: Dict[str, Any], source_label: str, s
         await _record_band(user_id, signal, ticker, direction, settings_service, engine, price_lookup)
     except Exception as exc:  # a recorder fault must not stop proposal recording / 紀錄器故障不得阻斷提案紀錄
         logger.warning("proposal_shadow: band observation failed for %s %s: %s", direction, ticker, exc)
+    try:
+        await _record_research_age_band(user_id, ticker, direction, shared, settings_service, engine, price_lookup)
+    except Exception as exc:  # recording only / 僅記錄，不得阻斷
+        logger.warning("proposal_shadow: research-age band observation failed for %s %s: %s", direction, ticker, exc)
     reason = str(signal.get("reason") or "")
     intent = str(signal.get("intent") or "")
     # Only non-numeric LLM fields reach the validator. / 只有非數值的 LLM 欄位會進驗證器。

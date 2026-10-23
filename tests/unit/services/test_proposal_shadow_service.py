@@ -382,3 +382,55 @@ async def test_recorder_never_changes_decision_of_shadow_path(engine):
     assert p["status"] == "rejected" and p["reject_reason"] == "gateway_blocked"
     assert len(_rows(engine, "decision_outcomes")) == 2
     assert _rows(engine, "threshold_band_observations") == []
+
+
+# ── research-age band (recording only) ─────────────────────────────────────────
+
+def _age_rows(engine):
+    return [r for r in _rows(engine, "threshold_band_observations") if r["threshold_key"] == "universe_research_max_age_days"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("age,expect_passed", [(12.0, True), (16.0, False)])
+async def test_research_age_near_the_limit_is_recorded_with_outcome_rows(engine, age, expect_passed):
+    """Age is stored negated: passed = (age <= max age). Both sides of the limit get a row and 5d/63d outcome rows.
+    年齡取負值：passed = 年齡 <= 上限；上限兩側都記，並各有 5 日／63 日反事實列。"""
+    deps = _deps(engine, research_lookup=lambda t: (7.0, age))
+    await pss.record_shadow_proposals("u1", [_sig(score=9)], "sentinel", settings_service=_settings(), deps=deps)
+    (o,) = _age_rows(engine)
+    assert o["source_service"] == "event_shadow_research_age" and o["direction"] == "BUY"
+    assert float(o["score"]) == -age and float(o["threshold_value"]) == -14.0
+    assert bool(o["passed"]) is expect_passed
+    assert sorted(r["horizon_days"] for r in _band_outcomes(engine) if r["strategy_id"] == "universe_research_max_age_days") == [5, 63]
+
+
+@pytest.mark.anyio
+async def test_research_age_far_from_the_limit_is_not_recorded(engine):
+    deps = _deps(engine, research_lookup=lambda t: (7.0, 1.0))        # 13 days inside the limit: outside the 7-day band
+    await pss.record_shadow_proposals("u1", [_sig(score=9)], "sentinel", settings_service=_settings(), deps=deps)
+    assert _age_rows(engine) == []
+
+
+@pytest.mark.anyio
+async def test_missing_research_is_marked_not_defaulted(engine):
+    deps = _deps(engine, research_lookup=lambda t: None)
+    await pss.record_shadow_proposals("u1", [_sig(score=9)], "sentinel", settings_service=_settings(), deps=deps)
+    (o,) = _age_rows(engine)
+    assert o["score"] is None and o["passed"] is None and o["data_marker"] == "_insufficient_data:score"
+
+
+@pytest.mark.anyio
+async def test_sell_is_not_recorded_against_the_research_age_limit(engine):
+    deps = _deps(engine, research_lookup=lambda t: (7.0, 13.0))
+    await pss.record_shadow_proposals("u1", [_sig(action="SELL", ticker="AAPL", score=9)], "sentinel",
+                                      settings_service=_settings(), deps=deps)
+    assert _age_rows(engine) == []
+
+
+@pytest.mark.anyio
+async def test_age_recorder_failure_never_stops_the_proposal_row(engine):
+    deps = _deps(engine, research_lookup=lambda t: (7.0, 12.0), gateway=_Gateway(allowed=False))
+    with patch("src.services.proposal_shadow_service._record_research_age_band", side_effect=RuntimeError("boom")):
+        await pss.record_shadow_proposals("u1", [_sig(score=9)], "sentinel", settings_service=_settings(), deps=deps)
+    (p,) = _rows(engine, "trade_proposals")
+    assert p["status"] == "rejected" and p["reject_reason"] == "gateway_blocked"
