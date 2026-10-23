@@ -368,3 +368,20 @@ async def test_check_risk_consistency_emits_cash_when_batch_not_active(sentinel_
         assert len(cash_high_triggers) == 1
         assert "Actual 63.6%" in cash_high_triggers[0]["text"]
 
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("skip,council_calls", [(True, 0), (False, 1)])
+async def test_do_send_alert_halt_gate_decides_whether_a_council_runs(sentinel_service, skip, council_calls):
+    """章程停機且標的未持有時不開議會；閘門放行時照舊開議會。 / The halt gate decides; the council path is unchanged otherwise."""
+    sentinel_service.council_service = MagicMock()
+    sentinel_service.council_service.start_session = AsyncMock(return_value={"consensus": "ok"})
+    sentinel_service.repo.is_duplicate_alert.return_value = False
+    triggers = [{"text": "AMZN news", "id": "news_AMZN_0.80", "value": 0.8, "priority": 2, "trigger_type": "news"}]
+    mock_broker = MagicMock()
+    mock_broker.get_pending_orders = AsyncMock(return_value=[])
+    with patch("src.services.broker_factory.BrokerFactory.get_broker", return_value=mock_broker), \
+         patch("src.services.event_aggregator.EventAggregator"), \
+         patch("src.services.sentinel_service.council_halt_gate.skip_for_halt", return_value=skip):
+        await sentinel_service._do_send_alert(triggers, source="Sentinel")
+    assert sentinel_service.council_service.start_session.await_count == council_calls
