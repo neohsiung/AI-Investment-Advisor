@@ -165,3 +165,42 @@ exclude_also = [
     "raise NotImplementedError",
     "@(abc\\.)?abstractmethod",
 ]
+
+# ── Lint (dev-standard §8, templates/lint.toml) ─────────────────────
+# Existing violations are frozen as counts in .ruff-baseline.json (scripts/ruff_baseline.py), not as noqa
+# comments, so no source file (R3 paths included) is edited to adopt lint. CI fails only on new violations.
+# 舊違規以計數存在 .ruff-baseline.json，不在原始碼加 noqa（R3 檔不因導入 lint 被改）；CI 只擋新增。
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["wiki", "frontend", "workspace", ".dev-standard"]
+
+[tool.ruff.lint]
+select = [
+  "E", "F",        # basic errors / 基本錯誤
+  "B",             # bugbear
+  "SIM",           # simplifications (KISS)
+  "C90",           # complexity (SRP proxy) / 複雜度
+  "PLR0912",       # too many branches / 分支太多
+  "PLR0913",       # too many arguments / 參數太多
+  "PLR0915",       # too many statements / 敘述太多
+  "BLE",           # blind except / 不准吞例外
+  "S110",          # try-except-pass (fail-silent) / 不靜默失敗
+  "T20",           # print left in library code / 不留 print
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/**" = ["T20"]
+"tests/**" = ["T20", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency markers are meant to be called in defaults. FastAPI 的依賴標記本來就寫在預設值。
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body", "fastapi.Header", "fastapi.Security"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-branches = 12
+max-args = 6
+max-statements = 50

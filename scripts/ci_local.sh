@@ -2,7 +2,7 @@
 # ci_local.sh — run the cheap CI gates locally BEFORE pushing, so a PR does not fail on a step we could have run.
 # 在推送前本機先跑 CI 中便宜的幾道關卡，避免 PR 才發現失敗。
 #
-# Mirrors .github/workflows/ci-cd.yml (lab job): Alembic upgrade+check on a THROWAWAY Postgres, Bandit, wiki links.
+# Mirrors .github/workflows/ci-cd.yml (lab job): Alembic upgrade+check on a THROWAWAY Postgres, Bandit, wiki links, dev-standard rules sync, ruff (new violations only).
 # The full pytest run is separate (it takes ~18 min): `PY=... $PY -m pytest tests/unit tests/invariants -q`.
 # Never touches the production database: it starts its own container on an unused port and removes it on exit.
 #
@@ -17,7 +17,7 @@ fail=0
 cleanup() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-echo "== 1/5 Alembic upgrade + check (throwaway Postgres on :$PORT) =="
+echo "== 1/6 Alembic upgrade + check (throwaway Postgres on :$PORT) =="
 if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
   docker run -d --name "$NAME" -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=portfolio \
     -p "$PORT:5432" pgvector/pgvector:pg16 >/dev/null || { echo "FAIL: could not start postgres"; exit 1; }
@@ -32,7 +32,7 @@ if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
   fi
 fi
 
-echo "== 2/5 Charter E2E (pytest -m charter_e2e on the same throwaway Postgres; any skip is a FAIL) =="
+echo "== 2/6 Charter E2E (pytest -m charter_e2e on the same throwaway Postgres; any skip is a FAIL) =="
 if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
   CHARTER_E2E_PG_URL="postgresql+psycopg2://postgres:postgres@localhost:$PORT/portfolio" CHARTER_E2E_REQUIRE_PG=1 \
     "$PY" -m pytest -m charter_e2e tests/e2e/charter -q -rs >/tmp/ci_local_charter_e2e.log 2>&1
@@ -44,18 +44,24 @@ if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
   fi
 fi
 
-echo "== 3/5 Bandit (medium+ severity) =="
+echo "== 3/6 Bandit (medium+ severity) =="
 if "$PY" -m bandit --version >/dev/null 2>&1; then
   "$PY" -m bandit -r src/ -ll -q >/tmp/ci_local_bandit.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_bandit.log)"; tail -5 /tmp/ci_local_bandit.log; fail=1; }
 else echo "SKIP: bandit not installed in $PY"; fi
 
-echo "== 4/5 Wiki link integrity =="
+echo "== 4/6 Wiki link integrity =="
 "$PY" .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py >/tmp/ci_local_wiki.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_wiki.log)"; tail -5 /tmp/ci_local_wiki.log; fail=1; }
 
-echo "== 5/5 Layering baseline tightness (warning only; blocking gate is tests/invariants) =="
+echo "== 5/6 Layering baseline tightness (warning only; blocking gate is tests/invariants) =="
 if "$PY" -m tests.invariants.test_layering --check-tight >/tmp/ci_local_layering.log 2>&1; then echo "OK"; else
   echo "WARN: baseline is looser than reality (not blocking) — run \`$PY -m tests.invariants.test_layering --update\`"; head -8 /tmp/ci_local_layering.log
 fi
+
+echo "== 6/6 dev-standard rules sync + ruff (new violations only) =="
+python3 .dev-standard/sync.py check >/tmp/ci_local_devstd.log 2>&1 && echo "OK: rules in sync" || { echo "FAIL (see /tmp/ci_local_devstd.log)"; tail -5 /tmp/ci_local_devstd.log; fail=1; }
+if command -v ruff >/dev/null || "$PY" -m ruff --version >/dev/null 2>&1; then
+  python3 scripts/ruff_baseline.py check >/tmp/ci_local_ruff.log 2>&1 && echo "OK: no new ruff violations" || { echo "FAIL (see /tmp/ci_local_ruff.log)"; tail -8 /tmp/ci_local_ruff.log; fail=1; }
+else echo "SKIP: ruff not installed"; fi
 
 [ "$fail" -eq 0 ] && echo "ci_local: all gates passed" || echo "ci_local: FAILED"
 exit "$fail"
