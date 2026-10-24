@@ -60,7 +60,7 @@ fi
 echo "== 6/6 dev-standard rules sync + ruff (new violations only) =="
 python3 .dev-standard/sync.py check >/tmp/ci_local_devstd.log 2>&1 && echo "OK: rules in sync" || { echo "FAIL (see /tmp/ci_local_devstd.log)"; tail -5 /tmp/ci_local_devstd.log; fail=1; }
 if command -v ruff >/dev/null || "$PY" -m ruff --version >/dev/null 2>&1; then
-  python3 scripts/ruff_baseline.py check >/tmp/ci_local_ruff.log 2>&1 && echo "OK: no new ruff violations" || { echo "FAIL (see /tmp/ci_local_ruff.log)"; tail -8 /tmp/ci_local_ruff.log; fail=1; }
+  "$PY" scripts/ruff_baseline.py check >/tmp/ci_local_ruff.log 2>&1 && echo "OK: no new ruff violations" || { echo "FAIL (see /tmp/ci_local_ruff.log)"; tail -8 /tmp/ci_local_ruff.log; fail=1; }
 else echo "SKIP: ruff not installed"; fi
 
 [ "$fail" -eq 0 ] && echo "ci_local: all gates passed" || echo "ci_local: FAILED"

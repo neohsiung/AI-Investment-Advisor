@@ -12,7 +12,8 @@ adopt lint. Counts keep every source file untouched and still catch a second vio
   python3 scripts/ruff_baseline.py check    # CI: exit 1 if any (file, rule) count is above the baseline
   python3 scripts/ruff_baseline.py update   # rewrite the baseline after fixing old violations (only ever shrinks it)
 
-Known gap / 已知殘留: fixing one violation and adding another of the same rule in the same file nets to zero.
+Known gap / 已知殘留: fixing one violation and adding another of the same rule in the same file, in the same PR,
+nets to zero. A shrink fails the check until `update` is committed, so freed allowance cannot be spent later.
 A renamed file shows up as new violations; run `update` in the same PR and say so in the description.
 """
 import json
@@ -43,10 +44,15 @@ def current_counts() -> Counter:
         # A config error or crash must not read as "no violations". 設定錯誤或當掉不能當成零違規。
         sys.stderr.write(proc.stderr)
         raise SystemExit(f"ruff failed (exit {proc.returncode})")
+    # Count only git-tracked files so local scratch files never leak into the baseline (CI sees tracked files only).
+    # 只算 git 追蹤的檔：本機暫存檔不會進 baseline（CI 只看得到追蹤的檔）。
+    tracked = set(subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True, text=True,
+                                 check=True).stdout.splitlines())
     counts: Counter = Counter()
     for item in json.loads(proc.stdout or "[]"):
         rel = Path(item["filename"]).resolve().relative_to(REPO).as_posix()
-        counts[f"{rel}::{item['code']}"] += 1
+        if rel in tracked:
+            counts[f"{rel}::{item['code']}"] += 1
     return counts
 
 
@@ -84,7 +90,11 @@ def cmd_check() -> int:
         print(f"see them: ruff check {' '.join(sorted({k.split('::')[0] for k in grown}))}")
         return 1
     if shrunk:
-        print(f"{len(shrunk)} baseline entries shrank: run `python3 scripts/ruff_baseline.py update` to lock it in")
+        # A shrink must be locked in by the same PR; otherwise the freed allowance can be spent later unnoticed.
+        # 縮小要在同一個 PR 鎖住，否則空出來的額度之後會被新違規悄悄用掉。
+        print(f"{len(shrunk)} baseline entries shrank (fixed violations): "
+              "run `python3 scripts/ruff_baseline.py update` and commit .ruff-baseline.json in this PR")
+        return 1
     print(f"ruff baseline ok: {sum(counts.values())} existing violations, none new")
     return 0
 
