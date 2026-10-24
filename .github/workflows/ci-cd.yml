@@ -76,6 +76,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
+      # Cheap gates first, before the heavy install. 先跑便宜的閘門。
+      - name: Agent rule files in sync (dev-standard)
+        run: python3 .dev-standard/sync.py check
+
+      - name: Lint (ruff, new violations only)
+        # Version must match .ruff-baseline.json; the script fails on a mismatch. 版本須與 baseline 一致。
+        run: |
+          python -m pip install "ruff==$(python -c 'import json;print(json.load(open(".ruff-baseline.json"))["ruff_version"])')"
+          python scripts/ruff_baseline.py check
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip uv

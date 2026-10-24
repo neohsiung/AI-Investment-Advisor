@@ -89,12 +89,11 @@ n8n_workflow_template.json
 .github/code-review-graph.instruction.md
 
 # ── Local IDEs & Agent Metadata ──
+# GEMINI.md, QODER.md, .cursorrules, .windsurfrules are tracked: they carry generated blocks that CI checks
+# (scripts/gen_agent_shims.py --check, .dev-standard/sync.py check). Untracked, a fresh clone skipped the check.
+# 這四個規則檔要追蹤：產生的區塊由 CI 檢查；不追蹤時新 clone 會跳過檢查。
 .cursor/
-.cursorrules
 .gemini/
-.windsurfrules
-GEMINI.md
-QODER.md
 .qoder/
 .kiro/
 .mcp.json

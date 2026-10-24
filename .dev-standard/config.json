@@ -1,0 +1,10 @@
+{
+    "agents_file": "AGENTS.md",
+    "shims": [
+        "CLAUDE.md",
+        "GEMINI.md",
+        "QODER.md",
+        ".cursorrules",
+        ".windsurfrules"
+    ]
+}
