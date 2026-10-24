@@ -84,7 +84,7 @@ Rules every AI coding agent must follow, whatever its capability level:
 不要在這裡改。本 repo 其餘規則（架構、指令、R2／R3 路徑、技術約束）讀 `AGENTS.md`。
 The two blocks above are generated; edit `AGENTS.md` / dev-standard instead. Read `AGENTS.md` for everything else.
 
-- 工程規則（含交易與風控防錯 §7）：`.agent/rules/engineering-standards.md`。
+- 工程規則（含交易與風控防錯 §8）：`.agent/rules/engineering-standards.md`。
 - 程式探索：優先用 codebase-memory MCP（`search_graph`、`trace_path`、`get_code_snippet`）；工具沒接時退回 grep。
 - 不寫會漂移的數字：測試數用 `pytest --collect-only -q | tail -1`，品質門檻以 `.github/workflows/ci-cd.yml` 的指令為準，
   使命目標用 `load_mission()` 讀 `config/mission.yaml`。
