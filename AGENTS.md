@@ -145,7 +145,7 @@ The block above is the shared dev-standard; below is what differs here.
 
 - **風險級路徑**：R2／R3 路徑以 `.github/CODEOWNERS` 為準（R3＝動錢）。R3 照上方使命規則 1：只提案，人核可加 ADR。
 - **DD**：改 `config/mission.yaml` 或 R3 行為的決策記在 `mission.yaml` 的 ADR log；其他門檻、規則、契約的變更照 dev-standard §5。
-- **Commit 格式**：照 `.agent/rules/git-commit-format.md`（第一行英文摘要、接繁中摘要，雙語內文）。
+- **Commit 格式**：一律繁中，第一行 `type(scope): 繁中摘要`，細節照 `.agent/rules/git-commit-format.md`。
 - **Worktree**：主 checkout 是正式環境的 bind mount（detached 在 `origin/main`），不在那裡切分支或寫檔；一律開 worktree。
 - **pre-push 保護分支 hook**：正本在 `.githooks/pre-push`，用 `scripts/install_git_hooks.sh` 安裝到共用的 `.git/hooks/`。
   不設 `core.hooksPath`：那會讓 pre-commit framework 裝在 `.git/hooks/pre-commit` 的掃描失效。
@@ -267,7 +267,7 @@ workspace/           → Multi-agent workspace (WAL, identity, memory per agent)
 | Topic | Location |
 |---|---|
 | Engineering & coding standards | `.agent/rules/engineering-standards.md` |
-| Git commit format (bilingual) | `.agent/rules/git-commit-format.md` |
+| Git commit format（一律繁中） | `.agent/rules/git-commit-format.md` |
 | Documentation standards | `.agent/rules/documentation-standards.md` |
 | Observability standards | `.agent/rules/observability-standards.md` |
 | Security policy | `SECURITY.md` |

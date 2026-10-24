@@ -2,7 +2,8 @@
 
 ## 強制要求 (Mandatory)
 
-When generating or helping with Git commit messages, **ALWAYS** follow this bilingual detailed format.
+產生或協助撰寫 commit 訊息時，**一律用繁體中文**（2026-10-25 起，創辦人決定）。`type` 與 `scope` 維持英文關鍵字；指令、路徑、識別名稱、錯誤訊息保持原文。
+Commit messages are written in Traditional Chinese; `type`/`scope` keywords, commands, paths and identifiers stay as-is.
 
 Since this project maintains two separate repositories (**Project Repo** and **Wiki Repo**), you must generate **two separate commit messages** when changes affect both source code and documentation.
 
@@ -23,31 +24,27 @@ Since this project maintains two separate repositories (**Project Repo** and **W
 ## Format Template
 
 ```
-<type>(<scope>): <short-summary-english>
-<short-summary-traditional-chinese>
+<type>(<scope>): <繁中摘要>
 
-**核心變更 (Core Changes)**:
-- <change-zh> / <change-en>
+**核心變更**:
+- <變更>
 
-**<category-zh> (<category-en>)**:
-- <detail-zh> / <detail-en>
-
-**<category-zh> (<category-en>)**:
-- <detail-zh> / <detail-en>
+**<分類>**:
+- <細節>
 ```
 
 ## Type Values
 
 | Type | 使用場景 | 範例 |
 |:-----|:---------|:-----|
-| `feat` | 新功能 | `feat(analytics): add Leverage Engine` |
-| `fix` | 錯誤修復 | `fix(sentinel): correct 4D trigger logic` |
-| `refactor` | 代碼重構 | `refactor(agents): extract factory pattern` |
-| `test` | 測試相關 | `test(services): add analytics service tests` |
-| `docs` | 文檔更新 | `docs(wiki): update roadmap to v3.7` |
-| `chore` | 建構/配置 | `chore(deps): upgrade pytest to 8.0` |
-| `perf` | 效能優化 | `perf(workflow): optimize agent parallelism` |
-| `style` | 代碼格式 | `style(services): apply black formatter` |
+| `feat` | 新功能 | `feat(analytics): 新增槓桿引擎` |
+| `fix` | 錯誤修復 | `fix(sentinel): 修正 4D 觸發邏輯` |
+| `refactor` | 代碼重構 | `refactor(agents): 抽出 factory 模式` |
+| `test` | 測試相關 | `test(services): 補 analytics service 測試` |
+| `docs` | 文檔更新 | `docs(wiki): 路線圖更新到 v3.7` |
+| `chore` | 建構/配置 | `chore(deps): pytest 升到 8.0` |
+| `perf` | 效能優化 | `perf(workflow): 提高 agent 平行度` |
+| `style` | 代碼格式 | `style(services): 套用 black 格式` |
 
 ## Scope Values
 
@@ -66,61 +63,59 @@ Since this project maintains two separate repositories (**Project Repo** and **W
 
 ## Category Headers (分類標題)
 
-使用以下標準分類（雙語）:
+使用以下標準分類:
 
-1. **核心變更 (Core Changes)** - 最重要的變更，必須包含
-2. **資料層 (Data Layer)** - 資料庫、倉儲、providers
-3. **服務層 (Service Layer)** - 業務邏輯服務
-4. **基礎設施 (Infrastructure)** - LLM router, channel adapters, etc.
-5. **測試覆蓋 (Test Coverage)** - 測試相關變更
-6. **文檔更新 (Documentation)** - Wiki、README 更新
-7. **配置 (Configuration)** - 環境變數、settings
+1. **核心變更** - 最重要的變更，必須包含
+2. **資料層** - 資料庫、倉儲、providers
+3. **服務層** - 業務邏輯服務
+4. **基礎設施** - LLM router, channel adapters, etc.
+5. **測試覆蓋** - 測試相關變更
+6. **文檔更新** - Wiki、README 更新
+7. **配置** - 環境變數、settings
 
 **規則**: 至少包含「核心變更」，其他根據實際情況選擇相關分類。
 
 ### 範例: 新功能 (Feature)
 
 ```
-feat(analytics): implement Leverage Engine for precise net equity calculation
-實現槓桿引擎精確計算淨權益
+feat(analytics): 實作槓桿引擎，精確計算淨權益
 
-**核心變更 (Core Changes)**:
-- 新增 `calculate_net_equity()` 與 `calculate_loan_value()` 方法 / Added `calculate_net_equity()` and `calculate_loan_value()` methods
+**核心變更**:
+- 新增 `calculate_net_equity()` 與 `calculate_loan_value()` 方法
 
-**服務層 (Service Layer)**:
-- 更新 `AnalyticsService` 新增槓桿計算邏輯 / Updated `AnalyticsService` with leverage calculation logic
+**服務層**:
+- `AnalyticsService` 加入槓桿計算邏輯
 
-**測試覆蓋 (Test Coverage)**:
-- 新增 15 個單元測試 / Added 15 unit tests
+**測試覆蓋**:
+- 補上淨權益與借款金額的單元測試
 ```
 
 ## 違規範例與修正
 
-### ❌ 錯誤: 只有英文、缺少分類
+### ❌ 錯誤: 英文摘要、缺少分類
 ```
 feat(analytics): add leverage calculation
 Added new methods for calculating net equity.
 ```
 
-### ✅ 正確: 雙語 + 詳細分類
+### ✅ 正確: 繁中 + 分類
 ```
-feat(analytics): implement Leverage Engine for precise net equity calculation
-實現槓桿引擎精確計算淨權益
+feat(analytics): 實作槓桿引擎，精確計算淨權益
 
-**核心變更 (Core Changes)**:
-- 新增槓桿計算邏輯 / Added leverage calculation logic
+**核心變更**:
+- 新增槓桿計算邏輯
 
-**服務層 (Service Layer)**:
-- 更新 `AnalyticsService` / Updated `AnalyticsService`
+**服務層**:
+- 更新 `AnalyticsService`
 ```
 
 ## 規則細節 (Detailed Rules)
 
-1. **Summary 行**: 第一行英文 `<type>(<scope>): <summary>` ≤ 72 字元，第二行繁體中文 ≤ 30 字
-2. **核心變更** (必須): 至少 1-3 項，中文 / 英文格式
-3. **分類 Sections**: 根據實際變更選擇 1-3 個相關分類，保持雙語格式
-4. **格式**: Markdown、`-` bullets、backticks for code elements、中英文以 ` / ` 分隔
-5. **長度**: 總長 150-300 行，核心變更 1-3 項，每分類 2-5 項
+1. **Summary 行**: 第一行 `<type>(<scope>): <繁中摘要>`，摘要 ≤ 40 字
+2. **核心變更** (必須): 1-3 項
+3. **分類 Sections**: 根據實際變更選擇 1-3 個相關分類
+4. **格式**: Markdown、`-` bullets、程式元素用 backticks
+5. **長度**: 核心變更 1-3 項，每分類 2-5 項
 
 ## 原子提交原則 (Atomic Commits Principle)
 
