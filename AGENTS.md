@@ -94,7 +94,7 @@ number.
 - **Frontend**: Next.js 15 (TypeScript, in `frontend/`)
 - **Backend**: FastAPI + MCP Server (in `services/mcp_server/`)
 
-<!-- DEV-STANDARD:BEGIN v0.1.0 -->
+<!-- DEV-STANDARD:BEGIN v0.2.0 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
@@ -112,6 +112,8 @@ number.
 - 主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。查找類 subagent 用 Haiku，實作與審查類用 Sonnet；深度 1，同時 ≤4 個。
 - 6 回合內判斷是不是難題。要換 Opus 就開新 session，交接 ≤20K（任務、失敗的檢查、3 個關鍵檔），不在長 context 中途換模型。
 - 角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級。兩個 writer 不碰同一檔。
+- 開新 session 或 subagent 一律寫明 model，不繼承主 session：唯讀、照表做的（巡檢、量測、驗證）用 Haiku，實作與維運用 Sonnet，設計為主的才用 Opus。
+- Fable 只在使用者點名時用（architect 也失敗、或高風險不可逆的決策）；不做成 agent，不自動升級過去。
 
 **閘門**
 - 先寫會失敗的檢查（`.claude-task/green.sh`）再寫碼；連三次紅就停，回報「計畫可能錯了」。改弱檢查要跟人說明。
