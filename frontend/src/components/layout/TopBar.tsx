@@ -12,7 +12,7 @@ import { useSidebar } from "@/context/SidebarContext";
 
 export default function TopBar() {
   const { user, isLoading: authLoading } = useAuth();
-  const { stableStatus } = useDashboardSocket();
+  const { stableStatus, hasLiveData } = useDashboardSocket();
   const pathname = usePathname();
   const { toggle } = useSidebar();
 
@@ -82,7 +82,7 @@ export default function TopBar() {
           {/* WebSocket Status Indicator - only show when authenticated */}
           {user && (
             <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 rounded-md bg-surface-container-highest/50 border border-outline-variant/10">
-              {stableStatus === "LIVE" ? (
+              {stableStatus === "LIVE" && hasLiveData ? (
                 <>
                   <Zap className="h-3 w-3 text-secondary fill-secondary animate-pulse" />
                   <span className="text-[9px] font-black uppercase text-secondary tracking-widest">Live</span>
@@ -90,7 +90,7 @@ export default function TopBar() {
               ) : (
                 <>
                   <ZapOff className="h-3 w-3 text-on-surface-variant/40" />
-                  <span className="text-[9px] font-black uppercase text-on-surface-variant/40 tracking-widest">Polling</span>
+                  <span className="text-[9px] font-black uppercase text-on-surface-variant/40 tracking-widest">輪詢</span>
                 </>
               )}
             </div>

@@ -20,13 +20,13 @@ export default function Terminal() {
       id: "initial",
       timestamp: new Date().toLocaleTimeString(),
       type: "system",
-      message: "QUANTUM SENTINEL v5.0.1 - 指令終端機已就緒。"
+      message: "指令終端機已就緒。"
     }
   ]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [isTradePanelOpen, setIsTradePanelOpen] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
-  
+
   // Chat & Stream State
   const [inputMessage, setInputMessage] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -89,7 +89,7 @@ export default function Terminal() {
       type: "system",
       message: `User: ${inputMessage}`
     };
-    
+
     setLogs(prev => [...prev.slice(-49), userMsg]);
     const currentInput = inputMessage;
     setInputMessage("");
@@ -151,7 +151,7 @@ export default function Terminal() {
         }]);
       }
     );
-    
+
     // Note: We don't await because it's a stream handler
     setIsAiLoading(false);
   };
@@ -169,7 +169,7 @@ export default function Terminal() {
         fees: 0,
         date: new Date().toISOString()
       });
-      
+
       setLogs(prev => [...prev.slice(-49), {
         id: Math.random().toString(36).substr(2, 9),
         timestamp: new Date().toLocaleTimeString(),
@@ -207,7 +207,7 @@ export default function Terminal() {
           </button>
 
           <div className="flex items-center gap-1.5">
-            <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse", 
+            <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse",
               status === "CONNECTED" ? "bg-secondary" : "bg-error"
             )} />
             <span className="font-label text-[9px] uppercase tracking-tighter opacity-70">{status === 'CONNECTED' ? '連線中' : '中斷'}</span>
@@ -222,15 +222,15 @@ export default function Terminal() {
         {/* Left Column: Logs Area & Input */}
         <div className="flex-1 flex flex-col min-w-0 bg-black/60 relative">
           <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,rgba(0,102,214,0.05)_0%,transparent_70%)]" />
-          
+
           {/* Logs Area */}
           <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide">
             {logs.map((log) => (
               <div key={log.id} className={cn(
                  "flex gap-3 animate-in fade-in slide-in-from-left-2 duration-500",
-                 log.type === "error" ? "text-error drop-shadow-[0_0_8px_rgba(255,180,171,0.3)]" : 
-                 log.type === "trade" ? "text-secondary font-bold" : 
-                 log.type === "agent" ? "text-tertiary" : 
+                 log.type === "error" ? "text-error drop-shadow-[0_0_8px_rgba(255,180,171,0.3)]" :
+                 log.type === "trade" ? "text-secondary font-bold" :
+                 log.type === "agent" ? "text-tertiary" :
                  log.type === "ai_advisor" ? "text-primary brightness-150 leading-relaxed" : "text-on-surface-variant opacity-80"
               )}>
                 <span className="opacity-30 shrink-0 select-none">[{log.timestamp}]</span>
@@ -260,7 +260,7 @@ export default function Terminal() {
              <div className="relative flex items-center group">
                 <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/20 to-secondary/20 rounded-full blur opacity-30 group-focus-within:opacity-100 transition duration-1000 group-hover:duration-200"></div>
                 <ChevronRight className="absolute left-4 w-4 h-4 text-primary z-10" />
-                <input 
+                <input
                    type="text"
                    value={inputMessage}
                    onChange={(e) => setInputMessage(e.target.value)}
@@ -268,7 +268,7 @@ export default function Terminal() {
                    placeholder="COMMAND INPUT > DISPATCH REQUEST TO SENTINEL..."
                    className="relative w-full bg-surface-container-low/40 backdrop-blur-2xl border border-outline-variant/30 rounded-full py-2.5 pl-11 pr-14 text-[11px] font-mono tracking-wider focus:border-primary/50 focus:bg-surface-container-low/60 outline-none transition-all shadow-2xl placeholder:opacity-30"
                 />
-                <button 
+                <button
                    onClick={handleSendChat}
                    disabled={isAiLoading || !inputMessage.trim()}
                    className="absolute right-2 p-1.5 bg-primary text-on-primary rounded-full hover:scale-105 active:scale-95 transition-all disabled:opacity-30 shadow-lg shadow-primary/20 z-10"
@@ -287,12 +287,12 @@ export default function Terminal() {
         )}>
           <div className="space-y-3">
             <h3 className="font-label text-[10px] uppercase tracking-widest text-primary font-bold">快速執行</h3>
-            
+
             {/* Ticker */}
             <div className="space-y-1">
               <label className="font-label text-[9px] uppercase tracking-tighter opacity-50 block ml-1">資產代碼 (Ticker)</label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={ticker}
                 onChange={(e) => setTicker(e.target.value)}
                 placeholder="GOOG, TSLA..."
@@ -302,7 +302,7 @@ export default function Terminal() {
 
             {/* Action Toggles */}
             <div className="flex gap-1 p-1 bg-surface-container rounded border border-outline-variant/10">
-              <button 
+              <button
                 onClick={() => setAction("BUY")}
                 className={cn(
                   "flex-1 py-1.5 rounded font-label text-[10px] uppercase tracking-wider transition-all",
@@ -311,7 +311,7 @@ export default function Terminal() {
               >
                 買入
               </button>
-              <button 
+              <button
                 onClick={() => setAction("SELL")}
                 className={cn(
                   "flex-1 py-1.5 rounded font-label text-[10px] uppercase tracking-wider transition-all",
@@ -325,8 +325,8 @@ export default function Terminal() {
             {/* Quantity */}
             <div className="space-y-1">
               <label className="font-label text-[9px] uppercase tracking-tighter opacity-50 block ml-1">數量 (單位/金額)</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 placeholder="0.00"
@@ -335,7 +335,7 @@ export default function Terminal() {
             </div>
 
             {/* Execute Button */}
-            <button 
+            <button
               onClick={handleExecute}
               disabled={!ticker || !quantity || isExecuting || status !== "CONNECTED"}
               className={cn(

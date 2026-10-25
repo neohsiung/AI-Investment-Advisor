@@ -2,7 +2,7 @@ import useSWR, { mutate } from "swr";
 import { apiClient } from "@/lib/api-client";
 import { useWebSocket } from "@/context/WebSocketContext";
 import { useEffect } from "react";
-import { 
+import {
   DashboardMetrics, PositionItem, IntelligenceBriefing, AgentStatus, ApiResponse
 } from "@/types/unified";
 
@@ -93,7 +93,7 @@ export function useDashboardSocket() {
   useEffect(() => {
     if (missedMessages && missedMessages.length > 0) {
       console.log(`[Reconciliation] Processing ${missedMessages.length} missed events.`);
-      
+
       // Update alerts cache with missed events
       mutate("/dashboard/alerts", (current: any) => {
         const existing = current?.data || [];
@@ -101,10 +101,10 @@ export function useDashboardSocket() {
         const newAlerts = missedMessages
           .filter(m => m.type === "SYSTEM_ALERT")
           .map(m => m.payload);
-        
-        return { 
-          ...current, 
-          data: [...newAlerts, ...existing].slice(0, 50) 
+
+        return {
+          ...current,
+          data: [...newAlerts, ...existing].slice(0, 50)
         };
       }, false);
     }
@@ -147,7 +147,7 @@ export function useDashboardSocket() {
     }
   }, [lastMessage]);
 
-  return { status, stableStatus };
+  return { status, stableStatus, hasLiveData: lastMessage != null };
 }
 
 export function useEventBiases() {

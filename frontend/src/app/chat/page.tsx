@@ -268,7 +268,7 @@ export default function ChatPage() {
                 REAL-TIME PULSE
               </div>
             </div>
-            <p className="text-[9px] font-medium text-on-surface-variant/40">Quantum AI Agent System v10.0</p>
+            <p className="text-[9px] font-medium text-on-surface-variant/40">AI Investment Advisor</p>
           </div>
         </div>
       </div>

@@ -48,8 +48,7 @@ export default function Sidebar() {
           </span>
         </div>
         <div className="flex-1">
-          <h2 className="text-lg font-bold text-primary font-headline tracking-tighter uppercase">QUANTUM AI</h2>
-          <p className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant opacity-70">V3.2 Active</p>
+          <h2 className="text-base font-bold text-primary font-headline tracking-tight leading-tight">AI Investment Advisor</h2>
         </div>
         {/* 手機版關閉按鈕 */}
         <button
