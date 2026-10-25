@@ -22,7 +22,7 @@ description: 快速建立並啟用新的 Agent Runtime Skill（服務工具）�
 | 類別 | 存放位置 | 用途 | 範例 |
 |------|----------|------|------|
 | **Runtime Skill (服務框架)** | `src/agents/skills/<name>/` | Agent 在運行時可呼叫的工具 (MCP Tool) | `search_web`, `get_market_data`, `get_portfolio` |
-| **Agent Dev Skill (開發輔助)** | `.agent/skills/<name>/` | 指導 Agent 開發時遵循的規範與最佳實踐 | `postgres-raw-sql`, `skill-scaffolding`, `wiki-maintainer` |
+| **Agent Dev Skill (開發輔助)** | `.agent/skills/<name>/` | 指導 Agent 開發時遵循的規範與最佳實踐 | `postgres-raw-sql`, `skill-scaffolding`, `docs-maintainer` |
 
 ### Agent Dev Skills 進一步分為：
 
@@ -147,7 +147,7 @@ def <skill_name>(user_id: str, **kwargs) -> str:
     try:
         # ⚠️ 延遲載入 Service 避免循環依賴
         from src.services.<service_module> import <ServiceClass>
-        
+
         svc = <ServiceClass>(user_id=user_id)
         # 執行逻辑...
         return "執行結果"
