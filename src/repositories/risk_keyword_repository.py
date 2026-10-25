@@ -467,7 +467,8 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
                  hit_count=int(r['hit_count']),
                  last_hit_date=r.get('last_hit_date'),
                  is_active=bool(r['is_active']),
-                 created_at=r['created_at']
+                 created_at=r['created_at'],
+                 source=r.get('source'),
              )
         except AttributeError:
              # Fallback to index-based for older versions or edge cases

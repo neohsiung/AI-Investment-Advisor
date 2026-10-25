@@ -167,6 +167,14 @@ class RiskKeywordService:
 
         return total_weight, matched
 
+    def shadow_score_text(self, text: str) -> float:
+        """
+        Total weight under the shadow rule (DD-2026-1025). Recorded only, never decides; never records hits,
+        so it cannot feed the hit-count weight boost.
+        shadow 規則下的總權重；只記錄、不做決定，也不記命中次數，避免回饋到權重調升。
+        """
+        return sum(kw.shadow_score(text) for kw in self.get_active_keywords())
+
     def record_hit(self, kw_id: str) -> None:
         """
         Record a keyword hit.

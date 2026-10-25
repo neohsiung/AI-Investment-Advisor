@@ -1,6 +1,6 @@
 {
  "ruff_version": "0.11.7",
- "total": 7463,
+ "total": 7462,
  "counts": {
   ".agent/skills/ci-test/scripts/ci_test.py::BLE001": 2,
   ".agent/skills/ci-test/scripts/ci_test.py::E501": 2,
@@ -1535,7 +1535,7 @@
   "src/services/sentinel_service.py::E402": 27,
   "src/services/sentinel_service.py::E501": 137,
   "src/services/sentinel_service.py::E701": 5,
-  "src/services/sentinel_service.py::F401": 8,
+  "src/services/sentinel_service.py::F401": 7,
   "src/services/sentinel_service.py::F541": 4,
   "src/services/sentinel_service.py::F841": 5,
   "src/services/sentinel_service.py::PLR0912": 12,

@@ -78,3 +78,28 @@ def test_entity_score_uses_whole_word_rule():
     kw = RiskKeyword(keyword="es", weight=1.0)
     assert kw.score("Morgan Stanley Names It Top Pick") == 0.0
     assert kw.score("ES futures slide overnight") == 1.0
+
+
+# ── Shadow rule (DD-2026-1025, recorded only, never decides) / shadow 規則（只記錄，不做決定）──
+
+from src.domain.keyword_match import shadow_weight  # noqa: E402
+
+
+@pytest.mark.parametrize("keyword,weight,source,expected", [
+    ("es", 1.0, "trends", 0.0),        # short trending ticker: excluded from free-text matching
+    ("nvda", 0.4, "trends", 0.0),
+    ("tesla", 1.0, "trends", 0.5),     # longer trend keyword: kept, capped
+    ("crash", 1.0, "seed", 0.5),       # one keyword alone can no longer reach the 0.6 threshold
+    ("crash", 0.3, "seed", 0.3),
+    ("war", 1.0, None, 0.5),
+])
+def test_shadow_weight(keyword, weight, source, expected):
+    assert shadow_weight(keyword, weight, source) == expected
+
+
+def test_entity_shadow_score_needs_a_whole_word_match_and_an_active_keyword():
+    kw = RiskKeyword(keyword="crash", weight=1.0, source="seed")
+    assert kw.shadow_score("Markets crash") == 0.5
+    assert kw.shadow_score("a microcrash in rates") == 0.0
+    kw.is_active = False
+    assert kw.shadow_score("Markets crash") == 0.0

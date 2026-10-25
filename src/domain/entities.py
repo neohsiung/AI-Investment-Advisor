@@ -4,7 +4,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple
 from datetime import datetime
 from enum import Enum
 
-from src.domain.keyword_match import keyword_in_text
+from src.domain.keyword_match import keyword_in_text, shadow_weight
 
 class SignalType(Enum):
     BUY = "BUY"
@@ -138,6 +138,7 @@ class RiskKeyword:
     is_active: bool = True
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     id: Optional[str] = None
+    source: Optional[str] = None  # where the keyword came from: seed / report / webhook / trends …
 
     def score(self, text: str) -> float:
         """
@@ -156,6 +157,15 @@ class RiskKeyword:
         此關鍵字是否出現在文字中（規則見 src/domain/keyword_match.py）。
         """
         return keyword_in_text(self.keyword, text)
+
+    def shadow_score(self, text: str) -> float:
+        """
+        Weight under the shadow rule (recorded only, never used to decide). See keyword_match.shadow_weight.
+        shadow 規則下的權重（只記錄，不用來做決定）。
+        """
+        if not self.is_active or not self.matches(text):
+            return 0.0
+        return shadow_weight(self.keyword, self.weight, self.source)
 
 
 @dataclass

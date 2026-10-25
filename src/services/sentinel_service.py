@@ -5,7 +5,7 @@ import asyncio
 import os
 import json
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
+from typing import List, Dict, Tuple, Any, Optional, Union, Awaitable
 from src.utils.async_utils import to_thread
 from datetime import date, datetime
 import pandas as pd
@@ -21,7 +21,7 @@ from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.repositories.snapshot_repository import AlchemySnapshotRepository
 from src.services.settings_service import SettingsService
 from src.services.risk_keyword_service import RiskKeywordService
-from src.services import council_halt_gate
+from src.services import council_halt_gate, keyword_shadow_recorder
 from src.services.param_policy import get_param
 from src.services.rotation_pair_recorder import DECISION_APPROVED, DECISION_REJECTED_DELTA, record_rotation_decision, record_young_blocked
 from src.domain.entities import RiskKeyword
@@ -803,6 +803,9 @@ class SentinelService:
             text_to_score = f"{msg} {ticker or ''}".strip()
             total_weight, matched = self.keyword_service.score_text(text_to_score)
             risk_threshold = self.thresholds.get("news_risk_score", 0.6)
+            keyword_shadow_recorder.compare(
+                "webhook_news", risk_threshold, total_weight,
+                lambda: self.keyword_service.shadow_score_text(text_to_score), redact_secrets(msg))
             if total_weight < risk_threshold:
                 logger.debug(
                     "Sentinel: webhook news event scored %.2f (< %.2f threshold), suppressing: %s",
@@ -1100,6 +1103,7 @@ class SentinelService:
 
         best_score = 0.0
         best_summary = ""
+        scored_texts: List[str] = []   # for the shadow keyword comparison (DD-2026-1025)
 
         for result in results:
             title = result.get("title", "")
@@ -1115,6 +1119,7 @@ class SentinelService:
                     total_score += score
                     matched_keywords.append((kw, score))
 
+            scored_texts.append(full_text)
             if total_score >= risk_threshold:
                 # Record hits via keyword service
                 for kw, _ in matched_keywords:
@@ -1241,6 +1246,7 @@ class SentinelService:
                     best_score = total_score
                     best_summary = f"{result.get('title', 'N/A')} (關鍵字: {kw_summary}){scenario_note}"
 
+        keyword_shadow_recorder.compare_keywords("ticker_news", risk_threshold, scored_texts, active_keywords, ticker)
         return best_score, best_summary
 
     # ──────────────────────────────────────────
@@ -1406,7 +1412,11 @@ class SentinelService:
                         # 搜尋服務回傳的欄位是 link/snippet，而非 url/content。
                         url = item.get("link") or item.get("url") or ""
                         snippet = item.get("snippet") or item.get("content") or ""
-                        total_weight, matched = self.keyword_service.score_text(f"{title} {snippet}")
+                        scored_text = f"{title} {snippet}"
+                        total_weight, matched = self.keyword_service.score_text(scored_text)
+                        keyword_shadow_recorder.compare(
+                            "global_event", risk_threshold, total_weight,
+                            lambda t=scored_text: self.keyword_service.shadow_score_text(t), title)
                         if total_weight >= risk_threshold:
                             scored.append({"title": title, "url": url, "weight": total_weight, "matched": matched})
                 except Exception as e:

@@ -54,3 +54,19 @@ def keyword_in_text(keyword: str, text: str) -> bool:
     if not keyword or not keyword.strip() or not text:
         return False
     return _pattern(keyword).search(text.lower()) is not None
+
+
+# ── Shadow rule (recorded only, never decides) / shadow 規則（只記錄，不做決定）────────────────────
+# Candidate rule observed for a week before any switch (DD-2026-1025). Code constants on purpose: this rule decides
+# nothing, so it is not a registered parameter. Switching it live is a separate, reviewed change.
+# 候選規則，先觀察一週再決定是否切換。刻意寫成程式常數：它不做任何決定，不是登錄參數；切換成正式規則另案審查。
+SHADOW_MAX_SINGLE_WEIGHT = 0.5      # below news_risk_score (0.6): one keyword alone cannot trigger
+SHADOW_SKIP_TRENDS_MAX_LEN = 4      # trend-sourced keywords this short are tickers, not risk words
+
+
+def shadow_weight(keyword: str, weight: float, source: str | None) -> float:
+    """Weight a matched keyword carries under the shadow rule.
+    shadow 規則下，命中的關鍵字帶多少權重。"""
+    if source == "trends" and len(keyword) <= SHADOW_SKIP_TRENDS_MAX_LEN:
+        return 0.0
+    return min(float(weight), SHADOW_MAX_SINGLE_WEIGHT)
