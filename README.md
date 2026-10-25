@@ -328,6 +328,8 @@ All contributions adhere to strict quality gates:
 
 ## 📄 License & Disclaimer
 
+- **Maintainer**: [Litov](https://litov.app). Questions and security reports: support@litov.app (see [SECURITY.md](SECURITY.md)).
+- **Contributing**: see [CONTRIBUTING.md](CONTRIBUTING.md).
 - **License**: [Apache License 2.0](LICENSE)
 - **Disclaimer**: This system autonomously analyzes financial markets and can execute real trades with real money when configured. It does not constitute financial advice. Provided "AS IS" with no warranty. See [NOTICE](NOTICE) for terms.
 

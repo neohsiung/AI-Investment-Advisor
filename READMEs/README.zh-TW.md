@@ -175,12 +175,13 @@ AI-Investment-Advisor/
 3. 執行測試 (`pytest tests/ -x --tb=short`)
 4. 提交變更並開啟 Pull Request
 
-重大變更請先開 Issue 討論方案。
+重大變更請先開 Issue 討論方案。完整規則見 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
 ---
 
 ## 📄 授權與免責聲明
 
+- **維護**: [Litov](https://litov.app)。問題與資安回報寄 support@litov.app，見 [SECURITY.md](../SECURITY.md)。
 - **授權**: [Apache License 2.0](../LICENSE)
 - **免責聲明**: 本軟體可自主分析市場，若配置真實券商憑證可能以真實資金下單。非投資建議，依「現狀」提供不含任何保證。詳見 [NOTICE](../NOTICE)。
 

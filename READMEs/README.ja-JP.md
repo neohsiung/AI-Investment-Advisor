@@ -76,6 +76,7 @@ cp .env.example .env
 
 ## 📄 ライセンス
 
+- **メンテナー**: [Litov](https://litov.app)。お問い合わせ・脆弱性報告は support@litov.app へ（[SECURITY.md](../SECURITY.md) 参照）。
 - **ライセンス**: [Apache License 2.0](../LICENSE)
 - **免責事項**: 本ソフトウェアは市場を自律的に分析し、実際のブローカー認証情報を設定すると実際の資金で取引を行う可能性があります。投資アドバイスではなく、いかなる保証もなく「現状のまま」提供されます。詳細は [NOTICE](../NOTICE) を参照してください。
 

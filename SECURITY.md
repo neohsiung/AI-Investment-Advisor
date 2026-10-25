@@ -3,7 +3,7 @@
 ### 版本紀錄 (Version History)
 | Date | Version | Description | Author |
 | :--- | :--- | :--- | :--- |
-| 2026-02-20 | v4.5 | Complete rewrite conforming to GitHub Best Practices & Project Bilingual Standards | Neo |
+| 2026-02-20 | v4.5 | Complete rewrite conforming to GitHub Best Practices & Project Bilingual Standards | Litov |
 
 ---
 
@@ -28,9 +28,9 @@
 
 我們非常重視本專案的安全性。如果您認為您發現了安全漏洞，**請勿**開啟公開的 Issue。請遵循以下流程：
 
-1. **聯絡維護者**: 請將詳細的 CVE 或 Bug 報告發送至 `supermfb@gmail.com`。
+1. **聯絡維護者**: 請將詳細的 CVE 或 Bug 報告發送至 `support@litov.app`。
 2. **提供細節**: 信件請包含漏洞的描述、重現步驟以及潛在影響。
-3. **回應時間表 (SLA)**: 
+3. **回應時間表 (SLA)**:
    - 我們將在 **48 小時**內確認收到您的報告。
    - 我們會提供修復的時間表，並在此責任揭露 (Responsible Disclosure) 過程中持續更新進度。
 
@@ -64,10 +64,10 @@ We actively provide security updates for the following versions:
 
 We take the security of this project seriously. If you believe you have found a security vulnerability, please do **not** open a public issue. Instead, follow the process below:
 
-1. **Email the Maintainer**: Send a detailed CVE/Bug report to `supermfb@gmail.com`.
+1. **Email the Maintainer**: Send a detailed CVE/Bug report to `support@litov.app`.
 2. **Include Details**: Please include a description of the vulnerability, steps to reproduce, and potential impact.
-3. **Response Timeline (SLA)**: 
-   - Acknowledgment within **48 hours**. 
+3. **Response Timeline (SLA)**:
+   - Acknowledgment within **48 hours**.
    - We will provide a timeline for a patch and keep you updated throughout the responsible disclosure process.
 
 ### 🛡️ Architecture-Level Defenses
