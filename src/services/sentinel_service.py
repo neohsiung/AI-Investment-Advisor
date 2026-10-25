@@ -1018,12 +1018,6 @@ class SentinelService:
             logger.warning(f"Position move check failed for {redact_secrets(all_tickers)}: {e}")
         return triggers
 
-    async def _check_position_moves(self) -> List[Dict[str, Any]]:
-        """Deprecated wrapper for backward compatibility."""
-        ticker_list = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
-        current_prices = await self.market_service.get_current_prices(ticker_list)
-        return await self._check_position_moves_v2(ticker_list, current_prices)
-
     async def _get_market_trend(self, benchmark: str = "SPY") -> str:
         """
         Detects major market trend using SMA and MACD.
