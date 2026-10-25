@@ -27,6 +27,8 @@
 - 主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。查找類 subagent 用 Haiku，實作與審查類用 Sonnet；深度 1，同時 ≤4 個。
 - 6 回合內判斷是不是難題。要換 Opus 就開新 session，交接 ≤20K（任務、失敗的檢查、3 個關鍵檔），不在長 context 中途換模型。
 - 角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級。兩個 writer 不碰同一檔。
+- 開新 session 或 subagent 一律寫明 model，不繼承主 session：唯讀、照表做的（巡檢、量測、驗證）用 Haiku，實作與維運用 Sonnet，設計為主的才用 Opus。
+- Fable 只在使用者點名時用（architect 也失敗、或高風險不可逆的決策）；不做成 agent，不自動升級過去。
 
 **閘門**
 - 先寫會失敗的檢查（`.claude-task/green.sh`）再寫碼；連三次紅就停，回報「計畫可能錯了」。改弱檢查要跟人說明。
@@ -85,7 +87,9 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 | 主 session 用 Sonnet，Opus 當 advisor；查找類 subagent 用 Haiku，實作與審查類用 Sonnet（深度 1、同時 ≤4） | hermes DD-2026-1009：實測 cache 讀取兩個模型同價，長 session 裡 Opus 每回合只貴 1.3–1.9 倍，但整體 Opus 佔比要壓在 40% 以下 | hermes `scripts/dev/claude_cost.py`：Opus 佔比 <40%、subagent 佔比 >15% |
 | advisor 三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前；context >150K 改用 reviewer | 同上 | session 紀錄裡有沒有這三次呼叫 |
 | 6 回合內判斷是不是難題；換 Opus 開新 session，交接 ≤20K | 在 300K context 中途換模型，光重建快取約 1.5 美元 | 交接檔大小 |
-| 角色：`scout`（haiku 查找）、`implementer`（sonnet 實作）、`reviewer`（sonnet 審查）、`architect`（opus，卡關才用） | 難度決定模型，升級兩段式，不預設用強模型 | 導入時在各 repo 的 `.claude/agents/` 補上這四個（目前只在個人全域設定，換機器就沒有） |
+| 角色：`scout`（haiku 查找）、`implementer`（sonnet 實作）、`reviewer`（sonnet 審查）、`architect`（opus，卡關才用） | 難度決定模型，升級兩段式，不預設用強模型 | 定義檔正本在 `templates/agents/`，全域以 symlink 接進 `~/.claude/agents/`，所有專案共用，不在各 repo 複製 |
+| 開新 session 或 subagent 一律寫明 model，不繼承主 session。唯讀、照表做的 session（巡檢、量測、驗證）用 Haiku；實作與維運 Sonnet；設計為主才 Opus | 2026-10-25 一次開了 4 個 session 都沒寫 model，全數繼承 Opus 5.5。Haiku 5.5 每百萬 token $0.10／$0.50，是 Sonnet 的 1/20，唯讀 session 用它幾乎不花錢 | 開 session 的呼叫有沒有帶 `model`；`claude_cost.py` 的 Opus 佔比 |
+| Fable 5.1 只在使用者點名時用：architect（Opus）也失敗一次，或高風險、難回頭的決策。不做成 agent，不列進自動升級 | $10／$50，是 Opus 的 2.5 倍、Sonnet 的 5 倍；放進自動升級鏈，失敗的成本會一路放大 | session 紀錄裡用到 Fable 的都有使用者點名 |
 
 ## 4. 閘門
 

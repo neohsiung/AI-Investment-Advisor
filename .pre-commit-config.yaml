@@ -10,7 +10,7 @@ repos:
     rev: v1.5.0
     hooks:
     -   id: detect-secrets
-        exclude: package.lock.json
+        exclude: (package.lock.json|^\.dev-standard/PINNED\.json$)  # PINNED.json 是公開正本的 sha256，會被當成 hex 高熵字串
 # 2026-07-12 (open-source Phase 0): second, independent secret scanner —
 # .env.bak-20260711 was git-tracked with secret var names for weeks
 # without either scanner catching it (it predates this hook). Two
