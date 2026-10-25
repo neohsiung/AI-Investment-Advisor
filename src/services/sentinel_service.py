@@ -41,7 +41,7 @@ class SentinelService:
     """
     The Sentinel: 24/7 Proactive Multi-Dimensional Monitoring Service.
     哨兵服務：24/7 主動多維監控與事件驅動核心。
-    
+
     Trigger Dimensions (觸發維度):
     1. VIX Regime (Adaptive Z-Score) - 波動率體制。
     2. Position Price Moves (Intraday %) - 持倉價格異動。
@@ -64,7 +64,7 @@ class SentinelService:
     ):
         if not user_id:
             logger.warning("SentinelService: No user_id provided. Running in anonymous mode (testing only).")
-            
+
         self.repo = repo or AlchemySentinelRepository()
         self.user_id = resolve_user_id(user_id)
 
@@ -106,7 +106,7 @@ class SentinelService:
             "news_risk_score": 0.6,
             "vix_suppression_sigma_mult": 1.5, # 抑制回報門檻 (sigma 倍數)
         }
-        
+
         # Thresholds are seeded and read on first access (see the `thresholds`
         # property), and calibration moved to process_tick behind a daily
         # cooldown — see _maybe_calibrate_thresholds for the measurements.
@@ -125,7 +125,7 @@ class SentinelService:
         # Buffer State — Redis-backed persistent buffer (replaces in-memory dict)
         from src.infrastructure.redis_sentinel_buffer import RedisSentinelBuffer
         self._redis_buffer = RedisSentinelBuffer()
-        
+
         # Volatility State
         self.current_vix: float = 20.0 # Default fallback
         self.current_vix_z_score: float = 0.0
@@ -542,7 +542,7 @@ class SentinelService:
     # ──────────────────────────────────────────
     # Main Entry Point
     # ──────────────────────────────────────────
-        
+
     # Tick lock TTL. Longer than the 60s tick interval so a slow tick cannot
     # let the next scheduled one in early, short enough to self-heal.
     # 大於 60 秒的 tick 間隔，避免慢 tick 讓下一次提早進來；同時能自行復原。
@@ -605,19 +605,19 @@ class SentinelService:
             logger.warning("Sentinel: Buffer flush timed out after %.0fs; continuing tick.", buffer_flush_timeout)
         except Exception as e:
             logger.error(f"Sentinel: Buffer flush error: {e}", exc_info=True)
-        
+
         logger.info(f"Sentinel Check Started with {len(self.thresholds)} thresholds.")
         try:
             triggers: List[Dict[str, Any]] = []
-            
+
             # Dimension 0: User Context Resolution (v5.0: Strictly isolated)
             active_tickers = self.transaction_service.get_user_tickers(self.user_id, only_active=True)
             ticker_list = list(active_tickers)
             logger.info(f"Sentinel: Monitoring {len(ticker_list)} tickers for user {redact_pii(self.user_id)}.")
-            
+
             # Dimension 1: VIX Regime (每次 tick)
             triggers += self._check_vix_anomaly()
-            
+
             # Dimension 2: Position Price Moves (每次 tick)
             # Pass aggregated data to avoid redundant fetches
             if ticker_list:
@@ -630,7 +630,7 @@ class SentinelService:
                     )
                 except (asyncio.TimeoutError, TimeoutError):
                     logger.warning("Sentinel: Dimension 2 (Position Price Moves) timed out; continuing.")
-            
+
             # Dimensions 3, 4 and 6 are deliberately rarer than the tick: they
             # hit paid APIs (Tavily) or slow-moving data (FRED).
             #
@@ -691,7 +691,7 @@ class SentinelService:
                     )
                 except (asyncio.TimeoutError, TimeoutError):
                     logger.warning("Sentinel: Dimension 6 (Global Macro) timed out; continuing.")
-            
+
             # Dimension 7: Risk Consistency & Dynamic Cash (每次 tick)
             # v5.0: Ensure leverage and cash levels match risk profile
             try:
@@ -700,31 +700,31 @@ class SentinelService:
                 logger.debug("process_tick: %d triggers after risk check", len(triggers))
             except (asyncio.TimeoutError, TimeoutError):
                 logger.warning("Sentinel: Dimension 7 (Risk Consistency) timed out; continuing.")
-            
+
             # Dimension 8: Capital Deployment (v9.0 Add-on)
             # Check for excess cash and trigger deployment logic if allowed
             try:
                 await self._with_timeout(self._handle_cash_deployment_logic(triggers), timeout=30.0)
             except (asyncio.TimeoutError, TimeoutError):
                 logger.warning("Sentinel: Dimension 8 (Cash Deployment) timed out; continuing.")
-            
+
             # Dimension 9: Infrastructure Health / Self-Healing (Phase 9)
             try:
                 triggers += await self._with_timeout(self._check_infrastructure_health(), timeout=20.0)
             except (asyncio.TimeoutError, TimeoutError):
                 logger.warning("Sentinel: Dimension 9 (Infrastructure Health) timed out; continuing.")
-            
+
             # Dimension 10: Allocation Drift Check (v10.0 - Portfolio Rebalancing)
             # Check if current portfolio allocation deviates from target allocation
             try:
                 rebalance_triggers = await self._with_timeout(self._check_allocation_drift(), timeout=30.0)
                 triggers += rebalance_triggers
-                
+
                 # Dimension 10.1: Execute Rebalancing (Phase 5)
                 await self._with_timeout(self._handle_rebalance_logic(rebalance_triggers), timeout=60.0)
             except (asyncio.TimeoutError, TimeoutError):
                 logger.warning("Sentinel: Dimension 10 (Allocation Drift/Rebalance) timed out; continuing.")
-            
+
             # Dimension 11: Position Exit Engine (Stop-Loss, Take-Profit, Thesis Breakdown)
             try:
                 position_exit_triggers = await self._with_timeout(self._check_position_exits(), timeout=60.0)
@@ -746,7 +746,7 @@ class SentinelService:
                 await self._with_timeout(self._handle_factor_drift_health(drift_triggers), timeout=30.0)
             except (asyncio.TimeoutError, TimeoutError):
                 logger.warning("Sentinel: Dimension 11.4 (Factor Drift Health) timed out; continuing.")
-            
+
             # ACT: Summon Council + Notifications if triggered
             if triggers:
                 escalate_timeout = float(os.getenv("SENTINEL_ESCALATE_TIMEOUT_SECONDS", "210.0"))
@@ -756,7 +756,7 @@ class SentinelService:
                     logger.warning("Sentinel: Escalation timed out after %.0fs; continuing.", escalate_timeout)
             else:
                 logger.debug("Sentinel: All dimensions normal. No triggers.")
-                
+
         except Exception as e:
             logger.error(f"Sentinel Tick Error: {e}", exc_info=True)
         finally:
@@ -778,13 +778,13 @@ class SentinelService:
         data = event.get("data", {})
         msg = data.get("msg", "Event Triggered")
         ticker = data.get("ticker")
-        
+
         logger.info(f"Sentinel Processing Event: [{redact_secrets(source)}] {redact_secrets(msg)}")
-        
+
         display_text = f"🔔 [{source.upper()}] {msg} " + (f"({ticker})" if ticker else "")
         # Use message content as ID for generic events if no specific ID provided
         signal_id = data.get("signal_id") or f"event_{source}_{ticker or 'global'}"
-        
+
         # Milestone 2.1: Webhook for semiconductor earnings calls/reports
         if source == "earnings_call" and ticker:
             from src.services.supply_chain_service import SupplyChainService
@@ -855,12 +855,12 @@ class SentinelService:
         """
         ev_type = event.get("ev")
         symbol = event.get("sym")
-        
+
         # Mapping Polygon events to Sentinel logic
         if ev_type == "T": # Trade
             price = event.get("p")
             size = event.get("s")
-            
+
             # 整合 BreakoutFilter 即時大單與異常波動檢測
             extra_msg = ""
             try:
@@ -914,14 +914,14 @@ class SentinelService:
             if not history_data or not history_data.get("close"):
                 logger.debug("VIX check: No historical data available from market service.")
                 return triggers
-                
+
             closes = history_data["close"]
             if not closes:
                 return triggers
-                
+
             current_vix = closes[-1]
             window = 30
-            
+
             if len(closes) >= window:
                 recent = closes[-window:]
                 avg_vix = sum(recent) / len(recent)
@@ -929,18 +929,18 @@ class SentinelService:
                 std_dev = variance ** 0.5
                 z_score = (current_vix - avg_vix) / std_dev if std_dev > 0 else 0
                 self.current_vix_z_score = float(z_score)
-                
+
                 # Dynamic Threshold (v3.5)
                 sigma_limit = self.thresholds.get("vix_spike_sigma", 2.5)
                 threshold = avg_vix + (sigma_limit * std_dev)
-                
+
                 logger.info(
                     f"Sentinel VIX: {current_vix:.2f} "
                     f"(MA={avg_vix:.2f}, σ={std_dev:.2f}, threshold={threshold:.2f}, Z={z_score:.1f}σ)"
                 )
-                
+
                 current_vix_val = float(current_vix)
-                
+
                 if current_vix_val > threshold:
                     triggers.append({
                         "text": f"🔴 VIX Spike: {current_vix:.2f} > {threshold:.2f} (Z={z_score:.1f}σ)",
@@ -958,10 +958,10 @@ class SentinelService:
                         "value": current_vix,
                         "priority": 2 # P2: Warning
                     })
-                
+
             # Update global state for adaptive compute
             self.current_vix = current_vix
-                    
+
         except Exception as e:
             logger.warning(f"VIX check failed: {e}")
         return triggers
@@ -978,27 +978,27 @@ class SentinelService:
         triggers = []
         if not all_tickers:
             return triggers
-            
+
         try:
             # Batch fetch OHLCV for all tickers (2 days needed for prev-close)
             ohlcv_batch = self.market_service.get_ohlcv_batch(all_tickers, days=2)
-            
-            # Compare with previous close 
+
+            # Compare with previous close
             for ticker in all_tickers:
                 current = current_prices.get(ticker, 0)
                 if current <= 0:
                     continue
-                    
+
                 ohlcv = ohlcv_batch.get(ticker)
                 if not ohlcv or not ohlcv.get("close") or len(ohlcv["close"]) < 2:
                     continue
-                
+
                 prev_close = ohlcv["close"][-2]
                 if prev_close <= 0:
                     continue
-                    
+
                 change_pct = ((current - prev_close) / prev_close) * 100
-                
+
                 if change_pct <= self.thresholds["position_drop_pct"]:
                     triggers.append({
                         "text": f"📉 {ticker} 跌 {change_pct:.1f}% ({prev_close:.2f} → {current:.2f})",
@@ -1013,7 +1013,7 @@ class SentinelService:
                         "value": change_pct,
                         "priority": 3 # P3: Potential Bubble
                     })
-                    
+
         except Exception as e:
             logger.warning(f"Position move check failed for {redact_secrets(all_tickers)}: {e}")
         return triggers
@@ -1033,12 +1033,12 @@ class SentinelService:
             indicators = self.market_service.get_technical_indicators(benchmark)
             sma = indicators.get("sma", {})
             sma_200 = sma.get("sma_200", 0)
-            
+
             # Simple Trend Rule: Price > SMA200 for long-term bull
             # We don't have current price here directly, let's fetch it
             prices = await self.market_service.get_current_prices([benchmark])
             current_price = prices.get(benchmark, 0)
-            
+
             if current_price > sma_200 and sma_200 > 0:
                 return "Bullish"
             elif current_price < sma_200 and sma_200 > 0:
@@ -1050,7 +1050,7 @@ class SentinelService:
 
     # Dimension 3: Breaking News (Tavily)
     # ──────────────────────────────────────────
-    
+
     async def _check_breaking_news_v2(self, all_tickers: List[str]) -> List[Dict[str, Any]]:
         """
         Search for risk-relevant breaking news for aggregated tickers.
@@ -1058,16 +1058,16 @@ class SentinelService:
         triggers = []
         if not all_tickers:
             return triggers
-            
+
         try:
             active_keywords = self.keyword_service.get_active_keywords()
-            
+
             if not active_keywords:
                 logger.warning("No active risk keywords, skipping news check.")
                 return triggers
-            
+
             risk_threshold = self.thresholds.get("news_risk_score", 0.6)
-            
+
             for ticker in all_tickers:
                 risk_score, summary = await self._analyze_ticker_news(ticker, active_keywords)
                 if risk_score >= risk_threshold:
@@ -1095,15 +1095,15 @@ class SentinelService:
 
         # Optimization: Use standardized news fetching (Tiingo -> FMP -> YFinance)
         results = self.market_service.get_news(ticker)
-        
+
         # Fallback: search if NO news from primary providers
         if not results:
              query = f"{ticker} latest news investment impact"
              results = await self.search_service.search_financial_context(query, max_results=3)
-             
+
         if not results:
              return 0.0, "No recent news captured by primary providers or search."
-        
+
         best_score = 0.0
         best_summary = ""
 
@@ -1111,37 +1111,37 @@ class SentinelService:
             title = result.get("title", "")
             summary = result.get("summary", "") or result.get("description", "")
             full_text = f"{title} {summary}"
-            
+
             total_score = 0.0
             matched_keywords = []
-            
+
             for kw in active_keywords:
                 score = kw.score(full_text)
                 if score > 0:
                     total_score += score
                     matched_keywords.append((kw, score))
-            
+
             if total_score >= risk_threshold:
                 # Record hits via keyword service
                 for kw, _ in matched_keywords:
                     self.keyword_service.record_hit(kw.id)
-                
+
                 kw_summary = ", ".join(
-                    f"{kw.keyword}(w={s:.2f})" 
+                    f"{kw.keyword}(w={s:.2f})"
                     for kw, s in sorted(matched_keywords, key=lambda x: -x[1])[:3]
                 )
-                
+
                 # Scenario Logic: Tariff -> Inventory Restocking
                 scenario_note = ""
                 has_tariff = any("tariff" in kw.keyword.lower() or "關稅" in kw.keyword.lower() for kw, _ in matched_keywords)
                 has_restock = any("inventory restocking" in kw.keyword.lower() or "回補庫存" in kw.keyword.lower() for kw, _ in matched_keywords)
-                
+
                 if has_tariff or has_restock:
                     scenario_note = " (Scenario Triggered: Anticipate inventory restocking as a catalyst for economic expansion before tariffs hit)"
                     total_score += 0.2 # Boost score for matching the specific roadmap scenario
 
                 # Scenario Logic: PPA Signings / AI Energy Moat (Milestone 2.2)
-                # Dynamic AI Energy Tickers 
+                # Dynamic AI Energy Tickers
                 ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
                 if not ai_energy_tickers:
                     # [Phase 0 Cold Start]
@@ -1165,7 +1165,7 @@ class SentinelService:
                                 ai_energy_tickers = self.settings_service.get_setting("ai_energy_tickers")
                     except Exception as e:
                         logger.error(f"Failed to bootstrap Energy tickers: {e}")
-                        
+
                     if not ai_energy_tickers:
                         ai_energy_tickers = ["CEG", "VST", "MSFT", "AMZN", "GOOGL"]
                         self.settings_service.save_setting("ai_energy_tickers", ai_energy_tickers)
@@ -1176,22 +1176,22 @@ class SentinelService:
                         ai_energy_tickers = json.loads(ai_energy_tickers)
                     except json.JSONDecodeError:
                         ai_energy_tickers = [t.strip() for t in ai_energy_tickers.split(',')]
-                        
+
                 has_ppa = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["ppa", "power purchase agreement", "nuclear", "smr", "datacenter power", "grid"])
                 if has_ppa:
                     if ticker in ai_energy_tickers:
                         scenario_note += " ⚡ (AI Energy Catalyst: Potential PPA signing or nuclear/grid infrastructure deal detected)"
                         total_score += 0.3 # Boost for milestone 2.2 energy moat
-                    
+
                     # EVENT-DRIVEN THEMATIC OPTIMIZATION: Energy
                     # If score is very high and it's a structural news event, trigger the ThematicAgent
                     if total_score > 1.0:
                         self._trigger_thematic_update(
-                            event_text=f"{result.get('title')} - {result.get('snippet')}", 
-                            theme_key="ai_energy_tickers", 
+                            event_text=f"{result.get('title')} - {result.get('snippet')}",
+                            theme_key="ai_energy_tickers",
                             current_state=ai_energy_tickers
                         )
-                    
+
                 # Scenario Logic: Physical AI Transformation (Milestone 2.3)
                 # Dynamic Physical AI Tickers
                 physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
@@ -1217,7 +1217,7 @@ class SentinelService:
                                 physical_ai_tickers = self.settings_service.get_setting("physical_ai_tickers")
                     except Exception as e:
                         logger.error(f"Failed to bootstrap Physical AI tickers: {e}")
-                        
+
                     if not physical_ai_tickers:
                         physical_ai_tickers = ["TSLA", "NVDA", "BDX", "PLTR", "UBER"]
                         self.settings_service.save_setting("physical_ai_tickers", physical_ai_tickers)
@@ -1228,25 +1228,25 @@ class SentinelService:
                         physical_ai_tickers = json.loads(physical_ai_tickers)
                     except json.JSONDecodeError:
                         physical_ai_tickers = [t.strip() for t in physical_ai_tickers.split(',')]
-                        
+
                 has_physical_ai = any(keyword in result.get('title', '').lower() + result.get('snippet', '').lower() for keyword in ["fsd", "humanoid", "robotaxi", "optimus", "autonomous driving", "industrial automation"])
                 if has_physical_ai:
                     if ticker in physical_ai_tickers:
                         scenario_note += " 🤖 (Physical AI Catalyst: Advancement in autonomous robotics or self-driving technology)"
                         total_score += 0.3 # Boost for milestone 2.3 physical AI moat
-                    
+
                     # EVENT-DRIVEN THEMATIC OPTIMIZATION: Physical AI
                     if total_score > 1.0:
                         self._trigger_thematic_update(
-                            event_text=f"{result.get('title')} - {result.get('snippet')}", 
-                            theme_key="physical_ai_tickers", 
+                            event_text=f"{result.get('title')} - {result.get('snippet')}",
+                            theme_key="physical_ai_tickers",
                             current_state=physical_ai_tickers
                         )
-                
+
                 if total_score > best_score:
                     best_score = total_score
                     best_summary = f"{result.get('title', 'N/A')} (關鍵字: {kw_summary}){scenario_note}"
-                    
+
         return best_score, best_summary
 
     # ──────────────────────────────────────────
@@ -1261,7 +1261,7 @@ class SentinelService:
         try:
             macro = self.market_service.get_macro_data()
             economics = macro.get("economics", {})
-            
+
             # Check Fed Funds Rate trend
             fed = economics.get("FedFunds", {})
             # "trend == Up" is a STATE that stays true until the next FOMC move; alert once per
@@ -1276,7 +1276,7 @@ class SentinelService:
                     "value": fed.get('value'),
                     "priority": 2
                 })
-            
+
             # Check Yield Curve Inversion
             spread = economics.get("10Y2Y_Spread", {})
             if spread and isinstance(spread.get("value"), (int, float)):
@@ -1289,7 +1289,7 @@ class SentinelService:
                         "value": spread['value'],
                         "priority": 4 # P4: Secular Macro Trend
                     })
-            
+
             # Check VIX from market indicators as supplementary
             market = macro.get("market_indicators", {})
             vix = market.get("^VIX", 0)
@@ -1370,7 +1370,7 @@ class SentinelService:
                             })
                 except Exception as strat_err:
                     logger.warning(f"Strategy registry matching failed in sentinel: {strat_err}")
-                
+
         except Exception as e:
             logger.warning(f"Macro shift check failed: {e}")
         return triggers
@@ -1560,7 +1560,7 @@ class SentinelService:
 
         # [T4] Batching logic for P0 / immediate escalation
         immediate_triggers = []
-        
+
         for t in triggers:
             trigger_id = t.get("id", "")
 
@@ -1573,7 +1573,7 @@ class SentinelService:
             # v5.4.1 Cost Optimization: Semantic/Response Caching
             pending = await self._redis_buffer.all_pending(self.user_id)
             already_buffered_trigger = next((b for b in pending if b.get("id") == trigger_id), None)
-            
+
             if already_buffered_trigger:
                 t["priority"] = already_buffered_trigger.get("priority", 3)
                 t["target_agent"] = already_buffered_trigger.get("target_agent", "CIO")
@@ -1608,7 +1608,7 @@ class SentinelService:
                         "current_vix": rounded_vix
                     }
                     eval_res_str = await self._call_agent_llm("Sentinel", context, tier="fast")
-                    
+
                     # Parse response
                     try:
                         eval_res = json.loads(eval_res_str)
@@ -1665,7 +1665,7 @@ class SentinelService:
             priority = t.get("priority", 3)
             wait_key = f"P{priority}"
             wait_mins = int(self.priority_minutes.get(wait_key, 240))
-            
+
             added = await self._redis_buffer.add(self.user_id, t, wait_mins)
             if added:
                 logger.debug("Sentinel: Buffered trigger to Redis (P%d).", int(priority))
@@ -1699,7 +1699,7 @@ class SentinelService:
                     logger.warning(f"Sentinel: Force-flush Redis clear error: {e}")
         else:
             to_flush = await self._redis_buffer.flush_due(self.user_id)
-        
+
         if to_flush:
             logger.info(f"Sentinel: Flushing {len(to_flush)} trigger(s) from Redis buffer.")
             await self._do_send_alert(to_flush, source=source)
@@ -1763,7 +1763,7 @@ class SentinelService:
         for t in triggers:
             trigger_id = t.get("id", "generic")
             display_text = t.get("text", "Unknown signal")
-            
+
             # v6.1 Pending Order Guard: Suppress trigger if a pending order exists for this ticker
             ticker = council_halt_gate.trigger_ticker(t)
             if council_halt_gate.skip_for_halt(t, ticker, self.transaction_service, self.repo, user_id):
@@ -1776,7 +1776,7 @@ class SentinelService:
                     _safe_trig_id, _safe_ticker
                 )
                 continue
-            
+
             # Use signal_id for 24h suppression
             if self.repo.is_duplicate_alert(title="", content="", hours=24, signal_id=trigger_id):
                 # VIX specific threshold re-trigger logic
@@ -1785,10 +1785,10 @@ class SentinelService:
                     current_vix = t.get("value", 0)
                     std_dev = t.get("std_dev", 1.0) # Fallback to 1.0 if missing
                     multiplier = self.thresholds.get("vix_suppression_sigma_mult", 1.5)
-                    
+
                     # Calculate dynamic gap: sigma * multiplier
                     dynamic_gap = std_dev * multiplier
-                    
+
                     if abs(current_vix - last_vix) < dynamic_gap:
                         logger.info(  # nosec B601 - logging math values (sigma, multiplier, gap); no sensitive data
                             "Sentinel: Suppressing VIX alert (Dynamic Gap: %.2f derived from σ=%.2f * m=%.1f. Move was %.2f)",
@@ -1799,7 +1799,7 @@ class SentinelService:
                 else:
                     logger.info("Sentinel: Suppressing duplicate signal")
                     continue
-            
+
             filtered_triggers.append(t)
 
         # 1.5. Sliding-window alert debounce (Phase 63)
@@ -1828,26 +1828,26 @@ class SentinelService:
             return 3
 
         max_priority = min([_resolve_trigger_priority(t) for t in filtered_triggers]) # Lower is higher priority
-        
+
         topic = f"{source.upper()} P{max_priority} ALERT: {'; '.join(display_texts[:3])}"
         if len(display_texts) > 3:
             topic += "..."
-        
+
         logger.info(f"Sentinel: Escalating {len(filtered_triggers)} trigger(s) (P{max_priority}) from {redact_secrets(source)}")
-        
+
         # v9.1: Trigger-Aware Council Prompt
         # Each trigger type gets a focused prompt instead of a generic evaluation request.
         # This prevents Council from producing off-topic weekly reports for specific alerts.
         trigger_types = set(t.get("trigger_type", "generic") for t in filtered_triggers)
-        
+
         has_excess_cash   = any("cash_ratio_high" in t.get("id", "") for t in filtered_triggers) or source == "Excess Cash" or "cash" in trigger_types
         has_news_trigger  = "news" in trigger_types
         has_price_trigger = "price_move" in trigger_types
         has_risk_trigger  = "risk" in trigger_types or any("vix" in t.get("id", "").lower() for t in filtered_triggers)
         has_allocation_drift = "allocation_drift" in trigger_types
-        
+
         msg_prefix = "請針對以下多個 Sentinel 警報進行彙整與風險評估，並以繁體中文 (Traditional Chinese) 提供一份簡短且具備行動建議的摘要。金融專業術語請保留英文。"
-        
+
         if has_excess_cash:
             wishlist_str = ""
             user_id = self.settings_service.user_id or self.user_id
@@ -1871,7 +1871,7 @@ class SentinelService:
                 f"1. 第一優先序從用戶的 Wishlist 尋找合適標的 (候選: {wishlist_str if wishlist_str else '無'})。\n"
                 "2. 第二優先序從具潛力的板塊（如 AI Energy, Physical AI）尋找標的。\n"
             )
-            
+
             # v8.5: Contrarian Greed Philosophy
             vix_data = self.market_service.get_macro_data().get("market_indicators", {})
             vix = vix_data.get("^VIX", 20.0)
@@ -1899,7 +1899,7 @@ class SentinelService:
                 "⚠️ **重要：Ticker 欄位必須是券商可交易代號。** 嚴禁建議買入 'Cash' 或 'T-Bills'。Confidence 分數將決定是否自動執行。\n"
                 "請以繁體中文 (Traditional Chinese) 撰寫，專業術語保留英文。"
             )
-        
+
         elif has_news_trigger:
             # v9.1: News alert — inject exact trigger content and FORCE an action decision
             news_texts = "\n".join(f"- {t.get('text', '')}" for t in filtered_triggers if t.get("type") in ["news", "breaking_news"] or "news" in t.get("id", ""))
@@ -1913,7 +1913,7 @@ class SentinelService:
                 "若選擇 [觀察等待] 或 [忽略]，請說明理由（1-2 句）並指出此事件未來需要監控的條件。\n"
                 "請以繁體中文撰寫，專業術語保留英文。"
             )
-        
+
         elif has_price_trigger:
             # v9.1: Price-move alert — demand explicit hold/trim/add decision
             price_texts = "\n".join(f"- {t.get('text', '')}" for t in filtered_triggers if "move" in t.get("id", ""))
@@ -1924,7 +1924,7 @@ class SentinelService:
                 "若有操作，請輸出 Actionable Orders 表格。若選擇持有，請說明理由與停損條件。\n"
                 "請以繁體中文撰寫，專業術語保留英文。"
             )
-        
+
         elif has_risk_trigger:
             # v9.1: Risk alert — focus on portfolio risk, not generic market observation
             msg_prefix = (
@@ -1956,7 +1956,7 @@ class SentinelService:
             "timestamp": date.today().isoformat(),
             "msg_prefix": msg_prefix,
         }
-        
+
         # Council Deliberation:
         # P3 routine news alerts and routine excess cash alerts bypass expensive multi-agent Council debate.
         # Actionable triggers, price moves, risk spikes, and manual escalations proceed to Council.
@@ -1981,8 +1981,8 @@ class SentinelService:
                 council_timeout = float(os.getenv("SENTINEL_COUNCIL_TIMEOUT_SECONDS", "180.0"))
                 summary = await asyncio.wait_for(
                     self.council_service.start_session(
-                        topic, 
-                        context, 
+                        topic,
+                        context,
                         market_volatility=self.current_vix,
                         user_id=user_id,
                         mode="sentinel"
@@ -2005,7 +2005,7 @@ class SentinelService:
                     "目前無法取得 AI 委員會的即時評估（可能是內部組件初始化失敗或 LLM API 連線問題）。\n"
                     "請根據下方原始觸發訊號進行判斷。"
                 )
-        
+
         is_extreme = any(t.get("level") == "CRITICAL" for t in filtered_triggers) or self.current_vix > 35
 
         # Format Notification (Improved UX / Clean Structured Layout)
@@ -2031,9 +2031,9 @@ class SentinelService:
         # Only P0+Actionable events trigger immediate notification.
         target_user = self.settings_service.user_id or self.user_id or "broadcast"
         actions = []
-        
+
         is_actionable = any(kw in decision.lower() for kw in ["sell", "reduce", "trim", "buy", "exit", "hedge"])
-        
+
         # [Significance Filter v3.5]
         is_significant = is_actionable or is_extreme or "⚠️" in decision or "danger" in decision.lower()
 
@@ -2053,7 +2053,7 @@ class SentinelService:
         if is_extreme or is_significant:
             from src.services.event_aggregator import EventAggregator
             aggregator = EventAggregator()
-            
+
             if is_actionable and is_extreme:
                 tier = "P0"
                 priority = 100
@@ -2091,7 +2091,7 @@ class SentinelService:
                 actions=actions,
                 category="sentinel"
             )
-        
+
         # 🚨 Auto-hedging / Emergency Liquidation (Milestone 5.1)
         if is_extreme and any(kw in decision.lower() for kw in ["liquidate", "hedge", "panic", "emergency"]):
             # Run in background to avoid blocking notification flow
@@ -2111,11 +2111,11 @@ class SentinelService:
         else:
             from src.agents.skills.skill_loader import SkillLoader
             loader = SkillLoader(user_id=target_user)
-            
+
             trigger_types_set = set(t.get('type', '') for t in filtered_triggers)
             has_any_news = any('news' in tt or 'breaking' in tt for tt in trigger_types_set) or \
                            any('news' in t.get('id', '') for t in filtered_triggers)
-            
+
             if has_any_news:
                 # Spawn background EventAnalysis research for each news ticker
                 for t in filtered_triggers:
@@ -2136,7 +2136,7 @@ class SentinelService:
                                 council_summary=decision[:500],
                             )
                         )
-        
+
         # Always store alert insight to cognitive_memories (independent of action path)
         # This ensures every alert outcome is captured for future reflection
         from src.agents.skills.skill_loader import SkillLoader
@@ -2163,7 +2163,7 @@ class SentinelService:
             from src.services.transaction_service import TransactionService
             target_user = self.settings_service.user_id or self.user_id or "broadcast"
             loader = SkillLoader(user_id=target_user)
-            
+
             # Build portfolio context for ActionExtractor
             portfolio_str = ""
             try:
@@ -2173,17 +2173,17 @@ class SentinelService:
                     portfolio_str = ", ".join([f"{t}({d.get('quantity', 0)})" for t, d in holdings.items()])
             except Exception as he:
                 logger.warning(f"Failed to get portfolio context for ActionExtractor: {he}")
-            
+
             # Skillified: Pass as arguments to the skill
             trades_json = await loader.run_skill(
-                "extract_actions", 
+                "extract_actions",
                 user_id=target_user,
                 decision_text=decision,
                 portfolio=portfolio_str
             )
             raw_trades = json.loads(trades_json)
             signals = []
-            
+
             for trade in raw_trades:
                 ticker = str(trade.get("ticker", "")).upper()
                 action = str(trade.get("action", "")).upper()
@@ -2196,14 +2196,14 @@ class SentinelService:
                         "intent": str(trade.get("intent", "auto")),
                         "reason": str(trade.get("reason", f"Sentinel Council: {decision[:120]}..."))
                     })
-                    
+
             if signals:
                 logger.info(f"Sentinel: Extracted {len(signals)} AI trade signals from Council decision.")
             else:
                 logger.info("Sentinel: No AI trade signals extracted from Council decision.")
-                
+
             return signals
-            
+
         except Exception as e:
             logger.error(f"Sentinel: AI Trade extraction failed: {e}")
             return []
@@ -2413,13 +2413,13 @@ class SentinelService:
         """[T3] Direct dispatch using NSM (no microservice, no hardcoded channels)."""
         from src.services.notification_service import NotificationService
         from src.services.notification_settings_manager import NotificationSettingsManager
-        
+
         try:
             target_user = self.settings_service.user_id or self.user_id or "broadcast"
             # [T2] Query user's preferred channels from DB (no hardcoding)
             nsm = NotificationSettingsManager(settings_repo=self.settings_service.settings_repo, user_id=target_user)
             user_channels = nsm.get_active_notification_channels()
-            
+
             # Absolute minimum fallback if nothing configured
             if not user_channels:
                 user_channels = ["web"]
@@ -2428,7 +2428,7 @@ class SentinelService:
             notification_svc = NotificationService.create_with_settings(
                 settings_service=settings_svc, user_id=target_user
             )
-            
+
             await notification_svc.notify_all(
                 title=title,
                 content=content,
@@ -2447,12 +2447,12 @@ class SentinelService:
         針對所有持倉發送清倉建議，並可選擇買入避險 ETF。
         """
         if user_id == "broadcast":
-             # For broadcast, we need to iterate actual real users. 
+             # For broadcast, we need to iterate actual real users.
              # Safe fallback: retrieve all active users.
              users = self._get_all_user_ids()
         else:
              users = [user_id]
-             
+
         # WP5b: notify-only by default. Unknown / unreadable value => notify.
         # WP5b：預設只通知；未知或讀取失敗一律視為 notify。
         mode = "notify"
@@ -2495,39 +2495,39 @@ class SentinelService:
         try:
             from src.services.automated_trading_service import AutomatedTradingService
             from src.services.transaction_service import TransactionService
-            
+
             auto_trade_svc = AutomatedTradingService()
             tx_service = TransactionService()
-            
+
             for uid in users:
                 # [NEW] Fetch dynamic scores from settings (Milestone 13.2)
                 emergency_score = int(self.settings_service.get_setting("emergency_liquidation_score", 9, user_id=uid) or 9)
                 hedge_score = int(self.settings_service.get_setting("auto_hedge_score", 8, user_id=uid) or 8)
-                
+
                 active_tickers = tx_service.get_user_tickers(user_id=uid, only_active=True)
                 if not active_tickers:
                      continue
-                
+
                 # Dynamic quantity: query actual holdings per ticker
                 holdings_map = tx_service.get_holdings_map(uid)
-                     
+
                 for ticker in active_tickers:
                     # Get actual holding quantity for this ticker
                     holding_qty = holdings_map.get(ticker, {}).get('quantity', 0)
                     if holding_qty <= 0:
                         logger.info(f"Emergency: Skipping {redact_secrets(ticker)} for {redact_pii(uid)}, no active holdings.")
                         continue
-                    
+
                     # 發送清倉建議 (使用實際持倉量)
                     await auto_trade_svc.evaluate_and_execute_trade(
                         user_id=uid,
                         ticker=ticker,
                         action="SELL",
                         quantity=holding_qty,  # 動態計算：使用實際持倉量
-                        confidence_score=emergency_score, 
+                        confidence_score=emergency_score,
                         rationale=f"🚨 Sentinel 緊急防禦機制啟動 (Emergency Liquidation)。\n判定: {rationale[:100]}..."
                     )
-                    
+
                 # 附帶建議：自動對沖 (Buy SQQQ for Nasdaq hedge)
                 # Use position_sizing skill logic for hedge amount
                 hedge_amount = float(self.settings_service.get_setting("emergency_hedge_amount", 50.0, user_id=uid) or 50.0)
@@ -2536,7 +2536,7 @@ class SentinelService:
                     ticker="SQQQ",
                     action="BUY",
                     quantity=hedge_amount,
-                    confidence_score=hedge_score, 
+                    confidence_score=hedge_score,
                     rationale=f"🚨 Sentinel 自動對沖機制啟動 (Auto-Hedging)。建議建立 SQQQ 避險。"
                 )
         except Exception as e:
@@ -2581,16 +2581,16 @@ class SentinelService:
                 v_high = float(closes.quantile(0.90))
                 v_extreme = float(closes.quantile(0.975))
                 v_sigma = float(closes.std())
-                
+
                 self.repo.update_threshold("vix_high", round(v_high, 2), "System-Stats", "90th percentile (252d)")
                 self.repo.update_threshold("vix_extreme", round(v_extreme, 2), "System-Stats", "97.5th percentile (252d)")
                 self.repo.update_threshold("vix_spike_sigma", 2.5, "System-Stats", "Fixed Sigma Standard") # Keep sigma for now
-                
+
                 logger.info(f"Sentinel: Calibrated VIX thresholds (High: {v_high:.2f}, Extreme: {v_extreme:.2f})")
 
             # Position Moves (Adaptive based on SPY volatility or fixed quantiles)
             # Defaulting to -5.0%/8.0% as statistically 'rare' events, but could be tuned here.
-            
+
             # Sync back
             self.thresholds = self.repo.get_all_thresholds()
         except Exception as e:
@@ -2688,11 +2688,11 @@ class SentinelService:
         """
         triggers = []
         settings = self.settings_service.get_all_settings()
-        
+
         # Sources identified in the Matrix that support polling
         from src.config.data_source_matrix_config import get_pollable_sources
         pollable_sources = get_pollable_sources()
-        
+
         for sid in pollable_sources:
             if settings.get(f"source_{sid}_enabled") == "true":
                 try:
@@ -2704,7 +2704,7 @@ class SentinelService:
                         triggers.append(res)
                 except Exception as e:
                     logger.error(f"Polling failed for {redact_secrets(sid)}: {e}")
-        
+
         return triggers
 
     async def _poll_single_source(self, sid: str, settings: Dict[str, str]) -> Any:
@@ -2728,7 +2728,7 @@ class SentinelService:
                         }
             except Exception as e:
                 logger.warning(f'Exception in sentinel_service.py: {e}', exc_info=True)
-        
+
         # Tiingo Integration (v5.0) - Event-Driven News Scanning
         elif sid == "tiingo":
             try:
@@ -2801,25 +2801,25 @@ class SentinelService:
                 return triggers if triggers else None
             except Exception as e:
                 logger.error(f"AlphaVantage polling failed: {e}")
-                
+
         # Readwise Integration
         elif sid == "readwise":
             try:
                 from src.services.readwise_service import ReadwiseService
                 readwise_svc = ReadwiseService(user_id=self.user_id)
                 last_sync = self.settings_service.get_setting("readwise_last_sync")
-                
+
                 # Fetch highlights in background thread
                 loop = asyncio.get_event_loop()
                 analyzed = await loop.run_in_executor(
-                    None, 
+                    None,
                     lambda: readwise_svc.fetch_and_analyze_highlights(updated_after=last_sync)
                 )
-                
+
                 if analyzed:
                     from datetime import datetime, timezone
                     self.settings_service.save_setting("readwise_last_sync", datetime.now(timezone.utc).isoformat())
-                    
+
                     rw_triggers = []
                     for item in analyzed:
                         analysis = item.get("analysis", {})
@@ -2832,7 +2832,7 @@ class SentinelService:
                     return rw_triggers
             except Exception as e:
                 logger.error(f"Readwise polling failed: {e}")
-                
+
         return None
 
     def _trigger_thematic_update(self, event_text: str, theme_key: str, current_state: Any) -> None:
@@ -2856,7 +2856,7 @@ class SentinelService:
                 # 若當前執行度無事件迴圈，則建立新的
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                
+
             # PAD Phase 2: Schedule async task instead of thread executor
             asyncio.ensure_future(self._call_agent_llm("Thematic", context, tier="smart"))
         except Exception as e:
@@ -2869,34 +2869,34 @@ class SentinelService:
         """
         triggers = []
         uid = self.user_id
-        
+
         if not uid:
             logger.debug("_check_risk_consistency: skipped (no user_id)")
             return triggers
-        
+
         # 0. Get Inflation Data via FredService (Optimized: fetch once per check)
         from src.services.fred_service import FredService
         fred = FredService(user_id=self.user_id)
         macro_data = fred.get_macro_indicators()
         cpi_data = macro_data.get("CPI", {})
         inflation_rate = 0.03 # Default 3% if missing
-        
+
         if cpi_data:
             history = cpi_data.get("history", [])
             if len(history) >= 12:
                 # Simple YoY approximation
                 inflation_rate = (history[0] - history[-1]) / history[-1]
-        
+
         # 1. Get Risk Profile
         profile = self.settings_service.get_setting("risk_profile", "Balanced", user_id=uid)
-        
+
         # 2. Get Latest Snapshot from persistent repo
         latest = self.snapshot_repo.get_latest_by_user(uid)
-        
+
         if latest is not None:
             latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
             lev = latest_dict.get("leverage_ratio", 0.0)
-            
+
             # Check Balanced Profile vs 1.8x leverage (v5.1: Increased from 1.7x)
             threshold = 1.80
             if profile == "Balanced":
@@ -2905,8 +2905,8 @@ class SentinelService:
                 trend_val = self._get_market_trend("SPY")
                 trend = await trend_val if inspect.isawaitable(trend_val) else trend_val
                 vix_data = self.market_service.get_macro_data().get("market_indicators", {})
-                vix = vix_data.get("^VIX", 20.0) 
-                
+                vix = vix_data.get("^VIX", 20.0)
+
                 if trend == "Bullish" and vix < 22:
                     threshold = 2.00
                     # Additional text for expansion
@@ -2926,23 +2926,23 @@ class SentinelService:
                     alert_text = f"⚠️ Risk Mapping Alert: Your 'Balanced' profile leverage is {lev:.2f}x (Max Allowed: {threshold:.2f}x).{alert_suffix}"
                     if is_cash_high:
                         alert_text += " [Efficiency Advice]: High leverage detected while holding excess cash. Consider 'Rolling' positions: reduce lower-confidence leverage to reinvest in higher-quality or defensive assets to maintain exposure safely."
-                    
+
                     triggers.append({
                         "id": f"risk_consistency_{uid}",
                         "text": alert_text,
                         "severity": "high",
                         "type": "risk_consistency"
                     })
-        
+
         # 3. Dynamic Cash Ratio Check (v5.0)
         target_cash_base = float(self.settings_service.get_setting("target_cash_ratio", 0.1, user_id=uid))
         inflation_mod = 1 + max(0, inflation_rate)
-        
+
         vix_triggers = self._check_vix_anomaly()
         vix_multiplier = 1.0
         if any(("VIX Spike" in t.get("text", "") or "VIX Spiked" in t.get("text", "")) for t in vix_triggers):
             vix_multiplier = 1.5
-        
+
         final_target_cash = target_cash_base * inflation_mod * vix_multiplier
 
         # v11.0: Cross-Asset Macro Volatility Hedging Dynamic Cash Integration
@@ -2960,7 +2960,7 @@ class SentinelService:
                 final_target_cash = max(final_target_cash, hedge_eval.target_cash_ratio)
         except Exception as hedge_err:
             logger.debug(f"Sentinel: Macro hedging dynamic cash integration skipped: {hedge_err}")
-        
+
         actual_cash_ratio = 0.0
         if latest is not None:
             latest_dict = latest if isinstance(latest, dict) else latest.to_dict()
@@ -2991,7 +2991,7 @@ class SentinelService:
                 "severity": "medium",
                 "type": "cash_management"
             })
-        
+
         if actual_cash_ratio > final_target_cash * 1.5:
             # Check if disciplined batch deployment is currently active or staged
             is_batch_active = False
@@ -3123,7 +3123,7 @@ class SentinelService:
         # Add Confidence Compositor: multi-agent aggregation
         from src.services.confidence_compositor_service import CompositorService
         compositor = CompositorService(user_id=self.user_id)
-        
+
         # 2026-08-11: excess_cash bounded by tradable capital. The compositor
         # allocates a fraction of whatever it is handed, so passing the real
         # excess (~$400) would let it size positions far past the $100 mandate
@@ -3144,19 +3144,19 @@ class SentinelService:
             cash_ratio=cash_ratio,
             target_cash_ratio=target_ratio,
         )
-        
+
         logger.info(
             "Sentinel: Compositor returned %d decisions (execute=%d, skip=%d)",
             len(decisions),
             sum(1 for d in decisions if d["should_execute"]),
             sum(1 for d in decisions if not d["should_execute"]),
         )
-        
+
         # Execute only decisions that pass threshold
         try:
             from src.services.automated_trading_service import AutomatedTradingService
             auto_trade_svc = AutomatedTradingService()
-            
+
             for decision in decisions:
                 if not decision["should_execute"]:
                     logger.info(
@@ -3164,11 +3164,11 @@ class SentinelService:
                         decision["ticker"], decision["composite_score"],
                     )
                     continue
-                
+
                 cand = decision["candidate"]
                 ticker = decision["ticker"]
                 amount = decision["allocated_amount"]
-                
+
                 # Build confidence breakdown for rationale
                 sub_scores = decision.get("breakdown", [])
                 breakdown = " | ".join([f"{s['agent']}:{s['confidence']:.1f}" for s in sub_scores[:3]])
@@ -3177,7 +3177,7 @@ class SentinelService:
                     f"Composite: {decision['composite_score']:.1f}/10 | "
                     f"Breakdown: {breakdown}"
                 )
-                
+
                 await auto_trade_svc.evaluate_and_execute_trade(
                     user_id=self.user_id,
                     ticker=ticker,
@@ -3274,11 +3274,11 @@ class SentinelService:
                     continue
                 if trigger.get("action") != "trigger_rebalance":
                     continue
-                
+
                 ticker = trigger.get("ticker")
                 sell_qty = trigger.get("sell_quantity")
                 rationale = trigger.get("rationale", "[Sentinel Rebalance] Concentration Risk detected.")
-                
+
                 if not ticker or not sell_qty or sell_qty < 0.01:
                     logger.debug(f"Sentinel: Skipping rebalance for {ticker} (qty: {sell_qty})")
                     continue
@@ -3286,7 +3286,7 @@ class SentinelService:
                 logger.warning(
                     f"Sentinel Rebalancing Execution: {ticker} | Selling {sell_qty} units | Reason: {rationale}"
                 )
-                
+
                 # 2026-08-10: this passed confidence_score=100, which
                 # normalizes to 10.0 and always cleared the auto-execute bar —
                 # every concentration rebalance liquidated part of a real
@@ -3341,7 +3341,7 @@ class SentinelService:
     async def _check_infrastructure_health(self) -> List[Dict[str, Any]]:
         """
         [Phase 9] Dimension 9: Infrastructure Health Watchdog.
-        Monitors database and background worker health. If pressure is too high, 
+        Monitors database and background worker health. If pressure is too high,
         attempts self-healing or raises an alert.
         """
         triggers = []
@@ -3406,20 +3406,20 @@ class SentinelService:
 
         except Exception as e:
             logger.error(f"Infrastructure Health Check Failed: {e}")
-            
+
         return triggers
-    
+
     # ──────────────────────────────────────────
     # Dimension 10: Allocation Drift Detection (v10.0)
     # ──────────────────────────────────────────
-    
+
     async def _check_allocation_drift(self) -> List[Dict[str, Any]]:
         """
         Dimension 10: Allocation Drift Check
         v10.1: Concentration Risk Mode. Uses max_single_position_weight instead of fixed targets.
         """
         triggers = []
-        
+
         try:
             # 1. Get current allocation
             current_allocation = await self._get_current_allocation()
@@ -3434,9 +3434,9 @@ class SentinelService:
 
             max_single_weight = self.settings_service.get_setting('max_single_position_weight', 25.0, self.user_id)
             # Rebalance target is slightly below max to prevent frequent oscillations
-            target_rebalance_weight = max_single_weight * 0.9  
+            target_rebalance_weight = max_single_weight * 0.9
             warning_threshold = max_single_weight * 0.85
-            
+
             # 3. Calculate total portfolio value for quantity math
             # 2026-08-11: bounded by tradable capital so concentration weights
             # are measured against the mandate this loop actually has ($100),
@@ -3514,7 +3514,7 @@ class SentinelService:
                 if _is_core_c(ticker):
                     continue   # the benchmark core is meant to be large (mission: >= 70% of tradable capital)
                 current_weight = info.get('weight', 0)
-                
+
                 if current_weight >= max_single_weight:
                     # Calculate amount to sell to reach target_rebalance_weight
                     # (current_weight - target_rebalance_weight) / 100 * total_portfolio_value = USD to sell
@@ -3523,7 +3523,7 @@ class SentinelService:
                         weight_diff = current_weight - target_rebalance_weight
                         usd_to_sell = (weight_diff / 100.0) * total_portfolio_value
                         shares_to_sell = round(usd_to_sell / current_price, 2) # v6.0 Fractional rounding
-                        
+
                         if shares_to_sell >= 0.01:
                             triggers.append({
                                 'id': f'concentration_risk_critical_{ticker}',
@@ -3546,12 +3546,12 @@ class SentinelService:
                                 'timestamp': pd.Timestamp.now().isoformat()
                             })
                             logger.warning(f"[Concentration Risk] CRITICAL: {ticker} weight={current_weight:.1f}% -> Selling {shares_to_sell} units")
-                
+
                 elif current_weight >= warning_threshold:
                     logger.info(f"[Concentration Risk] WARNING: {ticker} approaching limit: {current_weight:.1f}% (limit={max_single_weight:.1f}%)")
-            
+
             return triggers
-            
+
         except Exception as e:
             logger.error(f"Error in allocation drift check: {e}", exc_info=True)
             return []
@@ -3559,7 +3559,7 @@ class SentinelService:
     async def _get_current_allocation(self) -> Dict[str, Dict[str, float]]:
         """
         獲取當前投資組合配置（按權重 %），使用券商即時數據。
-        
+
         Returns:
             {ticker: {shares, weight, market_value, current_price}}
         """
@@ -3568,7 +3568,7 @@ class SentinelService:
             from src.services.portfolio_aggregator_service import PortfolioAggregatorService
             aggregator = PortfolioAggregatorService(user_id=self.user_id)
             portfolio_data = await aggregator.get_aggregated_portfolio()
-            
+
             positions = portfolio_data.get('positions', [])
             total_equity = portfolio_data.get('total_equity', 0.0)
 
@@ -3590,7 +3590,7 @@ class SentinelService:
                     'current_price': p.current_price,
                     'avg_price': p.open_price
                 }
-            
+
             logger.debug(f"Sentinel: Live allocation retrieved: {allocation}")
             return allocation
         except Exception as e:
@@ -3619,7 +3619,7 @@ class SentinelService:
                 total_stock_value += p['market_value']
 
             portfolio_value = total_stock_value + cash
-            
+
             allocation = {}
             for p in positions:
                 weight = (p['market_value'] / portfolio_value) * 100 if portfolio_value > 0 else 0
@@ -3638,20 +3638,20 @@ class SentinelService:
     async def _calculate_total_portfolio_value(self) -> float:
         """
         計算投資組合總價值（包括現金），複用 allocation 邏輯以獲取即時價格。
-        
+
         Returns:
             Total portfolio value in USD
         """
         try:
             allocation = await self._get_current_allocation()
             cash = self.transaction_service.get_cash_balance(self.user_id)
-            
+
             total_stock_value = sum(v.get('market_value', 0) for v in allocation.values())
             total_portfolio = total_stock_value + cash
-            
+
             logger.debug(f"Portfolio value calculation: stocks={total_stock_value:.2f}, cash={cash:.2f}, total={total_portfolio:.2f}")
             return total_portfolio
-            
+
         except Exception as e:
             logger.error(f"Error calculating portfolio value: {e}", exc_info=True)
             return 0.0
@@ -3768,7 +3768,7 @@ class SentinelService:
         """
         Dimension 11: Active Position Exit Check
         主動監控所有持倉之停損、停利與多因子出場訊號。
-        
+
         Evaluates active holdings against:
         1. Hard Stop-Loss (default 8%): return_pct <= -stop_loss_pct
         2. Hard Take-Profit (default 20%): return_pct >= take_profit_pct
@@ -4993,5 +4993,3 @@ class SentinelService:
                 continue
 
             logger.info(f"[Sentinel Factor Drift] Telemetry logged: {trigger.get('text')}")
-
-
