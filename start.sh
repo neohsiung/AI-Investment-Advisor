@@ -65,7 +65,8 @@ function show_help {
     echo "  logs [svc]    Follow logs (all services, or one)."
     echo "  health        Check the deployment. Exits non-zero when unhealthy."
     echo "  migrate       Apply database migrations."
-    echo "  backup        Dump the database and config to backups/."
+    echo "  backup        Dump the database (gzip) and config to backups/; keeps the newest"
+    echo "                DEPLOY_BACKUP_KEEP groups (default 5, 0 = keep all)."
     echo "  restore [id]  Restore database and config from a backup in backups/."
     echo "  upgrade       Pull, migrate, restart, and health-gate the result."
     echo "  wizard        Run the interactive onboarding and cost-profile wizard."
@@ -413,11 +414,11 @@ function show_health {
 function run_migrations {
     echo "=== Running Database Migrations & Alignment ==="
     check_env
-    
+
     # 1. Detect environment by running containers
     local target_container=""
     local target_db=""
-    
+
     if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
         echo "Detected: Production Environment"
         target_container="advisor_prod_api"
@@ -574,11 +575,26 @@ function cmd_backup {
         db_name="${db_name:-advisor_prod}"
     fi
 
-    docker exec "$PROD_DB" pg_dump -U "${DB_USER:-postgres}" "$db_name" \
-        > "backups/db-${ts}.sql"
+    # gzip-compressed plain SQL, written to .partial and kept only if the pg_dump trailer is present. Before this a
+    # failed dump was left under the final name (one 9 MB truncated db-*.sql exists from 2026-10-22).
+    # 以 gzip 壓縮的純 SQL；先寫 .partial，確認 pg_dump 結尾標記後才改名。之前失敗的 dump 會留在正式檔名下。
+    # shellcheck source=scripts/backup_lib.sh
+    . scripts/backup_lib.sh
+    local db_file="backups/db-${ts}.sql.gz"
+    local rcs=""
+    # No pipefail in this script, so read both exit codes from PIPESTATUS. `|| true` keeps set -e from exiting before
+    # the partial file is removed. / 沒有 pipefail，用 PIPESTATUS 讀兩邊結束碼；`|| true` 讓失敗時仍能清掉暫存檔。
+    { docker exec "$PROD_DB" pg_dump -U "${DB_USER:-postgres}" "$db_name" | gzip -6 > "${db_file}.partial"
+      rcs="${PIPESTATUS[*]}"; } || true
+    if [ "${rcs}" != "0 0" ] || ! verify_sql_gz "${db_file}.partial"; then
+        rm -f "${db_file}.partial"
+        echo "❌ Database dump failed or is incomplete (exit codes: ${rcs}); no backup written."
+        return 1
+    fi
+    mv "${db_file}.partial" "${db_file}"
     local db_size
-    db_size=$(du -h "backups/db-${ts}.sql" | cut -f1)
-    echo "  ✓ backups/db-${ts}.sql (${db_size})"
+    db_size=$(du -h "${db_file}" | cut -f1)
+    echo "  ✓ ${db_file} (${db_size})"
 
     # config/ holds workflow, agent and settings manifests that the UI writes —
     # product state, not source. A database dump alone would not restore it.
@@ -601,13 +617,19 @@ function cmd_backup {
   "database": "${db_name}",
   "git_commit": "${git_sha}",
   "files": {
-    "db": "db-${ts}.sql",
+    "db": "db-${ts}.sql.gz",
     "config": "config-${ts}.tar.gz",
     "env": "env-${ts}.bak"
   }
 }
 EOF
     echo "  ✓ backups/manifest-${ts}.json"
+
+    # Retention runs only after this group is complete. Milestone dumps (pre-m*) and nightly dumps are never touched.
+    # A pruning problem must not abort an upgrade, so it only warns.
+    # 本組完整寫完才清理；里程碑與夜間備份不碰。清理出錯只警告，不中止 upgrade。
+    prune_deploy_backups backups "${DEPLOY_BACKUP_KEEP:-5}" \
+        || echo "  ⚠️  Pruning old pre-deploy backups failed; nothing else affected."
     echo "✅ Backup complete. (ID: ${ts})"
 }
 
@@ -629,11 +651,13 @@ function cmd_restore {
     # Strip prefixes/suffixes if operator provided a full path
     target=$(echo "$target" | sed 's/.*db-//' | sed 's/.*config-//' | sed 's/.*manifest-//' | sed 's/\..*//')
 
-    local db_file="backups/db-${target}.sql"
+    # New backups are .sql.gz; older ones are plain .sql. / 新備份為 .sql.gz，舊備份為 .sql。
+    local db_file="backups/db-${target}.sql.gz"
+    [ -f "$db_file" ] || db_file="backups/db-${target}.sql"
     local config_file="backups/config-${target}.tar.gz"
 
     if [ ! -f "$db_file" ]; then
-        echo "❌ Database backup file not found: $db_file"
+        echo "❌ Database backup file not found: backups/db-${target}.sql.gz (or .sql)"
         return 1
     fi
 
@@ -649,7 +673,20 @@ function cmd_restore {
     fi
 
     echo "Restoring database from ${db_file}..."
-    docker exec -i "$PROD_DB" psql -U "${DB_USER:-postgres}" -d "$db_name" < "$db_file"
+    case "$db_file" in
+        *.gz)
+            local rcs=""
+            { gzip -cd "$db_file" | docker exec -i "$PROD_DB" psql -U "${DB_USER:-postgres}" -d "$db_name"
+              rcs="${PIPESTATUS[*]}"; } || true
+            if [ "$rcs" != "0 0" ]; then
+                echo "❌ Database restore failed (gzip, psql exit codes: ${rcs})."
+                return 1
+            fi
+            ;;
+        *)
+            docker exec -i "$PROD_DB" psql -U "${DB_USER:-postgres}" -d "$db_name" < "$db_file"
+            ;;
+    esac
     echo "  ✓ Database restored."
 
     if [ -f "$config_file" ]; then

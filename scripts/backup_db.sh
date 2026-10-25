@@ -16,6 +16,8 @@ export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${PATH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "${PROJECT_ROOT}" || exit 1
+# shellcheck source=scripts/backup_lib.sh
+. "${SCRIPT_DIR}/backup_lib.sh" || { echo "Backup FAILED: cannot load backup_lib.sh"; exit 1; }
 
 DB_CONTAINER="${DB_CONTAINER:-advisor_prod_db}"
 DB_NAME="${DB_NAME:-advisor_prod}"
@@ -23,7 +25,7 @@ DB_USER="${DB_USER:-postgres}"
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
 BACKUP_DIR="${PROJECT_ROOT}/backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/db_backup_${TIMESTAMP}.sql"
+BACKUP_FILE="${BACKUP_DIR}/db_backup_${TIMESTAMP}.sql.gz"
 TMP_FILE="${BACKUP_FILE}.partial"
 MARKER="${BACKUP_DIR}/BACKUP_FAILED"
 # Status file read by the weekly charter digest. The worker mounts ./config read-only but not ./backups, so the status
@@ -48,19 +50,23 @@ command -v docker >/dev/null 2>&1 || fail "docker not found in PATH (${PATH})"
 
 echo "Starting database backup for ${DB_NAME} at ${TIMESTAMP}..."
 # No -t: cron has no TTY, and a TTY would add carriage returns to the dump. / 不加 -t：cron 沒有 TTY。
-docker exec "${DB_CONTAINER}" pg_dump -U "${DB_USER}" "${DB_NAME}" > "${TMP_FILE}" 2>> "${BACKUP_DIR}/backup.err" \
-  || fail "pg_dump exited non-zero"
+# gzip on the host; plain SQL keeps restore as `gzip -cd | psql`. PIPESTATUS, because without pipefail `||` would only
+# see gzip's exit code. / 在主機端 gzip；用 PIPESTATUS 檢查 pg_dump，否則只看得到 gzip 的結束碼。
+docker exec "${DB_CONTAINER}" pg_dump -U "${DB_USER}" "${DB_NAME}" 2>> "${BACKUP_DIR}/backup.err" | gzip -6 > "${TMP_FILE}"
+rcs=("${PIPESTATUS[@]}")
+[ "${rcs[0]}" -eq 0 ] || fail "pg_dump exited non-zero (${rcs[0]})"
+[ "${rcs[1]}" -eq 0 ] || fail "gzip exited non-zero (${rcs[1]})"
 
-[ -s "${TMP_FILE}" ] || fail "dump is empty"
-tail -n 5 "${TMP_FILE}" | grep -q "PostgreSQL database dump complete" || fail "dump has no completion trailer (truncated?)"
+verify_sql_gz "${TMP_FILE}" || fail "dump is empty, not valid gzip, or has no completion trailer (truncated?)"
 
 mv "${TMP_FILE}" "${BACKUP_FILE}"
 rm -f "${MARKER}"
 write_status true "$(basename "${BACKUP_FILE}")" "$(wc -c < "${BACKUP_FILE}" | tr -d ' ')" ""
 echo "Backup successful: ${BACKUP_FILE} ($(du -h "${BACKUP_FILE}" | cut -f1))"
 
-# Retention: drop the 0-byte files the old cron left behind, and nightly dumps older than KEEP_DAYS.
-# 保留策略：清掉舊 cron 留下的 0 位元組檔，以及超過 KEEP_DAYS 天的夜間備份。
-find "${BACKUP_DIR}" -maxdepth 1 -name "db_backup_*.sql" -size 0 -delete
-find "${BACKUP_DIR}" -maxdepth 1 -name "db_backup_*.sql" -mtime +"${KEEP_DAYS}" -delete
+# Retention: drop the 0-byte files the old cron left behind, and nightly dumps older than KEEP_DAYS. Both the old
+# uncompressed `.sql` and the current `.sql.gz` names, so legacy dumps still age out.
+# 保留策略：清掉舊 cron 留下的 0 位元組檔，以及超過 KEEP_DAYS 天的夜間備份；舊的 .sql 與新的 .sql.gz 都納入。
+find "${BACKUP_DIR}" -maxdepth 1 \( -name "db_backup_*.sql" -o -name "db_backup_*.sql.gz" \) -size 0 -delete
+find "${BACKUP_DIR}" -maxdepth 1 \( -name "db_backup_*.sql" -o -name "db_backup_*.sql.gz" \) -mtime +"${KEEP_DAYS}" -delete
 echo "Old backups cleaned up (kept ${KEEP_DAYS} days)."
