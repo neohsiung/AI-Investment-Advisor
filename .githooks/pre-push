@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Hermes lane hard gate: agents may commit and open PRs, never push to a
+# protected branch. Installed into every repo/worktree a lane touches.
+#
+# Versioned copy (dev-standard §1). Install with scripts/install_git_hooks.sh, which copies it into the
+# shared .git/hooks/. core.hooksPath is deliberately NOT used: it would disable the pre-commit framework hook
+# in .git/hooks/pre-commit (secret scanners).
+# 版控正本。用 scripts/install_git_hooks.sh 複製到共用的 .git/hooks/；不設 core.hooksPath，否則 pre-commit 掃描會失效。
+#
+# Bypassing this hook (--no-verify) is itself a protocol violation: the lane
+# skills forbid it and the runner reinstalls this file on every claim.
+set -euo pipefail
+
+PROTECTED_RE='^(main|master|release/.*)$'
+
+# stdin: <local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    [ -z "${remote_ref:-}" ] && continue
+    branch="${remote_ref#refs/heads/}"
+    if [[ "$branch" =~ $PROTECTED_RE ]]; then
+        echo "pre-push: BLOCKED — pushing to protected branch '$branch' is not allowed." >&2
+        echo "pre-push: agents may push feature branches and open PRs; merging is a human action." >&2
+        exit 1
+    fi
+done
+
+if [ -f "./scripts/pre_push_check.sh" ]; then
+    ./scripts/pre_push_check.sh
+fi
+
+exit 0

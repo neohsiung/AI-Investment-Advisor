@@ -1,4 +1,5 @@
 # AGENTS.md — AI Coding Assistant Context
+
 # ═══════════════════════════════════════════════════════════════════════
 # This file follows the open AGENTS.md standard (https://agentsmd.io).
 # It provides a unified first-layer context for ALL AI coding assistants
@@ -93,6 +94,65 @@ number.
 - **Frontend**: Next.js 15 (TypeScript, in `frontend/`)
 - **Backend**: FastAPI + MCP Server (in `services/mcp_server/`)
 
+<!-- DEV-STANDARD:BEGIN v0.1.0 -->
+<!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
+## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
+
+**分支與 PR**
+- 不在 main commit、不 push main。一個任務一個分支；會寫檔的 session 或 agent 各用自己的 worktree（`tools/wt.sh new <type>/<描述>`），唯讀的不開。分支前綴：`feat|fix|refactor|docs|chore|test|ci`，或該 repo 的組織前綴（例：`eng/`、`product/`）。
+- 一個 PR 一個連貫範圍：合併後系統自洽。重構與行為改變分開 commit。
+- PR 第一行寫風險級 `R0`–`R3`；有 issue 就寫 `Refs #N`（完全做完才用 `Closes #N`）；結尾寫 `DERIVED:` 一行，加上「通用？是／否」。
+- 合併由人做，不 squash，不 force push。疊起來的 PR 每一個都合進 main。
+
+**風險級（看錯了要付多少，不看信心）**
+- R0 文件；R1 一般程式、測試、UI；R2 設定、門檻、prompt、schema、migration、部署、hook；R3 會動錢或動正式環境的路徑。
+- R3 不開放給 agent：只提案、寫 DD，由人核可或自己執行。R2 要附驗證指令與 reviewer 審查。各 repo 的 R2／R3 路徑在 CODEOWNERS。
+
+**模型分層**
+- 主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。查找類 subagent 用 Haiku，實作與審查類用 Sonnet；深度 1，同時 ≤4 個。
+- 6 回合內判斷是不是難題。要換 Opus 就開新 session，交接 ≤20K（任務、失敗的檢查、3 個關鍵檔），不在長 context 中途換模型。
+- 角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級。兩個 writer 不碰同一檔。
+
+**閘門**
+- 先寫會失敗的檢查（`.claude-task/green.sh`）再寫碼；連三次紅就停，回報「計畫可能錯了」。改弱檢查要跟人說明。
+- 每個「系統在某情況會怎樣」的說法都附可重跑的指令。跑不了的寫成推論並說明依據。
+- 改門檻、改規則、改契約，同一個 commit 附 DD。
+
+**安全**
+- 金鑰只走環境變數或金鑰庫；只驗存在或長度，不印出來。被 hook 擋下就不繞路，請人用 `!` 自己執行。
+- `.gitignore` 用白名單；pre-commit 掃金鑰（兩套掃描器）與單檔大小。不用 `--no-verify`。
+- 不靜默失敗：決策路徑不吞錯；失敗要讓呼叫端看得到。
+
+**程式設計**
+- 依 SOLID、純核心加外殼 I/O、組合優先、三次法則才抽象。完整清單與檢查方法見 dev-standard `templates/review-checklist.md`。
+- 新程式碼直接適用；舊程式碼碰到那塊時順手改（童子軍規則），lint 用 baseline 只擋新增違規。
+- 測試測行為不測實作，不依賴環境變數；重構 PR 不改測試。
+
+**文件與 commit**
+- Commit：`type(scope): 摘要`，繁體中文為主；一個 commit 一個邏輯變更，含它的測試，自己能過測試。
+- 文件不寫會漂移的數字（測試數、筆數、成本），改寫查詢方法。
+- 待辦只放 GitHub Issues，不散在 markdown 清單。
+
+**回填**
+- 在這個 repo 發展出跟 repo 無關的好做法，PR 的 `DERIVED:` 標「通用：是」，同一週對 dev-standard 開回填 PR。只在這個 repo 成立的留在 overlay。
+<!-- DEV-STANDARD:END -->
+
+## 開發辦法：本 repo 的差異 / Dev-standard overlay
+
+上面區塊是 dev-standard 的通用辦法（`.dev-standard/sync.py` 產生，CI 跑 `python3 .dev-standard/sync.py check`）。
+以下是本 repo 在它之外的差異；兩者衝突時以使命區塊與 R3 規則為準。
+The block above is the shared dev-standard; below is what differs here.
+
+- **風險級路徑**：R2／R3 路徑以 `.github/CODEOWNERS` 為準（R3＝動錢）。R3 照上方使命規則 1：只提案，人核可加 ADR。
+- **DD**：改 `config/mission.yaml` 或 R3 行為的決策記在 `mission.yaml` 的 ADR log；其他門檻、規則、契約的變更照 dev-standard §5。
+- **Commit 格式**：一律繁中，第一行 `type(scope): 繁中摘要`，細節照 `.agent/rules/git-commit-format.md`。
+- **Worktree**：主 checkout 是正式環境的 bind mount（detached 在 `origin/main`），不在那裡切分支或寫檔；一律開 worktree。
+- **pre-push 保護分支 hook**：正本在 `.githooks/pre-push`，用 `scripts/install_git_hooks.sh` 安裝到共用的 `.git/hooks/`。
+  不設 `core.hooksPath`：那會讓 pre-commit framework 裝在 `.git/hooks/pre-commit` 的掃描失效。
+- **Lint**：ruff 只擋新增違規。舊違規存成計數 baseline（`.ruff-baseline.json`），不在原始碼加 `noqa`（R3 檔不因 lint 被改）。
+  檢查：`python3 scripts/ruff_baseline.py check`；修掉舊違規後跑 `python3 scripts/ruff_baseline.py update` 收緊 baseline。
+
+
 ## Architecture Overview
 
 ```
@@ -174,6 +234,10 @@ pytest tests/unit/ -q
 .agent/              → Agent governance: rules, skills, workflows (Antigravity-specific)
 alembic/             → Database migrations (PostgreSQL)
 config/              → Model routing configs, persona definitions, LLM seed data
+  config/workflows/*.yaml → multi-agent DAGs (/workflows UI); config/agents/*.md → agent definitions (/agents UI)
+  config/data_providers.yaml, channels.yaml, tools.yaml → plugin manifests (/extensions UI)
+  config/settings_schema.yaml → single source of truth for user settings
+  config/llm_providers.yaml, llm_tiers.yaml → provider catalog and cognitive tier routing
 deployment/          → Helm charts, PostgreSQL manifests
 frontend/            → Next.js 15 dashboard (TypeScript)
 infra/               → Nginx reverse proxy, SigNoz observability
@@ -203,7 +267,7 @@ workspace/           → Multi-agent workspace (WAL, identity, memory per agent)
 | Topic | Location |
 |---|---|
 | Engineering & coding standards | `.agent/rules/engineering-standards.md` |
-| Git commit format (bilingual) | `.agent/rules/git-commit-format.md` |
+| Git commit format（一律繁中） | `.agent/rules/git-commit-format.md` |
 | Documentation standards | `.agent/rules/documentation-standards.md` |
 | Observability standards | `.agent/rules/observability-standards.md` |
 | Security policy | `SECURITY.md` |
@@ -216,41 +280,18 @@ workspace/           → Multi-agent workspace (WAL, identity, memory per agent)
 - `workspace/*/STATE.md` — Agent WAL state, auto-managed
 - `data/*.db` — Runtime SQLite databases
 
-<!-- code-review-graph MCP tools -->
-## MCP Tools: code-review-graph
+## Code discovery: codebase-memory MCP
 
-**IMPORTANT: This project has a knowledge graph. ALWAYS use the
-code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
-the codebase.** The graph is faster, cheaper (fewer tokens), and gives
-you structural context (callers, dependents, test coverage) that file
-scanning cannot.
-
-### When to use graph tools FIRST
-
-- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
-- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
-- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
-- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
-- **Architecture questions**: `get_architecture_overview` + `list_communities`
-
-Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
-
-### Key Tools
+Prefer the codebase-memory MCP tools over grep for structure questions; fall back to grep/read for text and configs.
+程式結構問題優先用 codebase-memory MCP；文字與設定檔照常用 grep／read。
 
 | Tool | Use when |
-| ------ | ---------- |
-| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
-| `get_review_context` | Need source snippets for review — token-efficient |
-| `get_impact_radius` | Understanding blast radius of a change |
-| `get_affected_flows` | Finding which execution paths are impacted |
-| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
-| `semantic_search_nodes` | Finding functions/classes by name or keyword |
-| `get_architecture_overview` | Understanding high-level codebase structure |
-| `refactor_tool` | Planning renames, finding dead code |
+|---|---|
+| `search_graph` | Find functions, classes, routes by name pattern |
+| `trace_path` | Callers / callees / data flow of a function |
+| `get_code_snippet` | Exact source of one symbol |
+| `query_graph` | Cypher queries for complex patterns |
+| `get_architecture` | High-level structure |
+| `detect_changes` | Impact of the current diff |
 
-### Workflow
-
-1. The graph auto-updates on file changes (via hooks).
-2. Use `detect_changes` for code review.
-3. Use `get_affected_flows` to understand impact.
-4. Use `query_graph` pattern="tests_for" to check coverage.
+If the project is not indexed yet, run `index_repository` first. 尚未索引時先跑 `index_repository`。
