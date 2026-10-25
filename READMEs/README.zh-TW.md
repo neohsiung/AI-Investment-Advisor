@@ -1,9 +1,7 @@
 # AI Investment Advisor
 
-> 🧠 自主量化投資平台 — 7 智能體集群碎形辯論、三層 LLM 路由、自動化 eToro 交易。
-
 <p align="center">
-  <a href="https://github.com/neohsiung/AI-Investment-Advisor/stargazers"><img src="https://img.shields.io/github/stars/neohsiung/AI-Investment-Advisor?style=social" alt="Stars"></a>
+  <a href="https://github.com/neohsiung/AI-Investment-Advisor"><img src="https://img.shields.io/github/stars/neohsiung/AI-Investment-Advisor?style=social" alt="Stars"></a>
   <a href="https://github.com/neohsiung/AI-Investment-Advisor/network/members"><img src="https://img.shields.io/github/forks/neohsiung/AI-Investment-Advisor?style=social" alt="Forks"></a>
   <a href="https://github.com/neohsiung/AI-Investment-Advisor/issues"><img src="https://img.shields.io/github/issues/neohsiung/AI-Investment-Advisor" alt="Issues"></a>
   <a href="https://github.com/neohsiung/AI-Investment-Advisor/blob/main/LICENSE"><img src="https://img.shields.io/github/license/neohsiung/AI-Investment-Advisor" alt="License"></a>
@@ -16,104 +14,68 @@
 </p>
 
 <p align="center">
-  <img src="../assets/hero.png" alt="AI Investment Advisor — 7-Agent Swarm 自主量化投資平台" width="800" />
+  <img src="../assets/hero.png" alt="AI Investment Advisor" width="800" />
 </p>
 
----
-
 > [!WARNING]
-> **非投資建議，真金交易風險自負。** 本軟體為自主交易系統，若配置真實券商憑證將以真實資金下單。依「現狀」提供，不含任何保證（詳見 [LICENSE](../LICENSE) / [NOTICE](../NOTICE)）。請務必先以 paper/demo 模式運行並理解程式邏輯後，再連接有實際資金的券商帳戶。
+> **非投資建議。接上有資金的券商帳戶，它會用真錢下單。** 只要設了真實券商憑證，軟體就會送出真實訂單。依「現狀」提供，不含任何保證，詳見 [LICENSE](../LICENSE) 與 [NOTICE](../NOTICE)。本專案的 `TRADING_MODE=paper` 不是模擬：eToro 的 token 沒有 demo 權限，所有券商呼叫都會以 `InsufficientPermissions` 失敗。安全的煞車是 `ai_trading_enabled=false` 與 `tradable_capital_pct=0`。接上有資金的帳戶之前，先讀過程式。
 
-## 📌 這是什麼？
+AI Investment Advisor 是自架的量化投資系統：多個 LLM agent 評估每一筆交易構想，由確定性的程式碼做決定，訂單可以送到 eToro 實盤帳戶。給想研究這類系統、願意自己承擔風險的開發者。
 
-**你的投資組合有多久沒被重新審視了？**
+它能不能相對 SPY 賺到淨超額報酬，目前沒有證明。要看實際數字，查 `/api/v1/net-alpha` 和你自己的資料庫。
 
-AI Investment Advisor 模仿頂級對沖基金的決策架構。一位 **CIO Agent（首席投資官）** 將投資問題拆解，分派給 **7 位專業子智能體**，透過獨創的 **碎形辯論 (Fractal Debate)** 演算法消除模型幻覺，並產出可執行的投資組合決策 — 全程自動透過 eToro API 執行交易。
+## 它做什麼
 
-> **消除幻覺的辯論 > 單一模型的猜測。**
+| 項目 | 做法 |
+|:-----|:-----|
+| 多 agent 辯論 | 一組 LLM agent 平行分析每檔標的，再由 CIO agent 裁決。名單定義在 [`config/workflows/single_ticker_council.yaml`](../config/workflows/single_ticker_council.yaml)。 |
+| 評分 | 買進決策用加權組合評分，賣出另外評分。LLM 只能提案，決定由確定性的程式碼做。 |
+| 市場狀態 | 三狀態隱馬可夫模型估計市場狀態，據此調整現金水位與目標 Beta。 |
+| 尾部風險 | 用極值理論的 POT 與廣義 Pareto 分布外推 99.9% 的 VaR 與 CVaR。 |
+| 風險引擎 | 波動度目標、相關性分群、機會成本門檻、分數 Kelly 部位，以及多因子 alpha 合成。 |
+| 執行 | 對平均日成交量設流動性上限、隨機化 TWAP 與 VWAP 切單、實施落差歸因，以及線上校準 Almgren-Chriss 衝擊模型。 |
+| 策略搜尋 | 在參數網格上做模擬退火，再用 walk-forward 做樣本外驗證。 |
+| 影子帳本 | 獨立的紙上帳本記錄系統本來會怎麼做，拿來對照。 |
+| 儀表板 | `/adaptive` 頁顯示五個維度的健康雷達，並標出每個數字的來源。缺資料就顯示缺資料。 |
+| 安全 | 供應商金鑰用 Fernet 加密存放；追蹤資料經 OpenTelemetry 送到 SigNoz。 |
 
----
+## 分層架構
 
-## ✨ 核心功能
+### LLM 路由
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>🧬 碎形辯論</h3>
-      <p>多智能體對抗式推理，消除單一模型幻覺，提升決策可解釋性。</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>🦅 10D 哨兵雷達</h3>
-      <p>VIX、價格、新聞、宏觀經濟、配置漂移 — 自主全維度風險監控。</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>⚡ 自動對沖</h3>
-      <p>毫秒級精度的倉位清算，透過 eToro API 全自動執行。</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>🧠 OpenClaw 架構</h3>
-      <p>每位 Agent 具備獨立的 WAL（預寫日誌），防止上下文溢出遺忘。</p>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-      <h3>📊 混合 RAG 檢索</h3>
-      <p>BM25 + 時間衰減語義搜索，基於 pgvector + Redis 實現。</p>
-    </td>
-    <td width="50%" valign="top">
-      <h3>🔐 Fernet 加密</h3>
-      <p>所有 API 金鑰以 <code>LLMCredentialCipher</code> 加密存儲。</p>
-    </td>
-  </tr>
-</table>
+呼叫分成四層：`nano`、`fast`、`smart`、`advanced`，由 `ResilientLLMPipeline` 解析。每一層背後用哪個模型，由設定頁的 tier 綁定決定，不寫在程式裡。
 
----
-
-## 📐 分層架構
-
-### 三層 AI 路由
-
-| 層級 | 用途 | 模型範例 |
-|:-----|:-----|:---------|
-| **Advanced 🚀** | 深度分析、CIO 決策 | GPT-4o, Claude 3.5 Sonnet |
-| **Smart 🧠** | 辯論、推理、分類 | Gemini 1.5 Pro |
-| **Fast ⚡** | 格式化、篩選、萃取 | GPT-4o-mini, Ollama 本地 |
-
-### 三層資料存儲
+### 資料儲存
 
 | 層級 | 引擎 | 用途 |
 |:-----|:-----|:-----|
-| **Hot 🔥** | Redis | 語義緩存、即時狀態 |
-| **Warm ☀️** | PostgreSQL + pgvector | 結構化紀錄、向量搜索 |
-| **Cold ❄️** | 檔案系統 | 原始報告、歷史回測 |
+| Hot | Redis | 語意快取、速率限制、斷路器旗標 |
+| Warm | PostgreSQL + pgvector | 交易紀錄、因子權重、向量 |
+| Cold | 加密檔案、JSONL | 備份與 walk-forward 紀錄 |
 
----
-
-## 🛠️ 技術棧
+## 技術棧
 
 | 類別 | 技術 |
 |:-----|:-----|
-| **語言** | Python 3.11, TypeScript |
-| **後端** | FastAPI, MCP (Model Context Protocol), Celery |
-| **前端** | Next.js 15 (App Router), Streamlit (舊版) |
-| **AI/ML** | LiteLLM, DSPy, OpenAI / Gemini / Claude / Ollama 多模型 |
-| **資料庫** | PostgreSQL 16 + pgvector, Redis, SQLite (開發) |
-| **基礎設施** | Docker Compose, Nginx, SigNoz, OpenTelemetry 1.39 |
-| **交易** | eToro API（自動化碎股交易） |
-| **數據源** | Polygon, Tiingo, Finnhub, AlphaVantage, FMP, FRED, TAVILY |
-| **通知** | Telegram, LINE, Email (SMTP) |
+| 語言 | Python 3.10 與 3.11、TypeScript |
+| 後端 | FastAPI、MCP、Celery Beat |
+| 前端 | Next.js、React |
+| AI | LiteLLM，模型由 tier 綁定決定 |
+| 資料庫 | PostgreSQL + pgvector、Redis |
+| 基礎設施 | Docker Compose、Nginx、SigNoz、OpenTelemetry |
+| 券商 | eToro API、Interactive Brokers |
+| 數據源 | Polygon、Tiingo、Finnhub、AlphaVantage、FMP、FRED、Tavily |
+| 通知 | Telegram、Slack、Email |
 
----
+版本號看 `pyproject.toml`、`uv.lock` 和 `frontend/package.json`。
 
-## 🚀 快速開始
+## 快速開始
 
 ### 前置需求
 
-- Docker & Docker Compose
-- Python 3.10+（本地開發）
-- Node.js 20+（前端開發）
+- Docker 與 Docker Compose
+- Python 3.10 以上，本地開發用
+- Node.js 20 以上，前端開發用
 
 ### 啟動
 
@@ -122,7 +84,7 @@ AI Investment Advisor 模仿頂級對沖基金的決策架構。一位 **CIO Age
 git clone https://github.com/neohsiung/AI-Investment-Advisor.git
 cd AI-Investment-Advisor
 cp .env.example .env
-# 編輯 .env — 設定 APP_SECRET_KEY 和 LLM_CREDENTIAL_KEY
+# 編輯 .env，設定 APP_SECRET_KEY 和 LLM_CREDENTIAL_KEY
 
 # 2. 一鍵啟動所有服務
 ./start.sh
@@ -130,61 +92,47 @@ cp .env.example .env
 
 | 服務 | 網址 |
 |:-----|:-----|
-| 閘道 (nginx，僅生產環境) | [http://127.0.0.1:8088](http://127.0.0.1:8088) |
+| 閘道 nginx，僅生產環境 | [http://127.0.0.1:8088](http://127.0.0.1:8088) |
 | Next.js 儀表板 | [http://localhost:3001](http://localhost:3001) |
-| FastAPI / MCP Server | [http://localhost:8000](http://localhost:8000)（dev 為 8001）|
-| SigNoz APM | [http://127.0.0.1:8080](http://127.0.0.1:8080) |
+| FastAPI 與 MCP Server | [http://localhost:8000](http://localhost:8000)，dev 為 8001 |
+| SigNoz APM，要用 `OBSERVABILITY=1 ./start.sh up` 啟動才有 | [http://127.0.0.1:8080](http://127.0.0.1:8080) |
 
-> dev 環境的 nginx 沒有對外發佈埠口，請直接連上方的前端與 API 埠口；
-> 閘道只存在於生產環境。
+dev 環境的 nginx 沒有對外發佈埠口，請直接連上面的前端與 API 埠口。閘道只存在於生產環境。
 
----
+自架與維運說明見[文件索引](../docs/README.md)。
 
-## 📁 專案結構
+## 專案結構
 
 ```
 AI-Investment-Advisor/
-├── .agent/              # Agent 治理層（規則、技能、工作流）
-├── alembic/             # 資料庫遷移（PostgreSQL）
-├── config/              # 模型路由、LLM 種子數據、角色定義
-├── frontend/            # Next.js 15 儀表板（TypeScript）
-├── infra/               # Nginx 反向代理、SigNoz 觀測配置
-├── prompts/             # Agent 系統提示（CIO、Sentinel、子智能體）
-├── scripts/             # 維運：DB 初始化、部署、健康檢查
+├── .agent/              # Agent 治理層：規則、技能、工作流
+├── alembic/             # 資料庫遷移
+├── config/              # 模型路由、工作流、角色定義、mission.yaml
+├── docs/                # 文件
+├── frontend/            # Next.js 儀表板
+├── infra/               # Nginx 反向代理、SigNoz 設定
+├── prompts/             # Agent 系統提示
+├── scripts/             # 維運腳本：DB 初始化、部署、健康檢查
 ├── services/            # 微服務入口
-│   ├── mcp_server/      #   FastAPI + MCP 伺服器（主後端）
-│   ├── notification/    #   Telegram / LINE / Email 服務
-│   └── scheduler/       #   Celery Beat 排程器
 ├── src/                 # 核心 Python 套件
-│   ├── agents/          #   Agent 定義 + 技能（eToro 交易、研究）
-│   ├── services/        #   業務邏輯服務
-│   └── workflow/        #   日/週工作流編排器
-├── tests/               # 單元、整合、端到端測試
-├── workspace/           # 多智能體工作區（WAL、身份、記憶）
-└── AGENTS.md            # AI 編碼助手統一上下文
+├── tests/               # 單元、整合、不變量測試
+├── workspace/           # 多 agent 工作區
+└── AGENTS.md            # AI 編碼助手的共用上下文
 ```
 
----
+## 參與貢獻
 
-## 🤝 參與貢獻
+1. Fork 此專案。
+2. 建立分支，名稱用 `feat/…`、`fix/…` 或 `docs/…`。
+3. 執行測試：`pytest tests/ -x --tb=short`。
+4. 提交變更並開 Pull Request。
 
-歡迎貢獻！以下是參與方式：
+大的變更請先開 Issue 討論。完整規則見 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
-1. Fork 此專案
-2. 建立功能分支 (`git checkout -b feature/my-feature`)
-3. 執行測試 (`pytest tests/ -x --tb=short`)
-4. 提交變更並開啟 Pull Request
+## 授權與免責聲明
 
-重大變更請先開 Issue 討論方案。完整規則見 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+- 維護者：Litov。問題與資安回報寄 support@litov.app，見 [SECURITY.md](../SECURITY.md)。支援頁：<https://support.litov.app/>。
+- 授權：[Apache License 2.0](../LICENSE)
+- 免責聲明：本軟體分析金融市場，設了真實券商憑證就可能以真錢下單。非投資建議，依「現狀」提供，不含任何保證。詳見 [NOTICE](../NOTICE)。
 
----
-
-## 📄 授權與免責聲明
-
-- **維護**: [Litov](https://litov.app)。問題與資安回報寄 support@litov.app，見 [SECURITY.md](../SECURITY.md)。
-- **授權**: [Apache License 2.0](../LICENSE)
-- **免責聲明**: 本軟體可自主分析市場，若配置真實券商憑證可能以真實資金下單。非投資建議，依「現狀」提供不含任何保證。詳見 [NOTICE](../NOTICE)。
-
----
-
-<p align="center">Built with ❤️ for Modern Quantitative Investing</p>
+Apache License 2.0，版權屬 Litov and contributors。

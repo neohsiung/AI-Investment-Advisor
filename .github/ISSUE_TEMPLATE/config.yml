@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report / 資安問題
+    url: https://github.com/neohsiung/AI-Investment-Advisor/blob/main/SECURITY.md
+    about: Do not open a public issue. Email support@litov.app as described in SECURITY.md. / 請勿開公開 issue，依 SECURITY.md 寄信到 support@litov.app。

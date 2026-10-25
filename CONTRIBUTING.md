@@ -1,6 +1,6 @@
 # Contributing
 
-AI Investment Advisor is maintained by [Litov](https://litov.app). The repo follows Litov's shared development standard; the rules every change must meet are in [AGENTS.md](AGENTS.md) (the `DEV-STANDARD` block) and [.dev-standard/STANDARD.md](.dev-standard/STANDARD.md).
+AI Investment Advisor is maintained by Litov. The repo follows Litov's shared development standard; the rules every change must meet are in [AGENTS.md](AGENTS.md) (the `DEV-STANDARD` block) and [.dev-standard/STANDARD.md](.dev-standard/STANDARD.md).
 
 ## Before you start
 
@@ -19,5 +19,5 @@ AI Investment Advisor is maintained by [Litov](https://litov.app). The repo foll
 ## 中文摘要
 
 - 資安問題寄 support@litov.app，不要開公開 issue。
-- 動到錢的路徑（交易、風險閘道、資金政策、券商服務）不接受外部修改。
+- 動到錢的路徑不接受外部修改，包含交易、風險閘道、資金政策和券商服務。
 - 分支、commit、PR 規則照 [AGENTS.md](AGENTS.md) 的開發辦法；先寫會失敗的測試，`pre-commit install` 後不要用 `--no-verify`。
