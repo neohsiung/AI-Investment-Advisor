@@ -1,5 +1,5 @@
-# DD-2026-1025 — 哨兵風險關鍵字改成整詞比對
-> 一句話：風險關鍵字只在整詞出現時才算命中（三個字元以上的英文詞允許 s／es 複數形），規則只寫在 `src/domain/keyword_match.py`。
+# DD-2026-1025 — 哨兵風險關鍵字改成以詞為單位比對
+> 一句話：風險關鍵字要從詞的開頭命中，不再比對字串片段（五個字元以上的英文詞允許詞尾變化，三到四個字元允許 s／es），規則只寫在 `src/domain/keyword_match.py`。
 
 **狀態**：已實作（PR 待補）
 **風險級**：R2（哨兵觸發規則；`sentinel_service.py` 在 CODEOWNERS 的 R2 清單）
@@ -14,8 +14,9 @@
 ## 2 決定：新做法，正本在哪
 - 正本：`src/domain/keyword_match.py` 的 `keyword_in_text`。三個呼叫點都改用它（前一個 commit 先做純重構）。
 - 規則：
-  - 不分大小寫；關鍵字前後緊鄰 ASCII 字母或數字就不算命中。
-  - 長度 ≥ `PLURAL_MIN_LEN`（3）且結尾是英文字母的關鍵字，加 `s`／`es` 也算命中，避免 `tariff` 漏掉 `tariffs`。
+  - 不分大小寫；關鍵字前面緊鄰 ASCII 字母或數字就不算命中（`close` 不再命中 `disclosed`）。
+  - 詞尾依長度：≥ `STEM_MIN_LEN`（5）且結尾是英文字母，可接任何字母（`sanction` 命中 `sanctioned`、`bankrupt` 命中 `bankruptcies`）；3–4 個字元允許 `s`／`es`（`war` 命中 `wars`）；更短的只比整詞（`es`、`it`）。
+  - 關鍵字前後的空白忽略；空白關鍵字永不命中。
   - 只有 ASCII 字母數字算字元，所以中文關鍵字在中文句子裡照樣命中。
 - 不做的事：不改門檻、不改權重、不清關鍵字資料、不動權重調升邏輯。
 
@@ -32,9 +33,10 @@
 ## 已知殘留
 - 垃圾關鍵字（`es`、`it`、`am` 等）仍在資料表裡，權重仍是 1.0。清理是正式 DB 寫入，另案處理。
 - 權重依命中次數調升的迴圈沒動。
+- 新規則仍有少量誤報：詞尾放寬讓 `actual` 命中 `actually`、`trade war` 命中 `trade warning`；`es` 複數讓 `war` 命中 `wares`。比子字串少得多，接受。
 - 單靠這一步，估計每週仍約 $1.6，還沒降到 $1。要降到預算內，需要 shadow 規則觀察一週後切換，加上關鍵字清理。
 
 ## 驗收條件
 - AC1：`es` 不命中 `Names`、`close` 不命中 `disclosed`；反驗：把 `keyword_in_text` 改回 `in`，`test_keyword_inside_another_word_does_not_match` 要失敗。
-- AC2：`tariff` 命中 `tariffs`、`關稅` 命中中文句子；反驗：拿掉複數規則，`test_plural_of_a_word_of_three_or_more_letters_matches` 要失敗。
+- AC2：`tariff` 命中 `tariffs`、`sanction` 命中 `sanctioned`、`關稅` 命中中文句子；反驗：拿掉 `_suffix`，`test_plural_of_a_word_of_three_or_more_letters_matches` 與 `test_keyword_of_five_or_more_letters_matches_inflected_forms` 要失敗。
 - AC3：三個呼叫點都經過 `keyword_in_text`；反驗：`grep -rn "keyword.lower() in" src` 應無結果。

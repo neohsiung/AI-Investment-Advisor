@@ -46,6 +46,26 @@ def test_plural_of_a_word_of_three_or_more_letters_matches(keyword, text):
     assert keyword_in_text(keyword, text)
 
 
+@pytest.mark.parametrize("keyword,text", [
+    ("sanction", "Acme sanctioned over fraud"),
+    ("recall", "Automaker recalled 2 million cars"),
+    ("bankrupt", "Two bankruptcies this quarter"),
+    ("plunge", "Shares plunged 9%"),
+    ("fraud", "Fraudulent accounts found"),
+])
+def test_keyword_of_five_or_more_letters_matches_inflected_forms(keyword, text):
+    assert keyword_in_text(keyword, text)
+
+
+def test_long_keyword_still_needs_a_word_start():
+    assert not keyword_in_text("crash", "a microcrash in rates")
+
+
+def test_surrounding_whitespace_in_a_stored_keyword_is_ignored():
+    assert keyword_in_text("  crash ", "Markets crash")
+    assert not keyword_in_text("   ", "double  space")
+
+
 def test_two_letter_keyword_has_no_plural_form():
     assert not keyword_in_text("it", "its guidance")
 
