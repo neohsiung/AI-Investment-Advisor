@@ -19,6 +19,7 @@ from typing import List, Dict, Tuple, Any, Optional, Callable
 
 from src.repositories.risk_keyword_repository import AlchemyRiskKeywordRepository
 from src.domain.entities import RiskKeyword
+from src.domain.keyword_match import keyword_in_text
 from src.infrastructure.llm.llm_gateway import ILLMGateway
 from src.config.owner import resolve_user_id
 
@@ -78,16 +79,16 @@ class RiskKeywordService:
         self._repo = repository or AlchemyRiskKeywordRepository()
         self._cache: List[RiskKeyword] = []
         self._cache_timestamp: float = 0.0
-        
+
         self.agent_name = agent_name
         self.user_id = resolve_user_id(user_id)
         self.tier = tier
-        
+
         # [Rule #14] Model Tiering Injection
         if llm_gateway:
             self._llm_gateway = llm_gateway
         else:
-            # Fallback to creating a gateway if not injected 
+            # Fallback to creating a gateway if not injected
             # (e.g. legacy instantiation in SentinelService)
             from src.infrastructure.llm.llm_gateway import LLMGatewayFactory, LoggingLLMGateway
             provider = os.getenv("AI_PROVIDER", "Google Gemini")
@@ -142,9 +143,8 @@ class RiskKeywordService:
         keywords = self.get_active_keywords()
         if not keywords:
             fallback = ["crash", "plunge", "fraud", "bankruptcy", "暴跌", "崩盤"]
-            return any(kw in text.lower() for kw in fallback)
-        text_lower = text.lower()
-        return any(kw.keyword.lower() in text_lower for kw in keywords)
+            return any(keyword_in_text(kw, text) for kw in fallback)
+        return any(kw.matches(text) for kw in keywords)
 
     def score_text(self, text: str, record_hits: bool = True) -> Tuple[float, List[str]]:
         """
@@ -154,10 +154,9 @@ class RiskKeywordService:
         keywords = self.get_active_keywords()
         matched: List[str] = []
         total_weight = 0.0
-        text_lower = text.lower()
 
         for kw in keywords:
-            if kw.keyword.lower() in text_lower:
+            if kw.matches(text):
                 matched.append(kw.keyword)
                 total_weight += kw.weight
                 if record_hits and kw.id:
@@ -167,6 +166,14 @@ class RiskKeywordService:
                         logger.debug(f"Non-critical: hit recording failed for {kw.id}: {e}")
 
         return total_weight, matched
+
+    def shadow_score_text(self, text: str) -> float:
+        """
+        Total weight under the shadow rule (DD-2026-1025). Recorded only, never decides; never records hits,
+        so it cannot feed the hit-count weight boost.
+        shadow 規則下的總權重；只記錄、不做決定，也不記命中次數，避免回饋到權重調升。
+        """
+        return sum(kw.shadow_score(text) for kw in self.get_active_keywords())
 
     def record_hit(self, kw_id: str) -> None:
         """
@@ -309,12 +316,12 @@ class RiskKeywordService:
 
         repo = AlchemyReportRepository()
         try:
-            # We use get_latest_reports which requires a user_id, 
-            # for discovery we'll use a new method we added to DataRepository or just fetch broadly 
+            # We use get_latest_reports which requires a user_id,
+            # for discovery we'll use a new method we added to DataRepository or just fetch broadly
             # Let's use the new DataRepository method since it aggregates across users
             from src.repositories.data_repository import AlchemyDataRepository
             data_repo = AlchemyDataRepository()
-            
+
             rows = data_repo.get_recent_aggregated_reports(days=7, limit=10)
         except Exception as e:
             logger.warning(f"Failed to query reports: {e}")
@@ -337,7 +344,7 @@ class RiskKeywordService:
         Returns list of (keyword, weight, category, source).
         """
 
-        prompt = """You are a financial risk keyword extractor. 
+        prompt = """You are a financial risk keyword extractor.
 From the following financial reports/news text, extract 10-30 important risk/investment keywords.
 
 Rules:
@@ -354,11 +361,11 @@ Text:
 """
         try:
             from src.domain.interfaces import LLMConfig, Message
-            
+
             # Use tier-aware model routing
             from src.infrastructure.llm.tier_config import SettingsAwareModelRouter
             model_router = SettingsAwareModelRouter()
-            
+
             # Use tier-aware routing
             if self.user_id:
                 model = model_router.get_model(self.user_id, self.tier)
@@ -366,7 +373,7 @@ Text:
                 from src.infrastructure.llm.tier_config import TierConfig
                 tier_config = TierConfig()
                 model = tier_config.resolve(self.tier)
-            
+
             # Use gateway instead of direct litellm call (Budget Tracking)
             config = LLMConfig(
                 provider=os.getenv("AI_PROVIDER", "OpenRouter"),
@@ -375,9 +382,9 @@ Text:
                 temperature=0.3,
                 max_tokens=800
             )
-            
+
             messages = [Message(role="user", content=prompt + text_block)]
-            
+
             content = await self._llm_gateway.chat(messages, config)
             data = json.loads(content)
 
@@ -611,12 +618,12 @@ Text:
             logger.debug("pytrends not installed, skipping Google Trends.")
             return []
 
-        # NOTE: pytrends is synchronous, we run it in executor if needed 
+        # NOTE: pytrends is synchronous, we run it in executor if needed
         # for simplicity we keep it as is but call it in a way that doesn't block too much
-        # or just accept the sync hit since it's a weekly job 
+        # or just accept the sync hit since it's a weekly job
         import asyncio
         loop = asyncio.get_event_loop()
-        
+
         def run_pytrends():
             pytrends = TrendReq(hl='en-US', tz=480, timeout=(5, 10))
             keywords = []

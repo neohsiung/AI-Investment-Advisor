@@ -407,8 +407,8 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
         with self.engine.begin() as conn:
             conn.execute(
                 text("""
-                    UPDATE risk_keywords 
-                    SET hit_count = hit_count + 1, last_hit_date = :date 
+                    UPDATE risk_keywords
+                    SET hit_count = hit_count + 1, last_hit_date = :date
                     WHERE id = :id
                 """),
                 {"date": datetime.date.today().isoformat(), "id": kw_id}
@@ -421,14 +421,14 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
         """
         with self.engine.connect() as conn:
             query = text("""
-                SELECT * FROM risk_keywords 
+                SELECT * FROM risk_keywords
                 WHERE is_active = 1 AND (
-                    last_hit_date IS NULL OR 
+                    last_hit_date IS NULL OR
                     CURRENT_DATE - CAST(last_hit_date AS DATE) > :days
                 )
                 ORDER BY hit_count ASC
             """)
-                
+
             rows = conn.execute(query, {"days": days_threshold}).fetchall()
             return [self._row_to_entity(row) for row in rows]
 
@@ -452,7 +452,7 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
         try:
              # Try mapping first (SQLAlchemy 1.4/2.0)
              r = row._mapping
-             
+
              try:
                  cat_val = r['category']
                  cat_enum = RiskCategory(cat_val.lower()) if isinstance(cat_val, str) else cat_val
@@ -467,7 +467,8 @@ class AlchemyRiskKeywordRepository(BaseRepository, IRiskKeywordRepository):
                  hit_count=int(r['hit_count']),
                  last_hit_date=r.get('last_hit_date'),
                  is_active=bool(r['is_active']),
-                 created_at=r['created_at']
+                 created_at=r['created_at'],
+                 source=r.get('source'),
              )
         except AttributeError:
              # Fallback to index-based for older versions or edge cases

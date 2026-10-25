@@ -4,6 +4,8 @@ from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple
 from datetime import datetime
 from enum import Enum
 
+from src.domain.keyword_match import keyword_in_text, shadow_weight
+
 class SignalType(Enum):
     BUY = "BUY"
     SELL = "SELL"
@@ -67,11 +69,11 @@ class Position:
     average_cost: float
     current_price: float = 0.0
     leverage: float = 1.0
-    
+
     @property
     def market_value(self) -> float:
         return self.quantity * self.current_price
-    
+
     @property
     def unrealized_pnl(self) -> float:
         return (self.current_price - self.average_cost) * self.quantity
@@ -81,11 +83,11 @@ class Portfolio:
     user_id: str
     cash_balance: float
     positions: Dict[str, Position] = field(default_factory=dict)
-    
+
     @property
     def total_market_value(self) -> float:
         return sum(p.market_value for p in self.positions.values())
-        
+
     @property
     def net_liquidation_value(self) -> float:
         return self.cash_balance + self.total_market_value
@@ -136,6 +138,7 @@ class RiskKeyword:
     is_active: bool = True
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     id: Optional[str] = None
+    source: Optional[str] = None  # where the keyword came from: seed / report / webhook / trends …
 
     def score(self, text: str) -> float:
         """
@@ -144,9 +147,25 @@ class RiskKeyword:
         """
         if not self.is_active:
             return 0.0
-        if self.keyword.lower() in text.lower():
+        if self.matches(text):
             return self.weight
         return 0.0
+
+    def matches(self, text: str) -> bool:
+        """
+        True when this keyword appears in text (rule in src/domain/keyword_match.py).
+        此關鍵字是否出現在文字中（規則見 src/domain/keyword_match.py）。
+        """
+        return keyword_in_text(self.keyword, text)
+
+    def shadow_score(self, text: str) -> float:
+        """
+        Weight under the shadow rule (recorded only, never used to decide). See keyword_match.shadow_weight.
+        shadow 規則下的權重（只記錄，不用來做決定）。
+        """
+        if not self.is_active or not self.matches(text):
+            return 0.0
+        return shadow_weight(self.keyword, self.weight, self.source)
 
 
 @dataclass
