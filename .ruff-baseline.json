@@ -1,6 +1,6 @@
 {
  "ruff_version": "0.11.7",
- "total": 7377,
+ "total": 7378,
  "counts": {
   ".agent/skills/ci-test/scripts/ci_test.py::BLE001": 2,
   ".agent/skills/ci-test/scripts/ci_test.py::E501": 2,
@@ -44,6 +44,7 @@
   "scripts/migrate_encryption_v11.py::BLE001": 1,
   "scripts/migrate_encryption_v11.py::E402": 4,
   "scripts/migrate_line_to_db.py::E501": 5,
+  "scripts/migrate_line_to_db.py::F401": 1,
   "scripts/onboarding_wizard.py::E402": 3,
   "scripts/onboarding_wizard.py::E501": 1,
   "scripts/onboarding_wizard.py::F401": 1,

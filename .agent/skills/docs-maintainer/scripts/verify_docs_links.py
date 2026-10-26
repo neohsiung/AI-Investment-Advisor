@@ -42,14 +42,14 @@ def broken_links(docs_dir: str = DOCS) -> list[str]:
 
 def main() -> int:
     if not os.path.isdir(DOCS):
-        print("docs/ 不存在 / docs/ not found")
+        sys.stderr.write("docs/ 不存在 / docs/ not found\n")
         return 1
     bad = broken_links()
     if bad:
-        print(f"Found {len(bad)} broken links:")
-        print("\n".join(bad))
+        sys.stderr.write(f"Found {len(bad)} broken links:\n")
+        sys.stderr.write("\n".join(bad) + "\n")
         return 1
-    print("No broken internal links found.")
+    sys.stdout.write("No broken internal links found.\n")
     return 0
 
 
