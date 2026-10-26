@@ -30,7 +30,10 @@ import sys
 
 
 def reseed():
-    db_url = os.environ.get("DB_URL", "postgresql://postgres:postgres@advisor_prod_db:5432/advisor_prod")
+    db_url = os.environ.get("DB_URL")
+    if not db_url:
+        print("❌ ERROR: DB_URL env var is required (no default connection string).", file=sys.stderr)
+        sys.exit(1)
     user_id = os.environ.get("RESEED_USER_ID")
 
     if not user_id:

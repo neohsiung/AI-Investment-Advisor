@@ -14,6 +14,7 @@ import typing
 import re
 from html.parser import HTMLParser
 from typing import List, Dict, Tuple, Any, Optional, Callable
+from src.config.db_credentials import require_db_password
 from src.utils.logger import setup_logger
 logger = setup_logger("TelegramAdapter")
 
@@ -138,7 +139,7 @@ class TelegramAdapter(BaseChannelAdapter):
         self.chat_id = chat_id
         self.base_url = None
         self.is_active = True  # Always active - will validate at send time
-        
+
         # Database connection pool (lazy initialized)
         self._db_pool = None
 
@@ -152,12 +153,12 @@ class TelegramAdapter(BaseChannelAdapter):
                 if not db_url:
                     # Build connection string from individual DB_* env vars
                     db_user = os.getenv("DB_USER", "postgres")
-                    db_pass = os.getenv("DB_PASS", os.getenv("DB_PASSWORD", "postgres"))
+                    db_pass = require_db_password()
                     db_host = os.getenv("DB_HOST", "localhost")
                     db_port = os.getenv("DB_PORT", "5432")
                     db_name = os.getenv("DB_NAME", "advisor_prod")
                     db_url = f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
-                
+
                 if db_url:
                     self._db_pool = await asyncpg.create_pool(db_url, min_size=1, max_size=5)
                     logger.info(f"Database pool created: {db_url.split('@')[1] if '@' in db_url else 'unknown'}")
@@ -182,12 +183,12 @@ class TelegramAdapter(BaseChannelAdapter):
                     "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
                     user_id, "channel_telegram_bot_token"
                 )
-                
+
                 chat_id_row = await connection.fetchval(
                     "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
                     user_id, "channel_telegram_chat_id"
                 )
-                
+
                 # 2. Fallback to legacy keys
                 if not bot_token_row:
                     bot_token_row = await connection.fetchval(
@@ -199,10 +200,10 @@ class TelegramAdapter(BaseChannelAdapter):
                         "SELECT value FROM settings WHERE user_id = $1 AND key = $2",
                         user_id, "notification_telegram_chat_id"
                     )
-                
+
                 bot_token = self._clean_db_value(bot_token_row)
                 chat_id = self._clean_db_value(chat_id_row)
-                
+
                 return bot_token, chat_id
         except Exception as e:
             logger.error(f"Failed to get user Telegram settings: {e}")
@@ -239,7 +240,7 @@ class TelegramAdapter(BaseChannelAdapter):
         if isinstance(message, str):
             return await self.send_alert(user_id, "Message", message)
         return False
-    
+
     def send_message_sync(self, user_id: str, message: Any, **kwargs) -> bool:
         """Send a generic message synchronously (for backward compatibility)."""
         import asyncio
@@ -270,17 +271,17 @@ class TelegramAdapter(BaseChannelAdapter):
         """
         import httpx
         import html
-        
+
         category = kwargs.get("category", "")
         raise_error = kwargs.get("raise_error", False)
 
         # 1. Get user's Telegram settings from DB
         bot_token, chat_id = await self._get_user_telegram_settings(user_id)
-        
+
         # Fallback to constructor values if DB lookup fails
         bot_token = bot_token or self.bot_token
         chat_id = chat_id or self.chat_id
-        
+
         if not bot_token or not chat_id:
             error_msg = f"Telegram settings not found for user {user_id} and no fallback provided"
             logger.error(error_msg)
@@ -291,7 +292,7 @@ class TelegramAdapter(BaseChannelAdapter):
         # 2. Build API URL
         base_url = f"https://api.telegram.org/bot{bot_token}"
         url = f"{base_url}/sendMessage"
-        
+
         # 3. Per-category override check (if needed)
         override_chat_id = None
         if category:
@@ -304,7 +305,7 @@ class TelegramAdapter(BaseChannelAdapter):
                 logger.warning(f'Exception in telegram_adapter.py: {e}', exc_info=True)
 
         target_chat_id = override_chat_id or chat_id
-        
+
         if not target_chat_id:
             logger.error(f"No target chat ID for user {user_id}")
             return False
@@ -375,7 +376,7 @@ class TelegramAdapter(BaseChannelAdapter):
                     row = []
             if row:
                 keyboard_buttons.append(row)
-                
+
             payload["reply_markup"] = {"inline_keyboard": keyboard_buttons}
 
         # 6. Send via Telegram Bot API
@@ -397,7 +398,7 @@ class TelegramAdapter(BaseChannelAdapter):
             if raise_error:
                 raise e
             return False
-    
+
     def send_alert_sync(self, user_id: str, title: str, content: str, actions: List[Dict[str, str]] = None, **kwargs) -> bool:
         """Send alert to Telegram synchronously (for backward compatibility)."""
         import asyncio
@@ -420,7 +421,7 @@ class TelegramAdapter(BaseChannelAdapter):
             if kwargs.get("raise_error", False):
                 raise e
             return False
-    
+
     async def handle_webhook(self, payload: Dict[str, Any], headers: Dict[str, Any] = None):
         """Handle Telegram Callback Query asynchronously."""
         import httpx
@@ -428,26 +429,26 @@ class TelegramAdapter(BaseChannelAdapter):
         if callback_query:
             query_id = callback_query.get("id")
             data = callback_query.get("data")
-            
+
             params = {}
             if data:
                 for part in data.split("&"):
                     if "=" in part:
                         k, v = part.split("=", 1)
                         params[k] = v
-            
+
             request_id = params.get("id")
             action = params.get("action")
-            
+
             if self.callback and request_id and action:
                 logger.info(f"Telegram Callback: {action} for {request_id}")
                 await self._trigger_callback(request_id, action)
-                
+
             if query_id:
                 # Note: We don't have bot_token here, need to pass it somehow
                 # For now, skip the callback answer
                 pass
-        
+
         message = payload.get("message")
         if message:
             chat = message.get("chat")
@@ -457,5 +458,5 @@ class TelegramAdapter(BaseChannelAdapter):
                 logger.info(f"Telegram Text: {text} from {chat_id}")
                 import asyncio
                 asyncio.create_task(self._trigger_text_callback(chat_id, text))
-        
+
         return {"ok": True}
