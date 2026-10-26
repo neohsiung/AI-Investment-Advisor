@@ -29,6 +29,7 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.postgres import PGVectorStore
 from llama_index.readers.file import PDFReader
+from src.config.db_credentials import require_db_password
 from src.utils.logger import setup_logger
 from src.utils.safe_path import resolve_within
 
@@ -62,7 +63,7 @@ class RssNewsReader:
                         article = Article(link, **self.reader_kwargs)
                         article.download()
                         article.parse()
-                        
+
                         metadata = {
                             "title": getattr(article, "title", ""),
                             "link": link,
@@ -72,7 +73,7 @@ class RssNewsReader:
                             "publish_date": getattr(article, "publish_date", ""),
                             "feed": url,
                         }
-                        
+
                         documents.append(
                             Document(text=article.text, metadata=metadata)
                         )
@@ -147,7 +148,7 @@ class LlamaIndexService:
         port = os.environ.get("PGPORT", os.environ.get("DB_PORT", "5432"))
         db = os.environ.get("PGDATABASE", os.environ.get("DB_NAME", "advisor_prod"))
         user = os.environ.get("DB_USER", "postgres")
-        pw = os.environ.get("DB_PASS", "postgres")
+        pw = require_db_password()
         return f"postgresql+psycopg2://{user}:{pw}@{host}:{port}/{db}"
 
     def _ensure_vector_store(self, table_name: str = "llama_index_vectors") -> PGVectorStore:

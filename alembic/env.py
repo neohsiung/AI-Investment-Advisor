@@ -6,6 +6,8 @@ from sqlalchemy import pool
 
 from alembic import context
 
+from src.config.db_credentials import require_db_password
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -14,7 +16,7 @@ config = context.config
 db_url = os.getenv("DB_URL")
 if not db_url:
     db_user = os.getenv("DB_USER", "postgres")
-    db_pass = os.getenv("DB_PASS", "postgres")
+    db_pass = require_db_password()
     db_host = os.getenv("DB_HOST", "postgres")
     db_port = os.getenv("DB_PORT", "5432")
     db_name = os.getenv("DB_NAME", "advisor_prod") # Fix default to advisor_prod

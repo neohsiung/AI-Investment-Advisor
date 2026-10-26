@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from datetime import datetime, timezone
+from src.config.db_credentials import require_db_password
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ class BaseRepository:
             raise
         finally:
             s.close()
-    
+
     def _get_json_extract(self, column: str, path: str) -> str:
         """
         Get PostgreSQL JSONB extraction syntax.
@@ -105,7 +106,7 @@ class BaseRepository:
         # PostgreSQL JSONB path like 'category'
         json_path = path.replace('$.', '')
         return f"{column}->>'{json_path}'"
-    
+
     def _get_vector_distance(self, column: str, metric: str = "cosine") -> str:
         """
         Get PostgreSQL pgvector distance calculation.
@@ -117,7 +118,7 @@ class BaseRepository:
             return f"{column} <-> :embedding"
         else:
             return f"{column} <=> :embedding"
-    
+
     def _format_vector(self, vector: List[float]) -> Any:
         """
         Format vector for database storage.
@@ -137,25 +138,25 @@ def get_db_engine(db_path: str = None, use_null_pool: bool = False) -> Engine:
 
     # 1. Check for explicit DB_URL
     db_url = os.getenv("DB_URL")
-    
+
     # v4.2.1: Allow SQLite *only* if db_path is explicitly provided (Test Isolation)
     if db_path:
         db_url = f"sqlite:///{db_path}"
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    
+
     # 2. Construct from components (Default to Postgres)
     if not db_url:
         db_user = os.getenv("DB_USER", "postgres")
-        db_pass = os.getenv("DB_PASS", "postgres")
+        db_pass = require_db_password()
         db_host = os.getenv("DB_HOST")
         db_port = os.getenv("DB_PORT", "5432")
         db_name = os.getenv("DB_NAME", "portfolio")
-        
+
         if not db_host:
             db_host = "postgres"
             if "PYTEST_CURRENT_TEST" not in os.environ:
                  logger.warning(f"DB_HOST not set. Defaulting to '{db_host}'.")
-        
+
         db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
     # Cache key includes pool type to prevent sharing incompatible engines
@@ -170,8 +171,8 @@ def get_db_engine(db_path: str = None, use_null_pool: bool = False) -> Engine:
             else:
                 # v19.1: Increased pooling for high-concurrency [Phase 19]
                 engine = create_engine(
-                    db_url, 
-                    pool_size=20, 
+                    db_url,
+                    pool_size=20,
                     max_overflow=50,
                     pool_timeout=30,
                     pool_recycle=3600
@@ -181,20 +182,20 @@ def get_db_engine(db_path: str = None, use_null_pool: bool = False) -> Engine:
             from sqlalchemy.pool import StaticPool
             if "memory" in db_url.lower():
                 engine = create_engine(
-                    db_url, 
-                    poolclass=StaticPool, 
+                    db_url,
+                    poolclass=StaticPool,
                     connect_args={'check_same_thread': False}
                 )
             else:
                 engine = create_engine(db_url)
-            
+
         # Optional: Instrument the engine for OpenTelemetry
         try:
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
             SQLAlchemyInstrumentor().instrument(engine=engine)
         except (ImportError, Exception):
             pass
-            
+
         _db_engines[cache_key] = engine
 
     return _db_engines[cache_key]
@@ -211,10 +212,10 @@ def get_async_db_engine(db_path: str = None) -> AsyncEngine:
     if db_path:
         db_url = f"sqlite+aiosqlite:///{db_path}"
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    
+
     if not db_url:
         db_user = os.getenv("DB_USER", "postgres")
-        db_pass = os.getenv("DB_PASS", "postgres")
+        db_pass = require_db_password()
         db_host = os.getenv("DB_HOST", "postgres")
         db_port = os.getenv("DB_PORT", "5432")
         db_name = os.getenv("DB_NAME", "portfolio")
@@ -239,7 +240,7 @@ def get_async_db_engine(db_path: str = None) -> AsyncEngine:
             logger.info(f"Using PostgreSQL AsyncEngine: {db_url.split('@')[-1]}")
         else:
             engine = create_async_engine(db_url)
-            
+
         _async_db_engines[db_url] = engine
 
     return _async_db_engines[db_url]
@@ -252,7 +253,7 @@ class AsyncBaseRepository:
     def __init__(self, engine: Optional[AsyncEngine] = None):
         self.engine = engine or get_async_db_engine()
         self.session_factory = async_sessionmaker(
-            bind=self.engine, 
+            bind=self.engine,
             expire_on_commit=False,
             class_=AsyncSession
         )
@@ -279,26 +280,23 @@ def init_db(db_path=None, force=False, engine=None):
     db_url = os.getenv("DB_URL")
     if db_path:
         db_url = f"sqlite:///{db_path}"
-    elif not db_url:
-        db_user = os.getenv("DB_USER", "postgres")
-        db_pass = os.getenv("DB_PASS", "postgres")
-        db_host = os.getenv("DB_HOST", "postgres")
-        db_port = os.getenv("DB_PORT", "5432")
-        db_name = os.getenv("DB_NAME", "portfolio")
-        db_url = f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
+    # The URL is only used for the "already initialised" cache key below, and it is
+    # always replaced by the engine's own URL once the engine exists, so it is not
+    # built from DB_* here (that would only add a second place that reads DB_PASS).
+    # 此處的 URL 只用作下方的初始化快取鍵，引擎建好後一律改用引擎自己的 URL，不另外組。
     if engine is None:
         engine = get_db_engine(db_path)
-    
+
     # v5.0.1: If engine is provided or it's an in-memory test DB,
     # we should check initialization against the engine object itself or allow re-init.
     db_url = str(engine.url) if engine else db_url
-    
+
     if db_url in _db_initialized and not force and ":memory:" not in db_url:
         return
-    
+
     is_sqlite = engine.dialect.name == "sqlite"
-    
+
     # ── Schema creation ──────────────────────────────────────────────────
     #
     # This used to be ~430 lines of hand-written `CREATE TABLE IF NOT EXISTS`

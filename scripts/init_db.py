@@ -19,6 +19,10 @@ import subprocess
 
 from sqlalchemy import create_engine, inspect, text
 
+# Run from the repo root (alembic/docker); make `src` importable when run as a script.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.config.db_credentials import require_db_password  # noqa: E402
+
 
 def get_database_url() -> str:
     """Build DATABASE_URL from env vars (matches alembic/env.py logic)."""
@@ -27,7 +31,7 @@ def get_database_url() -> str:
         return url
 
     user = os.getenv("DB_USER", "postgres")
-    password = os.getenv("DB_PASS", "postgres")
+    password = require_db_password()
     host = os.getenv("DB_HOST", "postgres")
     port = os.getenv("DB_PORT", "5432")
     name = os.getenv("DB_NAME", "advisor_prod")
