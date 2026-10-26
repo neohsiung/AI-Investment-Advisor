@@ -5,6 +5,12 @@
 /src/services/unified_risk_gateway_service.py     @neohsiung
 /src/services/capital_policy.py                   @neohsiung
 /src/services/etoro_service.py                    @neohsiung
+/src/infrastructure/risk_manager.py              @neohsiung
+/src/services/actionable_alert_service.py        @neohsiung
+/src/services/broker_factory.py                   @neohsiung
+/src/services/ibkr_service.py                     @neohsiung
+/src/domain/broker.py                             @neohsiung
+/config/parameter_registry.yaml                   @neohsiung
 /src/services/confidence_rebalance_service.py     @neohsiung
 /src/services/batch_cash_deployment_service.py    @neohsiung
 /config/mission.yaml                              @neohsiung
