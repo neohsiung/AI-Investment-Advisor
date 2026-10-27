@@ -121,7 +121,7 @@ describe("AdaptiveWarRoomPage", () => {
     render(<AdaptiveWarRoomPage />);
 
     expect(screen.getByText("86.4")).toBeInTheDocument();
-    expect(screen.getByText("OPTIMAL (極佳)")).toBeInTheDocument();
+    expect(screen.getByText("等級：OPTIMAL")).toBeInTheDocument();
     expect(screen.getByText("BULL_LOW_VOL")).toBeInTheDocument();
     expect(screen.getByText("88%")).toBeInTheDocument();
     expect(screen.getByText("1.25x")).toBeInTheDocument();
@@ -137,11 +137,13 @@ describe("AdaptiveWarRoomPage", () => {
     expect(screen.getByText("尾部來源: 加權行情 (Asset-Weighted)")).toBeInTheDocument();
   });
 
-  it("displays template and synthetic provenance badges when fallback is used", () => {
-    const fallbackData = {
+  describe("when there are no live holdings (template / default / synthetic sources)", () => {
+    const emptyData = {
       ...MOCK_DIAGNOSE_DATA,
       data: {
         ...MOCK_DIAGNOSE_DATA.data,
+        health_score: 86.6,
+        health_rating: "OPTIMAL",
         provenance: {
           holdings: "template",
           market_observation: "default",
@@ -149,12 +151,52 @@ describe("AdaptiveWarRoomPage", () => {
         },
       },
     };
-    mock({ data: fallbackData });
-    render(<AdaptiveWarRoomPage />);
 
-    expect(screen.getByText("持倉: 範本基準 (Template)")).toBeInTheDocument();
-    expect(screen.getByText("宏觀: 預設常數 (Default)")).toBeInTheDocument();
-    expect(screen.getByText("尾部來源: 合成模擬 (Synthetic)")).toBeInTheDocument();
+    it("does not show a health score or rating, and says why", () => {
+      mock({ data: emptyData });
+      render(<AdaptiveWarRoomPage />);
+
+      expect(screen.queryByText("86.6")).not.toBeInTheDocument();
+      expect(screen.queryByText(/OPTIMAL/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/極佳|優異/)).not.toBeInTheDocument();
+      expect(screen.getByText(/還沒有持倉資料/)).toBeInTheDocument();
+      expect(screen.getByText(/第一次同步券商部位後/)).toBeInTheDocument();
+    });
+
+    it("points to the settings page as the next step", () => {
+      mock({ data: emptyData });
+      render(<AdaptiveWarRoomPage />);
+
+      expect(screen.getByRole("link", { name: /設定/ })).toHaveAttribute("href", "/settings");
+    });
+
+    it("shows neither the maintain-allocation nor the rebalance sentence", () => {
+      mock({ data: emptyData });
+      render(<AdaptiveWarRoomPage />);
+
+      expect(screen.queryByText(/維持現有配置/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/建議啟動再平衡|建議調倉|配置穩健/)).not.toBeInTheDocument();
+    });
+
+    it("still labels where each source came from, under a neutral heading", () => {
+      mock({ data: emptyData });
+      render(<AdaptiveWarRoomPage />);
+
+      expect(screen.queryByText(/零虛假/)).not.toBeInTheDocument();
+      expect(screen.getByText("資料來源")).toBeInTheDocument();
+      expect(screen.getByText("持倉: 範本基準 (Template)")).toBeInTheDocument();
+      expect(screen.getByText("宏觀: 預設常數 (Default)")).toBeInTheDocument();
+      expect(screen.getByText("尾部來源: 合成模擬 (Synthetic)")).toBeInTheDocument();
+    });
+
+    it("treats a missing provenance block as unverified, not as live", () => {
+      const { provenance: _omit, ...noProv } = MOCK_DIAGNOSE_DATA.data;
+      mock({ data: { status: "success", data: noProv } });
+      render(<AdaptiveWarRoomPage />);
+
+      expect(screen.queryByText("86.4")).not.toBeInTheDocument();
+      expect(screen.getByText(/還沒有持倉資料/)).toBeInTheDocument();
+    });
   });
 
   it("renders accessible table representation for radar dimensions", () => {
@@ -209,7 +251,7 @@ describe("AdaptiveWarRoomPage", () => {
     render(<AdaptiveWarRoomPage />);
 
     expect(screen.getByText("74.2")).toBeInTheDocument();
-    expect(screen.getByText("BALANCED (穩健)")).toBeInTheDocument();
+    expect(screen.getByText("等級：BALANCED")).toBeInTheDocument();
     expect(screen.getByText("SIDEWAYS_HIGH_VOL")).toBeInTheDocument();
     expect(screen.getByText("65%")).toBeInTheDocument();
     expect(screen.getByText("尾部來源: 實測淨值 (Live Portfolio)")).toBeInTheDocument();

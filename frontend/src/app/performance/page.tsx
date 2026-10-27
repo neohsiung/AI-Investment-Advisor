@@ -237,7 +237,7 @@ export default function PerformancePage() {
           <h3 className="font-headline font-bold text-lg tracking-tight">即時持倉 <span className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant ml-4">Live Positions</span></h3>
           <div className="flex items-center gap-2 text-[10px] font-bold text-secondary">
             <Activity size={12} className="animate-pulse" />
-            <span>LIVE · 30s</span>
+            <span>每 30 秒更新</span>
           </div>
         </div>
         {positions.length === 0 ? (
