@@ -15,7 +15,7 @@ logger = logging.getLogger("SeedProviders")
 def _get_target_user_id():
     from sqlalchemy import text
     conn = get_db_connection()
-    # Find the user we just created (the first one or supermfb)
+    # Find the user we just created (the first one)
     row = conn.execute(text("SELECT id FROM users ORDER BY created_at ASC LIMIT 1")).fetchone()
     conn.close()
     if not row:
@@ -44,7 +44,7 @@ def seed():
             ollama_p.base_url = "http://ollama:11434"
             ollama_p.enabled = True
             logger.info("Updated Ollama provider")
-        
+
         session.flush()
 
         # 2. OpenRouter Provider
@@ -63,7 +63,7 @@ def seed():
         else:
             or_p.enabled = True
             logger.info("Updated OpenRouter provider")
-            
+
         session.flush()
 
         # 3. Models
@@ -73,7 +73,7 @@ def seed():
             ("gemma2", "Gemma 3 (Latest Available)", {"streaming": True}),
             ("nomic-embed-text", "Nomic Embed", {"embeddings": True, "streaming": False}),
         ]
-        
+
         id_map = {} # (provider_code, model_code) -> id
 
         for m_code, d_name, caps in ollama_models:
@@ -101,7 +101,7 @@ def seed():
             ("anthropic/claude-3.5-sonnet", "Claude 4.6 (Latest)", {"streaming": True, "tool_calling": True}, 0.003, 0.015),
             ("google/gemini-pro-1.5", "Gemini Pro 3.1 (Latest)", {"streaming": True, "tool_calling": True}, 0.00125, 0.005),
         ]
-        
+
         for m_code, d_name, caps, ip_cost, op_cost in or_models:
             # Note: We use valid OR codes but requested display names
             existing = session.query(LLMModel).filter_by(provider_id=or_p.id, model_code=m_code).first()
@@ -143,10 +143,10 @@ def seed():
             model_ids = [id_map[(p, m)] for p, m in chain if (p, m) in id_map]
             if not model_ids:
                 continue
-            
+
             primary_id = model_ids[0]
             fallback_ids = model_ids[1:]
-            
+
             if existing:
                 existing.primary_model_id = primary_id
                 existing.fallback_model_ids = fallback_ids

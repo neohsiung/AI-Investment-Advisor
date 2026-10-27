@@ -1,5 +1,5 @@
 AI Investment Advisor
-Copyright 2026 AI Investment Advisor Contributors
+Copyright 2026 Litov and contributors
 
 This product is licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full license text.
@@ -12,11 +12,14 @@ trades with real money. It is provided "AS IS" with no warranty of any
 kind (see LICENSE §7-8). Trading involves substantial risk of loss.
 You are solely responsible for any financial outcome of running this
 software, including but not limited to trading losses, API costs, and
-third-party service charges. Always start in `paper`/demo mode and
-understand the code before connecting a funded brokerage account.
+third-party service charges. Keep `ai_trading_enabled` set to false
+until you have read the code, and only then connect a funded brokerage
+account. Note that `TRADING_MODE=paper` is not a simulation here: it
+makes every broker call fail.
 
 本軟體並非投資建議。本軟體可自主分析市場，若配置真實券商憑證，可能以
 真實資金下單。軟體依「現狀」提供，不含任何保證（見 LICENSE 第 7-8
 條）。交易具重大虧損風險。使用本軟體所產生之任何財務結果（包含但不限
-於交易虧損、API 費用、第三方服務費用）概由使用者自行負責。請務必先以
-paper/demo 模式運行並理解程式邏輯後，再連接有實際資金的券商帳戶。
+於交易虧損、API 費用、第三方服務費用）概由使用者自行負責。請先把
+`ai_trading_enabled` 保持為 false，讀過程式之後，再連接有實際資金的券商
+帳戶。注意 `TRADING_MODE=paper` 在本專案不是模擬，而是讓所有券商呼叫失敗。
