@@ -1,6 +1,6 @@
 {
  "ruff_version": "0.11.7",
- "total": 7460,
+ "total": 7459,
  "counts": {
   ".agent/skills/ci-test/scripts/ci_test.py::BLE001": 2,
   ".agent/skills/ci-test/scripts/ci_test.py::E501": 2,
@@ -1525,7 +1525,7 @@
   "src/services/sector_drift_guard_service.py::PLR0912": 2,
   "src/services/self_ops_service.py::BLE001": 7,
   "src/services/self_ops_service.py::E501": 2,
-  "src/services/self_ops_service.py::F401": 2,
+  "src/services/self_ops_service.py::F401": 1,
   "src/services/self_ops_service.py::F841": 1,
   "src/services/sentinel_service.py::B007": 1,
   "src/services/sentinel_service.py::BLE001": 73,
