@@ -19,9 +19,14 @@ def _install_step(src: str) -> str:
 
 def test_ci_install_reads_the_lockfile():
     step = _install_step(WORKFLOW.read_text(encoding="utf-8"))
-    assert "uv export --frozen" in step, "CI must export requirements from uv.lock (uv export --frozen)"
+    # --locked (as in the prod Dockerfile) also fails when uv.lock is stale vs pyproject.toml; --frozen would not.
+    # --locked（與正式 Dockerfile 一致）在 lock 過期時會失敗，--frozen 不會。
+    assert "uv export --locked" in step, "CI must export requirements from uv.lock (uv export --locked)"
 
 
-def test_ci_install_does_not_resolve_from_pyproject():
+def test_every_ci_install_reads_the_exported_requirements():
     step = _install_step(WORKFLOW.read_text(encoding="utf-8"))
-    assert not re.search(r"-r\s+pyproject\.toml", step), "CI must not resolve dependencies from pyproject.toml"
+    installs = [line for line in step.splitlines() if re.search(r"\buv pip install\b", line)]
+    assert installs, "no 'uv pip install' line found in the install step"
+    for line in installs:
+        assert "-r ci-requirements.txt" in line, f"install must read the exported lock requirements: {line.strip()}"

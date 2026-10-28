@@ -90,7 +90,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip uv
           # Install the versions pinned in uv.lock, not a fresh resolve. 安裝 uv.lock 鎖定的版本，不重新解析。
-          uv export --frozen --no-hashes --no-emit-project --extra dev --extra scrape --extra memory --extra obs -o ci-requirements.txt
+          uv export --locked --no-hashes --no-emit-project --extra dev --extra scrape --extra memory --extra obs -o ci-requirements.txt
           uv pip install --system -r ci-requirements.txt
           python -m playwright install --with-deps chromium
 
