@@ -231,7 +231,13 @@ class OrderExecutionFeedbackService:
         if not self.settings_repo:
             return default
         try:
-            val = self.settings_repo.get(self.user_id, key)
+            # Callers pass either a SettingsService (get_setting) or a repository (get);
+            # reading only one shape made every SettingsService caller fall back silently.
+            # 呼叫端可能傳 SettingsService（get_setting）或 repository（get），只認一種會讓前者永遠用預設值。
+            if hasattr(self.settings_repo, "get_setting"):
+                val = self.settings_repo.get_setting(key, default)
+            else:
+                val = self.settings_repo.get(self.user_id, key)
             if val is None:
                 return default
             if val_type is bool:
