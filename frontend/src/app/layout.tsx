@@ -16,14 +16,14 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Quantum AI | Command Center",
+  title: "AI Investment Advisor",
   description: "Advanced AI Investment Advisory Platform",
   manifest: "/manifest.json",
   themeColor: "#0a0a0a",
   viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0",
   appleWebApp: {
     capable: true,
-    title: "Quantum AI",
+    title: "AI Investment Advisor",
     statusBarStyle: "black-translucent",
   }
 };

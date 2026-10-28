@@ -22,7 +22,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
   const [lastMessage, setLastMessage] = useState<any>(null);
   const [missedMessages, setMissedMessages] = useState<any[]>([]);
   const [reconnectCount, setReconnectCount] = useState(0); // v5.2: Track retries for backoff
-  
+
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<any>(null);
   const stabilizeTimerRef = useRef<any>(null);
@@ -55,8 +55,11 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
     socket.onopen = () => {
       console.log("[WS] Connected");
       setStatus("CONNECTED");
+      // A new connection has delivered nothing yet; drop the previous one's message.
+      // 新連線尚未收到資料，清掉舊連線的最後一則訊息。
+      setLastMessage(null);
       setReconnectCount(0); // Reset backoff on successful connection
-      
+
       // v7.2: Trigger State Reconciliation if we have a previous timestamp
       if (lastTimestampRef.current) {
         console.log(`[WS] Reconciling state since ${lastTimestampRef.current}`);
@@ -75,7 +78,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        
+
         // v7.2: Handle special SYNC_COMPLETE message
         if (data.type === "SYNC_COMPLETE") {
           console.log(`[WS] Reconciliation complete: ${data.payload.count} events recovered.`);
@@ -87,7 +90,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
         if (data.payload?.timestamp) {
           lastTimestampRef.current = data.payload.timestamp;
         }
-        
+
         setLastMessage(data);
       } catch (err) {
         console.error("[WS] Message parse error:", err);
@@ -97,17 +100,18 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
     socket.onclose = (event) => {
       console.log(`[WS] Disconnected: ${event.code}`);
       setStatus("DISCONNECTED");
-      
+      setLastMessage(null);
+
       // Auto reconnect with Exponential Backoff
       if (event.code !== 1000 && user) {
         const nextCount = reconnectCount + 1;
         setReconnectCount(nextCount);
-        
+
         // v5.2: Exponential Backoff Calculation
         // base 1s * 2^attempts, capped at 30s
         const delay = Math.min(1000 * Math.pow(2, reconnectCount), 30000);
         console.log(`[WS] Retrying in ${delay}ms...`);
-        
+
         reconnectTimeoutRef.current = setTimeout(() => {
           connect(true);
         }, delay);
@@ -125,7 +129,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // Only attempt websocket after auth has resolved + user is logged in
     if (authLoading) return;
-    
+
     if (user) {
       connect();
     } else {

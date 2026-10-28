@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -129,28 +130,28 @@ function getRatingBadge(rating: string) {
   switch (rating?.toUpperCase()) {
     case "OPTIMAL":
       return {
-        label: "OPTIMAL (極佳)",
+        label: "OPTIMAL",
         bg: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
         ring: "ring-emerald-500/20",
         dot: "bg-emerald-400",
       };
     case "BALANCED":
       return {
-        label: "BALANCED (穩健)",
+        label: "BALANCED",
         bg: "bg-sky-500/15 text-sky-400 border-sky-500/30",
         ring: "ring-sky-500/20",
         dot: "bg-sky-400",
       };
     case "CAUTION":
       return {
-        label: "CAUTION (警戒)",
+        label: "CAUTION",
         bg: "bg-amber-500/15 text-amber-400 border-amber-500/30",
         ring: "ring-amber-500/20",
         dot: "bg-amber-400",
       };
     case "CRITICAL":
       return {
-        label: "CRITICAL (危殆)",
+        label: "CRITICAL",
         bg: "bg-rose-500/15 text-rose-400 border-rose-500/30",
         ring: "ring-rose-500/20",
         dot: "bg-rose-400",
@@ -256,6 +257,28 @@ function renderProvenancePill(type: "holdings" | "macro" | "tail", val?: string)
       <span className={cn("w-1.5 h-1.5 rounded-full", dotColor)} />
       尾部來源: {labelText}
     </span>
+  );
+}
+
+// 沒有真實持倉時的空狀態：不顯示分數、等級與建議，只說明原因與下一步
+function NoHoldingsState() {
+  return (
+    <section
+      aria-label="尚無持倉資料"
+      className="bg-surface-container-low p-6 lg:p-8 rounded-3xl border border-outline-variant/15 shadow-sm space-y-3"
+    >
+      <h2 className="text-lg font-bold font-headline text-on-surface">尚無持倉資料</h2>
+      <p className="text-sm text-on-surface-variant leading-relaxed">
+        還沒有持倉資料，分數要等第一次同步券商部位後才會出現。
+      </p>
+      <p className="text-sm text-on-surface-variant leading-relaxed">
+        請先到{" "}
+        <Link href="/settings" className="text-primary underline underline-offset-2">
+          設定
+        </Link>{" "}
+        確認券商連線。
+      </p>
+    </section>
   );
 }
 
@@ -367,14 +390,20 @@ export default function AdaptiveWarRoomPage() {
   const capitalSafety = payload.capital_safety_metrics || {};
   const rebalance = payload.rebalance_recommendation || {
     needs_rebalance: payload.needs_rebalance ?? false,
-    rebalance_reason: "投組結構與當前體制相符，維持現有配置",
   };
+  // The reason text must agree with the flag: never say "keep the allocation"
+  // next to "rebalance suggested".
+  // 說明文字要跟旗標一致，不能同時寫「維持現有配置」與「建議調倉」。
+  const rebalanceReason =
+    rebalance.rebalance_reason ||
+    (rebalance.needs_rebalance
+      ? "診斷判定需要調倉，尚未提供具體原因"
+      : "投組結構與當前體制相符，維持現有配置");
 
-  const provenance = payload.provenance || {
-    holdings: "template",
-    market_observation: "default",
-    tail_risk: "synthetic",
-  };
+  // A missing provenance block is unverified, not live.
+  // 缺少來源標記視為未驗證，不當成真實資料。
+  const provenance: ProvenanceData = payload.provenance || {};
+  const hasLiveHoldings = provenance.holdings === "live";
 
   return (
     <div className="p-6 lg:p-10 space-y-8 max-w-7xl mx-auto">
@@ -416,7 +445,7 @@ export default function AdaptiveWarRoomPage() {
         >
           <div className="flex items-center gap-2 text-on-surface-variant font-mono">
             <Database className="w-4 h-4 text-primary" />
-            <span className="font-semibold text-on-surface">零虛假數據真實來源保證:</span>
+            <span className="font-semibold text-on-surface">資料來源</span>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             {renderProvenancePill("holdings", provenance.holdings)}
@@ -426,6 +455,8 @@ export default function AdaptiveWarRoomPage() {
         </div>
       </header>
 
+      {hasLiveHoldings ? (
+      <>
       {/* 總合健康分數與核心膠囊卡 */}
       <section
         aria-label="投組綜合健康狀態"
@@ -439,7 +470,7 @@ export default function AdaptiveWarRoomPage() {
               綜合健康分數 (Health Score)
             </span>
             <div className={cn("px-3 py-1 rounded-full text-xs font-bold border", ratingStyle.bg)}>
-              {ratingStyle.label}
+              等級：{ratingStyle.label}
             </div>
           </div>
           <div className="flex items-baseline gap-2">
@@ -459,10 +490,10 @@ export default function AdaptiveWarRoomPage() {
           </div>
           <p className="text-xs text-on-surface-variant/80">
             {score >= 80
-              ? "投組在當前體制下表現優異，防禦抗跌與分散化效率皆達標。"
+              ? "分數在 80 分以上。"
               : score >= 65
-              ? "投組結構穩健，存在微量因子傾斜或集中度優化空間。"
-              : "投組結構偏離當前體制或尾部風險偏高，建議參考再平衡方案。"}
+              ? "分數介於 65 至 80 分，可看右側的結構度量找出差距。"
+              : "分數低於 65 分，可參考右側的再平衡方案。"}
           </p>
         </div>
 
@@ -619,7 +650,7 @@ export default function AdaptiveWarRoomPage() {
                 <tbody className="divide-y divide-outline-variant/10 bg-surface-container-low text-on-surface">
                   {radarChartData.map((row) => {
                     const statusText =
-                      row.score >= 80 ? "優異 (Optimal)" : row.score >= 60 ? "良好 (Healthy)" : "警戒 (Caution)";
+                      row.score >= 80 ? "80 以上" : row.score >= 60 ? "60 至 80" : "低於 60";
                     const statusColor =
                       row.score >= 80
                         ? "text-emerald-400"
@@ -664,7 +695,7 @@ export default function AdaptiveWarRoomPage() {
             </div>
 
             <p className="text-xs text-on-surface-variant/90 leading-relaxed">
-              {rebalance.rebalance_reason || "投組結構與當前體制相符，維持現有配置"}
+              {rebalanceReason}
             </p>
 
             {/* 目標權重或調倉清單 */}
@@ -781,6 +812,10 @@ export default function AdaptiveWarRoomPage() {
             ))}
           </ul>
         </section>
+      )}
+      </>
+      ) : (
+        <NoHoldingsState />
       )}
     </div>
   );
