@@ -120,10 +120,15 @@ DIVERGENCE_MIN_DISPATCHES = 3
 # 排程缺口檢查用的心跳任務：sentinel_tick 的歷史出現空洞，就代表風險監控出現空洞。
 HEARTBEAT_TASK = "sentinel_tick"
 
-# Only gaps that ended within this window are reported, so a gap raises one breach instead of one per check. It is
-# longer than the self_ops_check cadence (15 min), so no gap can fall between two checks.
-# 只回報在此窗口內結束的缺口，一個缺口只告警約一次；窗口大於 self_ops_check 週期，不會漏在兩次檢查之間。
-GAP_REPORT_WINDOW_MINUTES = 20
+# Only gaps that ended within this window are considered. Duplicates are prevented by claiming each gap by name (see
+# _claim_gap), not by the window, so a check that runs late after a host wake still sees the gap.
+# 只看在此窗口內結束的缺口；去重靠依名稱登記（_claim_gap），不靠窗口，所以主機醒來後延遲的檢查仍看得到。
+GAP_REPORT_WINDOW_MINUTES = 120
+
+# A heartbeat whose allowed gap exceeds this cannot detect an outage worth reporting (e.g. a cron list form that
+# derive_max_gap_seconds cannot read falls back to 2.5 h), so the check says so instead of going blind.
+# 容許間隔超過此值的心跳偵測不出值得回報的中斷（例如 derive_max_gap_seconds 讀不懂的 cron 列表會退到 2.5 小時）。
+GAP_MAX_USABLE_CADENCE_SECONDS = 3600
 
 # Look-back for the heartbeat history. A gap longer than this is still caught by the task_success dead-man switch.
 # 心跳歷史的回看範圍；超過此長度的中斷仍由 task_success dead-man 抓到。
@@ -364,7 +369,7 @@ class SelfOpsService:
 
             repeat = self._check_repeat_failures(conn)
             divergence = self._check_dispatcher_divergence(conn)
-            gaps = self._check_schedule_gaps(conn)
+            gaps = self._guarded_schedule_gaps(conn)
             conn.commit()
 
         breaches.extend(repeat)
@@ -508,6 +513,21 @@ class SelfOpsService:
             })
         return breaches
 
+    def _guarded_schedule_gaps(self, conn) -> List[Dict]:
+        """Run the gap check in a savepoint so its failure is reported as a breach, neither dropping the other
+        checks' breaches nor poisoning the surrounding transaction.
+        在 savepoint 內執行缺口檢查：失敗時以 breach 回報，不丟掉其他檢查的結果，也不弄壞外層交易。"""
+        try:
+            with conn.begin_nested():
+                return self._check_schedule_gaps(conn)
+        except Exception as e:
+            logger.error(f"self_ops: schedule-gap check failed: {e}", exc_info=True)
+            return [{
+                "name": "schedule_gap:check_failed",
+                "severity": "critical",
+                "detail": f"schedule-gap check raised {type(e).__name__}: {e}",
+            }]
+
     def _check_schedule_gaps(self, conn) -> List[Dict]:
         """
         Catch outages that are over by the time anyone checks.
@@ -524,7 +544,7 @@ class SelfOpsService:
         from src.infrastructure.celery_app import app as celery_app
 
         dispatcher = f"{_TASK_PREFIX}dispatch_{HEARTBEAT_TASK}"
-        schedules = [e["schedule"] for e in celery_app.conf.beat_schedule.values() if e["task"] == dispatcher]
+        schedules = [e["schedule"] for e in celery_app.conf.beat_schedule.values() if e.get("task") == dispatcher]
         if not schedules:
             # Never go quiet: a heartbeat that left the schedule blinds this check.
             # 不可靜默：心跳離開排程，這個檢查就瞎了。
@@ -534,6 +554,15 @@ class SelfOpsService:
                 "detail": f"{dispatcher} is not in the beat schedule; schedule-gap detection is blind",
             }]
         max_gap = min(derive_max_gap_seconds(sched) for sched in schedules)
+        if any(not hasattr(sched, "_orig_minute") for sched in schedules) or max_gap > GAP_MAX_USABLE_CADENCE_SECONDS:
+            return [{
+                "name": "schedule_gap:heartbeat_cadence_unusable",
+                "severity": "critical",
+                "detail": (
+                    f"{dispatcher} schedule is not a plain crontab or allows {max_gap // 60} min between runs; "
+                    f"schedule-gap detection cannot work with it"
+                ),
+            }]
 
         rows = conn.execute(
             text("""
@@ -548,16 +577,39 @@ class SelfOpsService:
 
         breaches = []
         for start, end, seconds in find_closed_gaps([r[0] for r in rows], max_gap, ended_since):
+            start_utc, end_utc = start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+            name = f"schedule_gap:{HEARTBEAT_TASK}:{end_utc.strftime('%Y%m%dT%H%MZ')}"
+            if not self._claim_gap(conn, name, seconds):
+                continue
             breaches.append({
-                "name": f"schedule_gap:{HEARTBEAT_TASK}:{end.strftime('%Y%m%dT%H%MZ')}",
+                "name": name,
                 "severity": "critical" if seconds >= GAP_CRITICAL_SECONDS else "warning",
                 "detail": (
-                    f"{HEARTBEAT_TASK} produced nothing from {start:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC "
-                    f"({seconds // 60} min, allowed {max_gap // 60}); risk monitoring, order reconciliation and "
-                    f"broker sync were likely stopped (host asleep, worker or beat down)"
+                    f"{HEARTBEAT_TASK} produced nothing from {start_utc:%Y-%m-%d %H:%M} to "
+                    f"{end_utc:%Y-%m-%d %H:%M} UTC ({seconds // 60} min, allowed {max_gap // 60}); risk "
+                    f"monitoring, order reconciliation and broker sync were likely stopped "
+                    f"(host asleep, worker or beat down)"
                 ),
             })
         return breaches
+
+    def _claim_gap(self, conn, name: str, seconds: int) -> bool:
+        """Record that this gap has been reported. True only for the first caller, so a gap alerts once.
+        The row is disabled, so check_all's dead-man loop ignores it; it reuses expected_outcomes to avoid a
+        migration (the kind constraint only allows two values).
+        登記此缺口已回報，只有第一次回 True。列為 disabled，dead-man 迴圈不會讀；
+        借用 expected_outcomes 以免做 migration。
+        """
+        row = conn.execute(
+            text("""
+                INSERT INTO expected_outcomes (name, kind, target, max_gap_seconds, enabled, last_alerted_at)
+                VALUES (:name, 'named_check', :target, :seconds, FALSE, NOW())
+                ON CONFLICT (name) DO NOTHING
+                RETURNING id
+            """),
+            {"name": name, "target": HEARTBEAT_TASK, "seconds": seconds},
+        ).fetchone()
+        return row is not None
 
     # ── Tiered remediation (Loop 2d, B-P2.3) ─────────────────────────────
 

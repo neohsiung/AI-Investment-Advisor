@@ -317,3 +317,32 @@ class TestScheduleGaps:
         from src.services.self_ops_service import HEARTBEAT_TASK
         tasks = [e["task"] for e in app.conf.beat_schedule.values()]
         assert f"src.infrastructure.tasks.dispatch_{HEARTBEAT_TASK}" in tasks
+
+    def test_gap_already_reported_is_not_reported_again(self):
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import MagicMock
+        from src.services.self_ops_service import SelfOpsService
+        now = datetime.now(timezone.utc)
+        conn = MagicMock()
+        conn.execute.return_value.fetchall.return_value = [(now - timedelta(hours=5),), (now - timedelta(minutes=10),)]
+        conn.execute.return_value.fetchone.return_value = None  # INSERT ... ON CONFLICT DO NOTHING inserted nothing
+        assert SelfOpsService(user_id="u")._check_schedule_gaps(conn) == []
+
+    def test_unreadable_cadence_is_reported_not_ignored(self):
+        from datetime import timedelta
+        from unittest.mock import MagicMock, patch
+        from src.services.self_ops_service import SelfOpsService
+        schedule = {"x": {"task": "src.infrastructure.tasks.dispatch_sentinel_tick", "schedule": timedelta(minutes=15)}}
+        fake_app = MagicMock()
+        fake_app.conf.beat_schedule = schedule
+        with patch("src.infrastructure.celery_app.app", fake_app):
+            breaches = SelfOpsService(user_id="u")._check_schedule_gaps(MagicMock())
+        assert [b["name"] for b in breaches] == ["schedule_gap:heartbeat_cadence_unusable"]
+
+    def test_failure_of_the_gap_check_becomes_a_breach(self):
+        from unittest.mock import MagicMock, patch
+        from src.services.self_ops_service import SelfOpsService
+        svc = SelfOpsService(user_id="u")
+        with patch.object(svc, "_check_schedule_gaps", side_effect=RuntimeError("db down")):
+            breaches = svc._guarded_schedule_gaps(MagicMock())
+        assert breaches[0]["name"] == "schedule_gap:check_failed" and breaches[0]["severity"] == "critical"
