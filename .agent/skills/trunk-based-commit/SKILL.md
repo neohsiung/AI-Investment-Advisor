@@ -36,7 +36,7 @@ Branch, worktree and PR rules come from dev-standard §1; this skill does not re
 
 - **第一行限制**: `<type>(<scope>): <繁中摘要>`
 - **內容詳述**: 必須包含 `**核心變更**:` 等分類標題，以繁中條列。
-- 專案與 Wiki 若同時變更，必須分別獨立 commit，不可混合。
+- 程式與 `docs/` 若性質不同，必須分別獨立 commit，不可混合。
 
 > **Rule of Thumb**: 若你無法用一個簡短的 `feat` 或 `fix` 來描述這個 Commit，代表你的變更包裝得太大了，請拆分成多個更小的原子級 Commits。詳細格式請務必參考 `.agent/rules/git-commit-format.md`。
 
@@ -45,49 +45,47 @@ Branch, worktree and PR rules come from dev-standard §1; this skill does not re
 - 絕對不要把「修復 A 模組的 Bug」和「新增 B 模組的功能」混在同一個 commit 裡。
 - 每個 commit 解決一個單位的問題，落實真正的隔離與原子化提交。
 
-### 5. 雙 Repo 規範與 Wiki 提交 (Dual-Repo & Wiki Commits)
+### 5. 文件提交 (Docs Commits)
 
-本專案的 `wiki/` 目錄為獨立或視為 Submodule 管理的 Repository。因此：
+舊 wiki 已退役，技術文件在本 repo 的 `docs/`，跟程式走同一個 PR。commit 訊息格式見 `.agent/rules/git-commit-format.md`。
 
-- **主專案提交**：在專案根目錄執行常規的 `git commit` 時，將不會（也不應）包含 `wiki/` 目錄的變更。commit 訊息格式見 `.agent/rules/git-commit-format.md`。
-- **Wiki 提交**：任何針對 `wiki/` 內實體文件的修改，**必須強制定向至 Wiki Repo**，使用 `git -C wiki add` 與 `git -C wiki commit` 獨立提交。
-- 若一項任務同時包辦了程式碼修改與 Wiki 文件更新，這必須被切分為**兩個完全獨立的原子化提交**（分別在主 Repo 執行 `feat` 等變更，在 Wiki Repo 執行 `docs(wiki)` 變更）。
+- 若一項任務同時包辦了程式碼修改與 `docs/` 文件更新，切成**兩個原子化提交**（例如 `feat(...)` 一個、`docs(...)` 一個），放在同一個 PR。
 
 ---
 
 ## Agent 執行範例
 
 1. 修改了 `registry.py` -> **遵循 `git-commit-format.md` 撰寫繁中詳細變更日誌並獨立 Commit**
-2. 更新了 `wiki/` 裡面的技術文件 -> **單獨對 `wiki` repository 進行對應的 docs(wiki) 繁中 Commit**
+2. 更新了 `docs/` 裡面的技術文件 -> **另開一個 `docs(...)` 繁中 Commit**
 
 ---
 
 ---
 
-## 6. Wiki Sync & Commit Workflow (Post-Task)
+## 6. Docs Sync & Commit Workflow (Post-Task)
 
-當 Agent 完成含架構變更（如新增模組/API、變更領域模型）的 task 時，必須執行以下 `walkthrough-wiki-sync` 流程，最後以 `docs(wiki)` 獨立提交 Wiki Repo：
+當 Agent 完成含架構變更（如新增模組/API、變更領域模型）的 task 時，必須執行以下 docs 統整流程，最後以 `docs(...)` 獨立提交：
 
 ### 1. 辨識影響範圍 (Impact Analysis)
 
 - 讀取當前 walkthrough 的變更模組與影響清單。
-- 使用 `grep_search` 搜尋 `wiki/` 中提及這些模組的文件。
+- 使用 `grep_search` 搜尋 `docs/` 中提及這些模組的文件。
 
-### 2. Wiki 迴圈式填補 (Iterative Wiki Patching)
+### 2. 文件迴圈式填補 (Iterative Docs Patching)
 
 - 開啟受影響文件，進行**段落精確修訂** (嚴禁整頁重寫)。
 - 新增架構設計必須加入 Mermaid 圖表並驗證可用性。
 - 遵循繁中與英文**雙語並列**格式。
 
-### 3. 扁平化連結驗證 (Flat-Link Verification)
+### 3. 相對連結驗證 (Relative-Link Verification)
 
-- 確保所有 Wiki 內部連結為 `[Label](PageName)`（嚴禁 `../` 與 `.md`）。
+- 內部連結用相對路徑；執行 `python .agent/skills/docs-maintainer/scripts/verify_docs_links.py` 確認 0 斷鏈。
 
 ### 4. README 增量檢視 (README Loop Enrichment)
 
 - 以迴圈增量將變更亮點與 Mermaid 架構圖同步更新至專案根目錄的 `README.md`。
 
-### 5. 同步驗證與提交 (Dual-Repo Sync Validation)
+### 5. 同步驗證與提交 (Sync Validation)
 
-- `git -C wiki status` 確認變更範圍。
-- 分離提交：主專案 Repo 提交 Code，Wiki Repo 執行 `git -C wiki commit` 提交文件。
+- `git status` 確認變更範圍。
+- 分離提交：程式與文件各一個 commit，同一個 PR。

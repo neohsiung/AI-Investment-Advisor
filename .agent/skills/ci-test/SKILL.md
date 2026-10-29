@@ -1,7 +1,7 @@
 ---
 name: ci-test
 description: |
-  預提交檢查工具，包含測試覆蓋率、安全掃描、Wiki 完整性與授權合規性。
+  預提交檢查工具，包含測試覆蓋率、安全掃描、docs/ 連結完整性與授權合規性。
   觸發時機：(1) 任何 git commit 前
   (2) 移除任何 pip 套件（requirements.txt）後
   (3) 重構任何 import 路徑或模組結構後
@@ -14,7 +14,7 @@ description: |
 
 ## 適用時機 (When to Use)
 
-- **在任何 `git commit` 前**：確保本次變更沒有破壞現有測試、引入安全漏洞或破壞 Wiki 連結。
+- **在任何 `git commit` 前**：確保本次變更沒有破壞現有測試、引入安全漏洞或破壞 docs/ 連結。
 - **當 Agent 完成一個階段性的功能開發或重構時**。
 - **CodeQL / Dependabot 回報新警告時**：選取相關廢棄的 `src/` 路徑，執行全面 taint 掃描（參考 `agent-secret-redaction` 技能）再 commit 修復。
 - **Health check 測試失敗**：若 CI 回報 `/health` endpoint 狀態不是 `healthy`，必須檢查該測試是否有 mock DB（詳見下方）。
@@ -38,7 +38,7 @@ description: |
      pytest --cov=src --cov-fail-under=${CI_THRESHOLD} tests/unit/
      ```
 3. **Security Scan (Bandit & Grep Checks)**: 執行 `bandit` 掃描，增量模式僅掃描變更檔案。
-4. **Wiki Integrity Check (Flat-Linking)**: 驗證 Wiki 內部連結的有效性，確保遵循扁平化連結規範。
+4. **Docs Link Integrity Check**: 驗證 `docs/` 內 markdown 相對連結都指到存在的檔案。
 5. **License Compliance Check**: 檢查第三方套件的授權合規性。
 
 ## 使用指南 (Usage Guide)
@@ -85,10 +85,10 @@ grep -r "execute(f\"" src/
 grep -rE "(key|token|password|secret)\s*=\s*['\"][a-zA-Z0-9]{10,}['\"]" src/
 ```
 
-### Wiki 檢查
+### docs/ 連結檢查
 
 ```bash
-python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
+python .agent/skills/docs-maintainer/scripts/verify_docs_links.py
 ```
 
 ### 授權檢查
@@ -101,7 +101,7 @@ pip-licenses
 
 - 若任何一項檢查失敗，**嚴禁執行 commit**，必須先修復問題。
 - 對於 Bandit 的警告，若確認為 False Positive，應使用 `# nosec` 標註而非直接忽略。
-- Wiki 連結若失效，應參考 `wiki-maintainer` 技能進行修復。
+- docs/ 連結若失效，應參考 `docs-maintainer` 技能進行修復。
 
 ## Health Check 測試與 CI 隱離 (Health Check Test & CI DB Isolation)
 

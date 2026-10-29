@@ -127,9 +127,9 @@ jobs:
           # Fail if there are medium or high severity issues
           python -m bandit -r src/ -ll -f screen
 
-      - name: Wiki Integrity Check (Flat-Linking)
+      - name: Docs Link Integrity Check
         run: |
-          python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
+          python .agent/skills/docs-maintainer/scripts/verify_docs_links.py
 
       - name: License Compliance Check
         run: |

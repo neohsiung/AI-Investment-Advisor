@@ -4,7 +4,7 @@ Print a Markdown inventory of every switch / mode / cap setting: family, default
 輸出所有開關/模式/上限設定的 Markdown 清單：所屬家族、預設值、群組與 src/ 中讀取它的檔案數。
 
 Offline and fast (one pass over src/). Source of truth for families: config/settings_families.yaml.
-Used to generate the wiki inventory:  .venv/bin/python scripts/settings_inventory.py > /tmp/inventory.md
+Used to generate the docs/ settings inventory:  .venv/bin/python scripts/settings_inventory.py > /tmp/inventory.md
 """
 from __future__ import annotations
 
