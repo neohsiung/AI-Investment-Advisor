@@ -1,23 +1,25 @@
 # 文檔維護標準 (Documentation Standards)
 
-本文件定義 Wiki 與 README 的維護標準，確保專案文檔始終作為「開發藍圖」與「規格來源」。
+本文件定義 `docs/` 與 README 的維護標準，確保專案文檔始終作為「開發藍圖」與「規格來源」。
 
 ---
 
-## 1. Wiki 標準 (Wiki Standards)
+## 1. docs/ 標準 (Docs Standards)
+
+> 舊 GitHub wiki 已退役，技術文件放在 repo 的 `docs/`，跟程式一起走 PR。分工見 `docs/README.md`。
 
 ### 1.1 檔案命名與結構
 - **命名規則**: `{繁體中文}-{英文}.md`。禁止在檔名中使用數字前綴。
 - **目錄規則**: 資料夾必須以 `XX_名稱` 數字開頭以維持顯示順序。
 - **一文一事**: 每份文件應專注於單一主題，避免內容冗長。
 
-### 1.4 扁平化連結 (Flat-Linking Standard)
-- **核心格式**: 所有內部連結必須使用 `[Label](PageName)` 格式。
-- **路徑規範**: 嚴禁使用資料夾路徑（如 `../` 或 `01_Manual/`）及 `.md` 副檔名。
-- **雙向一致性**: 指向文件的名稱必須與該文件的 `basename`（不含副檔名）完全一致，確保在 GitHub Wiki 中具備正確的雙向導航功能。
+### 1.4 相對連結 (Relative Links)
+- **核心格式**: 內部連結一律用相對路徑，例如 `[系統全景圖](../01_System_Architecture/系統全景圖-System-Landscape.md)`。
+- **不用扁平連結**: 不再使用 wiki 的 `[Label](PageName)` 寫法；連結要指到存在的檔案。
+- **檢查**: `python .agent/skills/docs-maintainer/scripts/verify_docs_links.py`（有壞連結回傳 1，CI 會跑）。
 
 ### 1.2 雙語並列與撰寫順序 (Bilingual Workflow)
-本專案嚴格依循 [文件框架定義](文件框架定義-Document-Frameworks) 與 [文件規範](文件規範-Wiki-Standard) 實施雙語工作流：
+本專案依循 `.agent/rules/wiki-standard.md`（分類與命名）實施雙語工作流：
 - **撰寫順序 (Writing Order)**:
   1. **英文優先 (English First)**: 先以專業、具備產業規格的英文撰寫或更新內容，確保技術精確度與全球化通用性。
   2. **中文翻譯 (Traditional Chinese Translation)**: 完成英文後，完整翻譯為繁體中文。
@@ -45,7 +47,7 @@
 > 來源：decision-stack 的可遷移原則（`behavior-claims-are-run-not-reasoned`、`version-bump-needs-the-idea`、
 > `recipient-delta-defines-the-artifact`、`an-explanation-must-change-a-next-action`、`a-review-batch-names-what-to-read-first`）。
 
-**何時要寫**：每一批開發（一個 PR 或一組相關 PR）結束時，必須交付一份技術文件並同步 wiki；若確實不需要，PR 內寫「無需更新 wiki」與理由。
+**何時要寫**：每一批開發（一個 PR 或一組相關 PR）結束時，必須交付一份技術文件並統整 `docs/`；若確實不需要，PR 內寫「無需更新 docs/」與理由。
 
 **寫之前先回答**：這份文件的讀者是誰（維護者／審查者／未來的 agent）？他還缺什麼？只寫那幾項。
 
@@ -60,13 +62,12 @@
 
 **文件骨架（建議）**：英文摘要 3–5 行 → 這一版換掉的想法 → 一張總覽圖 → 行為表（情境／結果／驗證指令）→ 失效模式與回滾 → 相關頁面連結。
 
-**Wiki 統整清單（每批結束檢查）**：新增或修改的頁面是否已在 `Home.md`、`_Sidebar.md` 連結？`verify_wiki_links.py` 通過？wiki 是獨立 git repo，需另行 commit。
+**docs/ 統整清單（每批結束檢查）**：新增或修改的頁面是否已在 `docs/Home.md` 或 `docs/README.md` 連結？`verify_docs_links.py` 通過？文件與程式在同一個 PR，不需另行 commit。
 
 ### 1.5 本地專屬文件標準 (Local-Only Document Standard)
 - 當使用者要求「產出文檔但不要放到 GitHub 上」或標記為「Local-Only」時：
-  1. 檔案依舊產生於對應的 `wiki/` 目錄中。
-  2. **嚴禁**將該檔案連結加入到 `wiki/_Sidebar.md` 或 `wiki/Home.md` 之中。
-  3. **必須**將該檔案名稱 (或路徑) 加到 `wiki/.gitignore` 中，確保它永遠不會被 commit 回 GitHub 遠端庫。
+  1. 檔案放在 `scratch/` 或 `reports/`（兩者都在 `.gitignore`），不放進 `docs/`（`docs/` 全部進版控且公開）。
+  2. **嚴禁**從 `docs/` 或 README 連結到這些檔案。
 
 ---
 
@@ -76,7 +77,7 @@
 
 ### 2.1 撰寫原則 (The Golden Rules)
 - **視覺優先 (Aesthetics First)**: 使用精心挑選的徽章 (Badges)、Mermaid 圖表與清晰的分隔線。避免純文字堆砌。
-- **內容淬鍊 (Content Distillation)**: 內容應從 Wiki 深度文件中「淬鍊」精華，而非簡單複製。確保每個章節都能引發讀者對 Wiki 的進一步探索好奇。
+- **內容淬鍊 (Content Distillation)**: 內容應從 `docs/` 深度文件中「淬鍊」精華，而非簡單複製。確保每個章節都能引發讀者對 `docs/` 的進一步探索好奇。
 - **循環增量 (Loop Enrichment)**: **(Premium Approach)** 每次功能更新後，應以「回圈式」檢視 README，思考如何將新功能的亮點融入現有結構，使內容日益豐富。
 - **雙語工作流 (Bilingual Loop)**:
     1. **英文優先**: 先以專業、具備產業規格的英文撰寫。
@@ -88,14 +89,14 @@
 3. **專案概覽**: 核心價值主張與 3-5 個高亮亮點。
 4. **一鍵啟動**: 讓開發者在 30 秒內看到結果的指令。
 5. **架構圖**: 具備 Mermaid 渲染的高級架構概覽。
-6. **深度導航**: 指向 `wiki/` 目錄的精確分類連結。
+6. **深度導航**: 指向 `docs/` 目錄的精確分類連結。
 
 ## 3. 智能體產出物標準 (Agentic Artifacts Standards)
 
 本項標準適用於所有由 Agent 產出的階段性文件，包括 `implementation_plan.md` (Plan)、`task.md` (Task) 與 `walkthrough.md` (Walkthrough)。
 
 ### 3.1 雙語撰寫與翻譯流程 (Bilingual Workflow)
-- **撰寫順序 (Writing Order)**: 
+- **撰寫順序 (Writing Order)**:
   1. **英文優先 (English First)**: Agent 必須先以專業英文完成上述文件的內容撰寫與更新。
   2. **繁體中文化 (Traditional Chinese Translation)**: 完成英文版後，必須立即將內容完整翻譯為繁體中文。
 - **排版要求 (Layout)**: 必須確保繁體中文與英文內容並列或分區清晰，方便使用者核對。
@@ -103,4 +104,4 @@
 ---
 
 ## 4. 同步規範 (Sync Rules - Rule #12)
-- **原子化同步**: 代碼變更、Commit 文檔、Wiki 更新、README 亮點增補必須在同一週期內完成同步。
+- **原子化同步**: 代碼變更、Commit 文檔、`docs/` 更新、README 亮點增補必須在同一週期內完成同步。

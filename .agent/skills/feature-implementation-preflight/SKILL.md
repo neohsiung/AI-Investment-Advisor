@@ -13,9 +13,9 @@ description: 強制 Agent 在撰寫程式前，進行全局架構掃描與 UI/UX
 ## 🎯 執行指導手冊 (Execution Guidelines)
 
 ### Step 1: 架構先決與多租戶防護 (Architecture & Multi-Tenancy First)
-1. 操作: 必須閱讀 [系統全景圖](系統全景圖-System-Landscape) 下相關的文件。
+1. 操作: 必須閱讀 [系統全景圖](../../../docs/01_System_Architecture/系統全景圖-System-Landscape.md) 下相關的文件。
 2. 目標: 定義本次開發功能是屬於系統的哪個模組 (Data Layer, Swarm Layer, API Gateway...)？
-3. B2C SaaS 護欄: 
+3. B2C SaaS 護欄:
    - [多租戶隔離] 任何新增的 API、Service 或 Repository 操作，**強制要求**必須接收並正確傳遞 `user_id`。嚴禁操作無 `user_id` 綁定的全域資料。
    - [成本意識] 評估此新功能是否會消耗 LLM Token；若會，必須確保流程通過 `LLMGateway` 或經過相關之 `BillingService` 驗證，防止超越 Subscription Plan 額度。
 
@@ -27,7 +27,7 @@ description: 強制 Agent 在撰寫程式前，進行全局架構掃描與 UI/UX
    - 若有設定檔矩陣 (如 `data_source_matrix_config.py`)，必須更新該矩陣。
 
 ### Step 3: 體驗共感設計 (UX Empathy Design)
-**(最重要環節)** 
+**(最重要環節)**
 1. 操作: 檢視 `services/dashboard/src/pages/` 下的頁面佈局。
 2. 目標: 評估這項功能在 Dashboard 會長什麼樣子。你需要主動建立一個 Toggle (開關)，或是增加 API Key 輸入框，絕對不能只修改後端邏輯而把 UI 留給使用者自己頭痛。
 
@@ -35,9 +35,9 @@ description: 強制 Agent 在撰寫程式前，進行全局架構掃描與 UI/UX
 1. 操作: 產出 `implementation_plan.md`，使用 Markdown 將預定要更改的前後端模組與檔案清楚表列。
 2. 目標: 透過 `notify_user`，請使用者說 "Go" 或確認你的 Blueprint 之後，再寫下第一行 Python 程式碼。
 
-### Step 5: Wiki 內容校對 (Wiki Sync Validation)
-1. 操作: 在實作規劃或完成時，必須確認本次修改的服務、API或架構目錄是否有對應的 Wiki 頁面。
-2. 防護機制: 若修改的是核心架構（如新增 Skill、Service 或 Repository），應自動檢視 `wiki/` 目錄下對應文件，並將同步更新 Wiki 列入你的 Definition of Done (DoD) 清單中。亦可執行 `python .agent/skills/wiki-maintainer/scripts/audit_tree_mapping.py` 來驗證。
+### Step 5: 文件校對 (Docs Sync Validation)
+1. 操作: 在實作規劃或完成時，必須確認本次修改的服務、API或架構目錄是否有對應的 `docs/` 頁面。
+2. 防護機制: 若修改的是核心架構（如新增 Skill、Service 或 Repository），應自動檢視 `docs/` 目錄下對應文件，並將同步更新 `docs/` 列入你的 Definition of Done (DoD) 清單中。亦可執行 `python .agent/skills/docs-maintainer/scripts/verify_docs_links.py` 驗證連結。
 
 ---
 🛡️ **防雷提醒**: 勿預設立場跳過上述任何一步驟，一次「慢工出細活」的對齊勝過十次「搞砸重做的程式碼修改」。

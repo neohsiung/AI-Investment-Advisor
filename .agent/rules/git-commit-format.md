@@ -5,21 +5,13 @@
 產生或協助撰寫 commit 訊息時，**一律用繁體中文**（2026-10-25 起，創辦人決定）。`type` 與 `scope` 維持英文關鍵字；指令、路徑、識別名稱、錯誤訊息保持原文。
 Commit messages are written in Traditional Chinese; `type`/`scope` keywords, commands, paths and identifiers stay as-is.
 
-Since this project maintains two separate repositories (**Project Repo** and **Wiki Repo**), you must generate **two separate commit messages** when changes affect both source code and documentation.
+The old GitHub wiki is retired; documentation lives in `docs/` of this repo and ships in the same PR as the code (one repo, no second commit).
 
-## 雙 Repo 規範 (Dual-Repo Standard)
+## 單一 Repo 規範 (Single-Repo Standard)
 
-**當變更同時涉及代碼與文檔時，必須分別產出以下兩份訊息：**
-
-### 1. 專案 Repo (Project Repo)
-- **Scope**: `agents`, `services`, `infrastructure`, `workflow`, `config`, `tests`, `docs` (僅限 README 或非 Wiki 文檔)
-- **內容**: 聚焦於程式碼變更、邏輯調整、測試新增。
-
-### 2. Wiki Repo (Wiki Repo)
-- **Repo Path**: `wiki/` (本專案做為 submodule 或獨立 repo 管理)
-- **Scope**: `wiki`
-- **內容**: 聚焦於文檔更新、架構圖調整、規格變更。
-- **格式**: 雖然是文檔，仍需遵循相同結構 (Summary + Core Changes)。
+- **Scope**: `agents`, `services`, `infrastructure`, `workflow`, `config`, `tests`, `docs`（`docs/` 與 README 的變更都用 `docs`）
+- 程式與文件的變更若性質不同，仍分成不同 commit（見下方原子提交原則）。
+- 文件 commit 仍需遵循相同結構 (Summary + Core Changes)。
 
 ## Format Template
 
@@ -41,7 +33,7 @@ Since this project maintains two separate repositories (**Project Repo** and **W
 | `fix` | 錯誤修復 | `fix(sentinel): 修正 4D 觸發邏輯` |
 | `refactor` | 代碼重構 | `refactor(agents): 抽出 factory 模式` |
 | `test` | 測試相關 | `test(services): 補 analytics service 測試` |
-| `docs` | 文檔更新 | `docs(wiki): 路線圖更新到 v3.7` |
+| `docs` | 文檔更新 | `docs(roadmap): 路線圖更新到 v3.7` |
 | `chore` | 建構/配置 | `chore(deps): pytest 升到 8.0` |
 | `perf` | 效能優化 | `perf(workflow): 提高 agent 平行度` |
 | `style` | 代碼格式 | `style(services): 套用 black 格式` |
@@ -70,7 +62,7 @@ Since this project maintains two separate repositories (**Project Repo** and **W
 3. **服務層** - 業務邏輯服務
 4. **基礎設施** - LLM router, channel adapters, etc.
 5. **測試覆蓋** - 測試相關變更
-6. **文檔更新** - Wiki、README 更新
+6. **文檔更新** - `docs/`、README 更新
 7. **配置** - 環境變數、settings
 
 **規則**: 至少包含「核心變更」，其他根據實際情況選擇相關分類。
@@ -125,14 +117,7 @@ feat(analytics): 實作槓桿引擎，精確計算淨權益
 
 **強制要求**: Agent **嚴禁**在未獲得使用者明確 `commit` 指令的情況下自動執行 `git commit`。Agent 的職責是執行研發、測試與驗證，並將變更處於待提交狀態。
 
-## Wiki 提交規範 (Wiki Commit Convention)
-
-- **「wiki commit」**: 僅針對 `wiki/` Repo 執行 `git -C wiki add/commit/push`。
-- **「commit」**: 僅針對主專案 Repo（wiki 已在 `.gitignore` 中排除）。
-- **「commit & wiki commit」**: 依序執行兩個 Repo 的原子化提交。
-
 ## 參考 (References)
 
 - Conventional Commits: https://www.conventionalcommits.org/
 - Git commit best practices: https://chris.beams.io/posts/git-commit/
-

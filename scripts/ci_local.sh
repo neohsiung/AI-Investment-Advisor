@@ -2,7 +2,7 @@
 # ci_local.sh — run the cheap CI gates locally BEFORE pushing, so a PR does not fail on a step we could have run.
 # 在推送前本機先跑 CI 中便宜的幾道關卡，避免 PR 才發現失敗。
 #
-# Mirrors .github/workflows/ci-cd.yml (lab job): Alembic upgrade+check on a THROWAWAY Postgres, Bandit, wiki links, dev-standard rules sync, ruff (new violations only).
+# Mirrors .github/workflows/ci-cd.yml (lab job): Alembic upgrade+check on a THROWAWAY Postgres, Bandit, docs links, dev-standard rules sync, ruff (new violations only).
 # The full pytest run is separate (it takes ~18 min): `PY=... $PY -m pytest tests/unit tests/invariants -q`.
 # Never touches the production database: it starts its own container on an unused port and removes it on exit.
 #
@@ -34,6 +34,8 @@ fi
 
 echo "== 2/6 Charter E2E (pytest -m charter_e2e on the same throwaway Postgres; any skip is a FAIL) =="
 if ! command -v docker >/dev/null; then echo "SKIP: docker not available"; else
+  # throwaway CI database, not a real credential
+  # pragma: allowlist nextline secret
   CHARTER_E2E_PG_URL="postgresql+psycopg2://postgres:postgres@localhost:$PORT/portfolio" CHARTER_E2E_REQUIRE_PG=1 \
     "$PY" -m pytest -m charter_e2e tests/e2e/charter -q -rs >/tmp/ci_local_charter_e2e.log 2>&1
   rc=$?
@@ -49,8 +51,8 @@ if "$PY" -m bandit --version >/dev/null 2>&1; then
   "$PY" -m bandit -r src/ -ll -q >/tmp/ci_local_bandit.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_bandit.log)"; tail -5 /tmp/ci_local_bandit.log; fail=1; }
 else echo "SKIP: bandit not installed in $PY"; fi
 
-echo "== 4/6 Wiki link integrity =="
-"$PY" .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py >/tmp/ci_local_wiki.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_wiki.log)"; tail -5 /tmp/ci_local_wiki.log; fail=1; }
+echo "== 4/6 docs/ link integrity =="
+"$PY" .agent/skills/docs-maintainer/scripts/verify_docs_links.py >/tmp/ci_local_docs.log 2>&1 && echo "OK" || { echo "FAIL (see /tmp/ci_local_docs.log)"; tail -5 /tmp/ci_local_docs.log; fail=1; }
 
 echo "== 5/6 Layering baseline tightness (warning only; blocking gate is tests/invariants) =="
 if "$PY" -m tests.invariants.test_layering --check-tight >/tmp/ci_local_layering.log 2>&1; then echo "OK"; else
