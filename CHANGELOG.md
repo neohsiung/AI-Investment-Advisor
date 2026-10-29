@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The weekly charter digest title now starts with the week's state: 🛑 degraded this week, 🧊 frozen now or this week, 📋 neither. Filters that match on the title text should match on `章程週報 / Charter weekly digest` rather than the leading symbol.
+
 ## [0.4.0] - 2026-09-20
 
 Major architecture transition to declarative workflows, dynamic agent registry,
