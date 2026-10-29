@@ -7,14 +7,14 @@ This directory serves as the **Operational Brain** of the AI Agent. It defines h
 ### 1. Rules (`/rules`)
 The **Guardrails** of the system.
 - `engineering-standards.md`: Core coding and architectural requirements.
-- `documentation-standards.md`: How we maintain the Wiki and project logs.
+- `documentation-standards.md`: How we maintain `docs/` and project logs.
 - `git-commit-format.md`: Strict rules for atomic commits.
 - `reflection-standards.md`: Guidelines for self-healing and error classification.
 
 ### 2. Skills (`/skills`)
 The **Specialized Capability Packages**. Each folder contains a `SKILL.md` (instructions) and optional scripts/resources.
 - `feature-implementation-preflight`: Pre-coding checklist (Architecture/UI/UX).
-- `wiki-maintainer`: Automated link verification and structure audits.
+- `docs-maintainer`: Automated link verification for `docs/`.
 - `trunk-based-commit`: High-frequency, atomic version control logic.
 - `postgres-raw-sql`: Standards for database interactions.
 - `audit-plugin`: Security auditing for 3rd-party tools and plugins.
@@ -26,5 +26,5 @@ The **Operational Playbooks**. Standardized processes for common large-scale tas
 
 ## 📝 Maintenance
 - All `SKILL.md` files must follow the YAML frontmatter standard (`name`, `description`).
-- References to Wiki components must follow the **8-Pillar Taxonomy**.
+- References to `docs/` pages must follow the category folders listed in `docs/README.md`.
 - Hardcoded sensitive values (keys, model strings) are strictly prohibited in instructions.

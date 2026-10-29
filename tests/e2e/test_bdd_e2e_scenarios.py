@@ -1,6 +1,6 @@
 """
 End-to-End Behavior-Driven Development (BDD) Test Scenarios.
-Aligned with wiki/05_Quality_Assurance/端到端行為驅動測試規格-BDD-E2E-Testing-Specs.md
+Aligned with docs/05_Quality_Assurance/端到端行為驅動測試規格-BDD-E2E-Testing-Specs.md
 """
 
 import os
@@ -45,7 +45,7 @@ class TestBddReflexArbiterHedging:
             confidence=0.98,
             is_escalated=False,
             tier="reflex",
-            state_sha256="4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+            state_sha256="4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",  # pragma: allowlist secret
             latency_ms=112.5,
         )
 
@@ -82,7 +82,7 @@ class TestBddReflexArbiterHedging:
             confidence=0.90,
             is_escalated=True,
             tier="smart",
-            state_sha256="4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+            state_sha256="4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",  # pragma: allowlist secret
             latency_ms=1450.0,
         )
 

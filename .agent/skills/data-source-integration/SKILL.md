@@ -32,4 +32,4 @@ description: 建立與串接新數據源的標準化流程 (Standardized workflo
 3. **測試要求**: 撰寫 Mock 測試，Provider 模組覆蓋率必須 **> 70%**。
 
 ---
-*完成後請執行 `trunk-based-commit` 中的 Wiki Sync 流程同步架構變動。*
+*完成後請執行 `trunk-based-commit` 中的 Docs Sync 流程同步架構變動。*

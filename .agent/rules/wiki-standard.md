@@ -1,76 +1,40 @@
-# Wiki Standard
+# Docs Standard
+
+這份檔名沿用 `wiki-standard.md`，內容已改成 `docs/` 的標準。
+
+舊 GitHub wiki 已退役。技術文件放在 repo 根目錄的 `docs/`，跟程式一起走 PR。哪些頁有搬過來，見 `docs/README.md`。
 
 ## 目錄結構
 
-Wiki 根目錄: `wiki/`
-
 ```
-wiki/
-├── Home.md                    # 首頁 — 強制存在
-├── _Sidebar.md                # 側邊欄 — 強制存在
-│
+docs/
+├── README.md                  # docs/ 的分工、搬了哪些頁
+├── Home.md                    # 舊 wiki 首頁（版本紀錄與架構總覽）
+├── design/                    # 設計決策紀錄 DD-*.md（dev-standard §5）
 ├── 00_Product_Strategy/       # 產品策略、規格書、路線圖
-│   ├── Optimization-Roadmap.md
-│   └── Specs/                 # 細部規格
-│
 ├── 01_System_Architecture/    # 系統架構、模組設計
-│   ├── System-Landscape.md
-│   ├── Module-Map.md
-│   └── Task-Board.md          # 待辦事項看板
-│
 ├── 02_Frontend_UX/            # 前端
-│
 ├── 03_Backend_Intelligence/   # 後端智能層（LLM、Agent、路由）
-│
-├── 04_Data_Storage/           # 資料儲存層（DB、Redis）
-│
-├── 05_Quality_Assurance/      # 測試、規範、設計模式
-│   ├── Patterns/              # 設計模式
-│   └── Tools-and-Integration/ # 工具與整合
-│
-├── 06_SRE_Observability/      # 維運、監控、部署
-│
-└── Archive/                   # 已淘汰／歷史文件
-    ├── Legacy-Root/           # 原本在根目錄的舊檔
-    └── Project-History/       # 專案歷史記錄
+├── 04_Data_Storage/           # 資料儲存層
+├── 05_Quality_Assurance/      # 測試、規範、不變量
+└── 06_SRE_Observability/      # 維運、部署、自架手冊
 ```
 
-## 檔案命名規則
+分類資料夾只在有頁面時才建。
 
-- 只允許 **英文** + **數字** + **連字號** (-) — 禁止中文字元
-- 格式：`Pascal-Case-Description.md`
-- 禁止數字前綴（如 `P1.1-`、`01-`）
-- 範例：❌ `架構總綱-Architecture-Blueprint.md` → ✅ `Architecture-Blueprint.md`
+## 檔案命名
 
-## 分類歸檔規則
+- 沿用舊頁的 `{繁體中文}-{English}.md`；新頁照 `.agent/rules/documentation-standards.md` §1.1。
+- 檔名不加數字前綴，只有分類資料夾有。
 
-| 編號 | 分類 | 內容 |
-|------|------|------|
-| 00 | Product Strategy | 路線圖、產品規格、商業策略 |
-| 01 | System Architecture | 系統全景、模組地圖、架構決策、任務看板 |
-| 02 | Frontend UX | 前端框架、UI 規範、UX 指南 |
-| 03 | Backend Intelligence | Agent、LLM 路由、決策引擎、NLP |
-| 04 | Data Storage | ORM、Repository、Redis、資料管道 |
-| 05 | Quality Assurance | 測試規範、設計模式、開發標準、安全 |
-| 06 | SRE Observability | 部署、監控、設定、維運手冊 |
-| Archive | 已淘汰 | 舊版文件保留但不納入 Sidebar |
+## 連結
 
-## 檢核機制
+- 內部連結一律用相對路徑，指到存在的檔案。
+- 檢查指令：`python .agent/skills/docs-maintainer/scripts/verify_docs_links.py`。
+- 有壞連結會回傳 1，CI 會跑。
 
-執行 `wiki-validate` script 檢查：
+## 內容
 
-```bash
-make wiki-check
-# 或直接執行：
-# python scripts/wiki_validator.py
-```
-
-檢核項目：
-
-1. ✅ `Home.md` 存在
-2. ✅ `_Sidebar.md` 存在
-3. ✅ 所有檔案名稱無中文字元
-4. ✅ 所有檔案名稱無數字前綴
-5. ✅ 無重複目錄（如 `02_Tools_and_Integration` vs `02_常用工具與整合-Tools_and_Integration`）
-6. ✅ 所有 .md 檔案位於六個主要分類或 Archive 下（不在 root 層散落）
-7. ✅ `_Sidebar.md` 包含所有非 Archive 文件的連結
+- 不放個人信箱、家目錄路徑、真實帳戶金額；範例值要註明「範例」。
+- 實際設定值不寫在文件裡，例如 `tradable_capital_usd`。改寫查詢方法，用 API 或 SQL。
+- 不寫會漂移的數字。

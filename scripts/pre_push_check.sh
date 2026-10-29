@@ -2,7 +2,7 @@
 # ==============================================================================
 # Pre-Push Quality & Safety Gate (本地預檢守衛腳本)
 # ==============================================================================
-# 於 git push 前快速執行靜態分析、作用域檢查、安全審計、Wiki 鏈結校驗與快速回歸。
+# 於 git push 前快速執行靜態分析、作用域檢查、安全審計、docs/ 連結校驗與快速回歸。
 # 耗時：數十秒（步驟 1-3 約 5 秒；步驟 4 = 不變量 + config + fail-silent + 依變更檔挑選的單元測試，
 #   實測見 PR 說明）。完整的舊 75 檔清單（約 8 分鐘）改為 PRE_PUSH_FULL=1 才跑；完整測試以 CI 為準。
 # Duration: tens of seconds. Steps 1-3 ~5 s; step 4 = invariants + config + fail-silent policy
@@ -92,10 +92,10 @@ if [ -f "$BANDIT" ]; then
     echo -e "${GREEN}✓ Bandit security baseline clean (0 high/medium issues)${NC}"
 fi
 
-# 3. Wiki Flat-Links Integrity Check
-echo -e "\n${YELLOW}[3/4] Validating Wiki Flat-Links Integrity...${NC}"
-$PYTHON .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py
-echo -e "${GREEN}✓ Wiki internal links verified${NC}"
+# 3. docs/ Link Integrity Check
+echo -e "\n${YELLOW}[3/4] Validating docs/ link integrity...${NC}"
+$PYTHON .agent/skills/docs-maintainer/scripts/verify_docs_links.py
+echo -e "${GREEN}✓ docs/ internal links verified${NC}"
 
 # 4. Fast Regression: always-run gates + tests for files changed vs origin/main
 if [ "${PRE_PUSH_FULL:-0}" = "1" ]; then

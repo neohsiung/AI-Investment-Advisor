@@ -5,7 +5,7 @@ check_standards.py - Unified Verification Tool
 This tool runs all required project checks locally:
 1. Unit Tests (pytest)
 2. Security Scan (bandit)
-3. Wiki Link Integrity (verify_wiki_links)
+3. docs/ Link Integrity (verify_docs_links)
 
 Usage: python scripts/check_standards.py
 """
@@ -41,7 +41,7 @@ def main():
     checks = [
         ("Unit Tests", "pytest --cov=src --cov-report=term-missing tests/"),
         ("Security Scan", "python3 -m bandit -r src/ -ll"),
-        ("Wiki Integrity", "python3 .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py")
+        ("Docs Link Integrity", "python3 .agent/skills/docs-maintainer/scripts/verify_docs_links.py")
     ]
 
     all_passed = True

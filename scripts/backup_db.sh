@@ -3,7 +3,7 @@
 #
 # Crontab (use THIS checkout's absolute path; cron has a minimal PATH so the script sets its own):
 # 建議 crontab（用這份 checkout 的絕對路徑；cron 的 PATH 很短，所以腳本自己設定）：
-#   0 3 * * * /Users/neohsiung/Work/Projects/investment-advisor/scripts/backup_db.sh >> /Users/neohsiung/Work/Projects/investment-advisor/backups/backup.log 2>&1
+#   0 3 * * * /path/to/investment-advisor/scripts/backup_db.sh >> /path/to/investment-advisor/backups/backup.log 2>&1
 #
 # A failed or empty dump is never kept and never reported as success: the script exits non-zero and leaves
 # backups/BACKUP_FAILED (reason inside); a good run removes that marker. Before 2026-10-21 cron ran with no PATH, so
