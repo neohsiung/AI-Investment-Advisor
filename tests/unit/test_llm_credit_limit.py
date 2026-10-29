@@ -153,3 +153,34 @@ def test_self_ops_named_check_is_critical_when_refused(redis):
 
 def test_self_ops_named_check_none_when_fine(redis):
     assert SelfOpsService(user_id="u")._check_named(None, "check:llm_credit_available", "llm_credit_available") is None
+
+
+def _litellm_budget_error():
+    """The exact shape prod saw on 2026-10-25: httpx 429 whose body (not str(exc)) carries the budget wording."""
+    import httpx
+
+    body = (
+        '{"error":{"message":"Budget has been exceeded! Key=advisor-prod Current cost: 2.36, Max budget: 1.0",'
+        '"type":"budget_exceeded","param":null,"code":"429"}}'
+    )
+    request = httpx.Request("POST", "http://shared_litellm:4000/v1/chat/completions")
+    response = httpx.Response(429, text=body, request=request)
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        return e
+
+
+def test_litellm_budget_exceeded_body_is_credit_limit():
+    assert classify_error(_litellm_budget_error()) == ErrorCategory.CREDIT_LIMIT
+
+
+def test_plain_429_without_budget_body_stays_rate_limit():
+    import httpx
+
+    request = httpx.Request("POST", "http://x/v1/chat/completions")
+    response = httpx.Response(429, text='{"error":{"message":"slow down"}}', request=request)
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        assert classify_error(e) == ErrorCategory.RATE_LIMIT
