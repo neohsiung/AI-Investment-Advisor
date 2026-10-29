@@ -12,7 +12,6 @@ stop or touch a real container, volume or database.
 """
 from __future__ import annotations
 
-import os
 import shutil
 import stat
 import subprocess
@@ -106,7 +105,10 @@ class Box:
         return (self.fake / "calls.log").read_text().splitlines()
 
     def changed_stack(self) -> list[str]:
-        return [c for c in self.calls() if c.startswith("compose") and (" build" in c or " up " in c or c.endswith(" up"))]
+        return [
+            c for c in self.calls()
+            if c.startswith("compose") and (" build" in c or " up " in c or c.endswith(" up"))
+        ]
 
     def project_names(self) -> set[str]:
         out = set()
@@ -135,7 +137,8 @@ class TestCleanMachine:
         assert r.returncode == 0, r.stdout + r.stderr
         assert box.project_names(), "install never ran compose"
         assert LEGACY_PROJECT not in box.project_names()
-        assert not any(LEGACY_PREFIX + "_" in c for c in box.calls()), "install touched a production-style container name"
+        assert not any(LEGACY_PREFIX + "_" in c for c in box.calls()), \
+            "install touched a production-style container name"
 
     def test_scheduler_starts_only_after_safe_defaults_are_seeded(self, box):
         r = box.run(*INSTALL)
