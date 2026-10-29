@@ -19,7 +19,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-PROD_COMPOSE="docker compose --project-name investment_advisor -f docker-compose.prod.yml"
+# shellcheck source=scripts/lib/deploy_guard.sh
+source "$SCRIPT_DIR/scripts/lib/deploy_guard.sh"
+advisor_load_identity
 
 # Colors for terminal output
 BOLD="\033[1m"
@@ -122,8 +124,7 @@ function ensure_env_file {
 function guard_encryption_keys {
     # Check if a postgres volume already exists
     local db_volume_exists=0
-    if docker volume inspect investment_advisor_advisor_db_data >/dev/null 2>&1 \
-       || docker volume inspect advisor_db_data >/dev/null 2>&1; then
+    if docker volume inspect "$ADVISOR_DB_VOLUME" >/dev/null 2>&1; then
         db_volume_exists=1
     fi
 
@@ -144,7 +145,7 @@ function guard_encryption_keys {
             echo "   would permanently orphan your saved broker and LLM provider credentials."
             echo ""
             echo "   Please restore the original keys into .env (check backups/ or .env.bak-*),"
-            echo "   or delete the volume with:  docker volume rm investment_advisor_advisor_db_data"
+            echo "   or delete the volume with:  docker volume rm $ADVISOR_DB_VOLUME"
             exit 1
         fi
     fi
@@ -280,6 +281,12 @@ done
 
 check_prerequisites
 ensure_env_file
+# Names come from .env (created above); refuse before anything is built or started
+# if this machine already runs a stack we would collide with or take over.
+# 名字取自 .env；本機已有會撞名或被接管的 stack 時，在建置與啟動之前拒絕。
+advisor_load_identity
+advisor_guard_identity "$SCRIPT_DIR" || exit 1
+PROD_COMPOSE="docker compose --project-name $ADVISOR_PROJECT_NAME -f docker-compose.prod.yml"
 guard_encryption_keys
 
 log_info "Ensuring deployment secrets..."
@@ -349,20 +356,23 @@ PROVIDER="${PROVIDER:-skip}"
 # Build and bring up stack
 if [ "$SKIP_BUILD" -eq 0 ]; then
     log_info "Building container images..."
-    $PROD_COMPOSE build
+    $PROD_COMPOSE --profile scheduler build
 fi
 
-log_info "Starting single-box services..."
+# Phase 1: everything except the scheduler (worker + beat). They stay down until
+# the safe defaults below are in place, so nothing scheduled can run first.
+# 第一階段：不含排程（worker、beat）。安全預設值寫好之前，沒有任何排程能跑。
+log_info "Starting core services (scheduler stays down until defaults are seeded)..."
 $PROD_COMPOSE up -d --remove-orphans
 
 wait_for_api || true
 
 log_info "Applying database migrations..."
-docker exec advisor_prod_api alembic upgrade head
+docker exec "$C_API" alembic upgrade head
 log_success "Database migrations applied."
 
 log_info "Seeding safe defaults..."
-docker exec advisor_prod_api python -c "
+docker exec "$C_API" python -c "
 from src.config.owner import get_owner_id
 from src.services.settings_service import SettingsService
 owner = get_owner_id()
@@ -374,12 +384,17 @@ if svc.get_setting('ai_trading_enabled') is None:
 "
 
 log_info "Applying initial onboarding configuration..."
-docker exec advisor_prod_api python scripts/onboarding_wizard.py \
+docker exec "$C_API" python scripts/onboarding_wizard.py \
     --profile "$PROFILE" \
     --provider "$PROVIDER" \
     ${API_KEY:+--api-key "$API_KEY"} \
     ${BASE_URL:+--base-url "$BASE_URL"} \
     --non-interactive
+
+# Phase 2: the scheduler (worker + beat), now that defaults and onboarding are done.
+# 第二階段：預設值與初始設定都完成後，才啟動排程。
+log_info "Starting scheduler (worker + beat)..."
+$PROD_COMPOSE --profile scheduler up -d
 
 echo ""
 log_info "Verifying deployment health..."
@@ -393,6 +408,11 @@ if ./start.sh health; then
     echo -e "  ⚙️  Extensions:  ${BOLD}http://127.0.0.1:8088/extensions${NC}"
     echo -e "  🤖 Agents:      ${BOLD}http://127.0.0.1:8088/agents${NC}"
     echo -e "  📊 Workflows:   ${BOLD}http://127.0.0.1:8088/workflows${NC}"
+    echo ""
+    echo "  Next steps:"
+    echo "    1. Open http://127.0.0.1:8088/settings and add your LLM key (reports need it)."
+    echo "    2. ./start.sh report   Queue the first report now (otherwise: weekdays 17:00 US Eastern)."
+    echo "    3. Keep ai_trading_enabled=false until you have decided to trade."
     echo ""
     echo "  Commands:"
     echo "    ./start.sh health      Check running status"

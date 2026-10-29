@@ -38,18 +38,37 @@ else
     PROD_PROFILES=""
 fi
 
-PROD_COMPOSE="docker compose --project-name investment_advisor -f docker-compose.prod.yml ${PROD_PROFILES}"
-PROD_CACHE="advisor_prod_cache"
-PROD_DB="advisor_prod_db"
+# Names (project, container prefix) come from .env, see scripts/lib/deploy_guard.sh.
+# 專案名與容器名取自 .env。
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib/deploy_guard.sh
+source "$SCRIPT_DIR/scripts/lib/deploy_guard.sh"
+
+# The scheduler (celery worker + beat) is its own compose profile so that a bare
+# `docker compose up` does not start it. This script turns it on unless told not
+# to: ADVISOR_SCHEDULER=0 runs the stack without scheduled work.
+# 排程（worker、beat）是獨立 profile；本腳本預設開啟，ADVISOR_SCHEDULER=0 可關閉。
+if [ "${ADVISOR_SCHEDULER:-1}" = "1" ]; then
+    PROD_PROFILES="$PROD_PROFILES --profile scheduler"
+fi
+
+function configure_compose {
+    advisor_load_identity
+    PROD_COMPOSE="docker compose --project-name ${ADVISOR_PROJECT_NAME} -f docker-compose.prod.yml ${PROD_PROFILES}"
+    PROD_CACHE="$C_CACHE"
+    PROD_DB="$C_DB"
+    REQUIRED_PROD_CONTAINERS=("$C_API" "$C_UI" "$C_DB" "$C_CACHE" "$C_GATEWAY")
+    if [ "${ADVISOR_SCHEDULER:-1}" = "1" ]; then
+        REQUIRED_PROD_CONTAINERS+=("$C_BEAT" "$C_WORKER")
+    fi
+}
+configure_compose
 readonly REPORT_QUEUES=("report:daily:queue" "report:weekly:queue" "report:priority:queue")
 
 # Core single-box stack. SigNoz and n8n are opt-in profiles and are deliberately
 # absent — a healthy default deployment must report green without them.
 # SigNoz 與 n8n 為選配 profile，預設健檢不要求它們。
-readonly REQUIRED_PROD_CONTAINERS=(
-    advisor_prod_api advisor_prod_ui advisor_prod_db advisor_prod_cache
-    advisor_prod_beat advisor_prod_worker advisor_prod_gateway
-)
+# (REQUIRED_PROD_CONTAINERS is set in configure_compose.)
 
 readonly OBSERVABILITY_CONTAINERS=(
     signoz signoz-otel-collector signoz-clickhouse
@@ -70,10 +89,12 @@ function show_help {
     echo "  restore [id]  Restore database and config from a backup in backups/."
     echo "  upgrade       Pull, migrate, restart, and health-gate the result."
     echo "  wizard        Run the interactive onboarding and cost-profile wizard."
+    echo "  report        Queue today's daily report now (needs the scheduler and an LLM key)."
     echo "  tunnel        Start the ngrok tunnel (webhook endpoints only)."
     echo ""
     echo "Environment:"
     echo "  OBSERVABILITY=1        also run the SigNoz stack"
+    echo "  ADVISOR_SCHEDULER=0    run without the scheduler (celery worker + beat)"
     echo "  WORKER_CONCURRENCY=N   Celery worker processes (default 4)"
     echo "  SKIP_BUILD=1           skip image builds on 'up'"
 }
@@ -179,8 +200,7 @@ function guard_encryption_keys {
     # 這兩把金鑰加密的是資料庫內容；DB volume 還在而 .env 不見時重新產生金鑰，
     # 會讓既有 eToro / LLM 憑證永久無法解密，且錯誤要很久以後才浮現。
     local db_volume_exists=0
-    if docker volume inspect investment_advisor_advisor_db_data >/dev/null 2>&1 \
-       || docker volume inspect advisor_db_data >/dev/null 2>&1; then
+    if docker volume inspect "$ADVISOR_DB_VOLUME" >/dev/null 2>&1; then
         db_volume_exists=1
     fi
     [ "$db_volume_exists" = "0" ] && return 0
@@ -216,7 +236,7 @@ function seed_safe_defaults {
     #      workers/beat start racing for it;
     #   2. auto-trading is pinned off for a fresh install.
     # 在 API 容器內執行：先建立擁有者（advisory lock 序列化），再關閉自動交易。
-    docker exec advisor_prod_api python -c "
+    docker exec "$C_API" python -c "
 import sys
 from src.config.owner import get_owner_id
 owner = get_owner_id()
@@ -262,7 +282,7 @@ function fix_redis_queues {
 
 function wait_for_api {
     local api_port=8001
-    if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
+    if docker ps --format '{{.Names}}' | grep -q "$C_API"; then
         api_port=8000
     fi
     local api_url=${1:-"http://localhost:${api_port}/health"}
@@ -298,7 +318,7 @@ function show_health {
 
     echo ""
     echo "Containers:"
-    docker ps --filter "name=advisor_prod" --format "  {{.Names}}: {{.Status}}" 2>/dev/null
+    docker ps --filter "name=${ADVISOR_CONTAINER_PREFIX}_" --format "  {{.Names}}: {{.Status}}" 2>/dev/null
     docker ps --filter "name=signoz" --format "  {{.Names}}: {{.Status}}" 2>/dev/null
 
     local running
@@ -316,7 +336,7 @@ function show_health {
     done
 
     local api_port=8001
-    if printf '%s\n' "$running" | grep -qx "advisor_prod_api"; then
+    if printf '%s\n' "$running" | grep -qx "$C_API"; then
         api_port=8000
     fi
 
@@ -343,7 +363,7 @@ function show_health {
     # is a normal state and must not fail the health gate. Only report on it
     # when it is actually running.
     # n8n 已降為選配；停用是正常狀態，僅在實際執行時才回報。
-    if docker ps --format '{{.Names}}' | grep -q "advisor_prod_n8n"; then
+    if docker ps --format '{{.Names}}' | grep -q "$C_N8N"; then
         echo ""
         echo "n8n (optional):"
         if curl -sf "http://localhost:5678/healthz" >/dev/null 2>&1; then
@@ -419,10 +439,10 @@ function run_migrations {
     local target_container=""
     local target_db=""
 
-    if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
+    if docker ps --format '{{.Names}}' | grep -q "$C_API"; then
         echo "Detected: Production Environment"
-        target_container="advisor_prod_api"
-        target_db="advisor_prod_db"
+        target_container="$C_API"
+        target_db="$C_DB"
     elif docker ps --format '{{.Names}}' | grep -q "investment_advisor_mcp"; then
         echo "Detected: Development Environment"
         target_container="investment_advisor_mcp"
@@ -462,9 +482,9 @@ function start_tunnel {
     #
     # 通道已改指向 webhook 專用 vhost（:8080），只公開自帶憑證的端點；
     # 此處仍檢查是否有人把 ngrok 改回 :80。
-    if grep -qE '^\s*command:\s*http .*advisor_prod_gateway:80\s*$' docker-compose.prod.yml; then
+    if grep -qE '^\s*command:\s*http .*nginx:80\s*$' docker-compose.prod.yml; then
         echo "❌ Refusing to start the tunnel."
-        echo "   docker-compose.prod.yml points ngrok at advisor_prod_gateway:80,"
+        echo "   docker-compose.prod.yml points ngrok at nginx:80,"
         echo "   which publishes the unauthenticated dashboard and the whole /api/"
         echo "   surface to the internet. It must target :8080 (webhook-only vhost)."
         return 1
@@ -497,9 +517,17 @@ function run_predeploy_gate {
     fi
 }
 
+function guard_deployment {
+    # Fail closed before anything is built or started: see scripts/lib/deploy_guard.sh.
+    # 在建置與啟動之前就失敗；規則見 scripts/lib/deploy_guard.sh。
+    configure_compose
+    advisor_guard_identity "$SCRIPT_DIR"
+}
+
 function cmd_up {
     echo "=== Starting investment-advisor ==="
     check_env
+    guard_deployment || return 1
 
     guard_encryption_keys || return 1
 
@@ -635,6 +663,8 @@ EOF
 
 function cmd_restore {
     local target="${1:-}"
+    check_env
+    guard_deployment || return 1
     if [ -z "$target" ]; then
         # Auto-detect latest backup manifest
         local latest_manifest
@@ -700,13 +730,15 @@ function cmd_restore {
     fi
 
     echo "Restarting services to apply restored configuration..."
-    $PROD_COMPOSE restart advisor_prod_api advisor_prod_beat advisor_prod_worker
+    $PROD_COMPOSE restart mcp_server celery_beat worker
     wait_for_api || true
     echo "✅ Restore complete."
 }
 
 function cmd_upgrade {
     echo "=== Upgrading investment-advisor ==="
+    check_env
+    guard_deployment || return 1
     cmd_backup
 
     if command -v git >/dev/null 2>&1 && [ -d .git ]; then
@@ -738,10 +770,25 @@ function cmd_upgrade {
     fi
 }
 
+function cmd_report {
+    # Queue today's daily report now instead of waiting for the weekday 17:00 ET
+    # schedule. Needs the scheduler (worker) running and an LLM key in Settings.
+    # 立即排入今日報告，不等週一到週五 17:00 ET 的排程；需要 worker 在跑，且設定頁已有 LLM 金鑰。
+    configure_compose
+    if ! docker ps --format '{{.Names}}' | grep -qx "$C_WORKER"; then
+        echo "❌ The scheduler (worker) is not running, so nothing would pick the report up."
+        echo "   Start it with ./start.sh up (unless ADVISOR_SCHEDULER=0 is set)."
+        return 1
+    fi
+    $PROD_COMPOSE exec -T worker celery -A src.infrastructure.celery_app call \
+        src.infrastructure.tasks.dispatch_daily_report --kwargs '{"force_report": true}'
+    echo "Queued. Open http://127.0.0.1:8088/reports in a few minutes."
+}
+
 function cmd_wizard {
     echo "=== Running Onboarding Wizard ==="
-    if docker ps --format '{{.Names}}' | grep -q "advisor_prod_api"; then
-        docker exec -it advisor_prod_api python scripts/onboarding_wizard.py "$@"
+    if docker ps --format '{{.Names}}' | grep -q "$C_API"; then
+        docker exec -it "$C_API" python scripts/onboarding_wizard.py "$@"
     else
         python3 scripts/onboarding_wizard.py "$@"
     fi
@@ -774,6 +821,9 @@ case "${1:-up}" in
         ;;
     wizard)
         cmd_wizard "${@:2}"
+        ;;
+    report)
+        cmd_report
         ;;
     tunnel)
         start_tunnel

@@ -206,6 +206,5 @@ volumes:
 
 networks:
   advisor-net:
-    name: investment_advisor_advisor-net
+    name: ${ADVISOR_PROJECT_NAME:-advisor}_advisor-net
     external: true
-
