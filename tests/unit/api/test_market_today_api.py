@@ -37,5 +37,14 @@ def test_failure_is_a_500_without_the_cause():
 
 
 def test_router_is_wired_under_v1():
+    # Behavioural check: newer FastAPI wraps included routers, so listing `.routes` paths is not portable.
+    # 行為檢查：新版 FastAPI 會包裝被 include 的 router，列舉 `.routes` 的 path 不可移植。
     from src.api.v1.router import api_v1_router
-    assert "/market/today" in {r.path for r in api_v1_router.routes}
+
+    wired = FastAPI()
+    wired.include_router(api_v1_router, prefix="/api/v1")
+    wired.dependency_overrides[get_current_user_id] = lambda: "test-user"
+    with patch("src.api.v1.endpoints.market.MarketClock") as clock_cls:
+        clock_cls.return_value.session_today.return_value = True
+        resp = TestClient(wired).get("/api/v1/market/today")
+    assert resp.status_code == 200 and resp.json()["data"]["state"] == "trading_day"
