@@ -23,7 +23,7 @@ ls -la requirements.txt
 (代理人向使用者提議執行以下指令，將專案升級為 `uv` 或 `Poetry` 依賴結構)
 ```bash
 # 若要初始化 uv：
-# uv init 
+# uv init
 # uv add -r requirements.txt
 echo "準備進行 uv 或 Turborepo 結構轉換，請指示是否執行！"
 ```
@@ -38,7 +38,7 @@ ls -la docker-compose*.yml
 ### 4. 同步與產出文檔 (Sync & Report)
 完成初期結構化建立後，自動觸發文檔同步流程，將專案新架構 (Monorepo 或是 uv.lock) 反映至架構文件中：
 ```bash
-/walkthrough-wiki-sync
+# 同步 docs/：見 .agent/skills/trunk-based-commit/SKILL.md 第 6 節
 ```
 
 ---

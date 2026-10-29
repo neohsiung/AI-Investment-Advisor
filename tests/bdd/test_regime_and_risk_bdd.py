@@ -3,7 +3,7 @@ Behavior-Driven Development (BDD) Scenarios: Market Regime, Dynamic Risk, and CA
 行為驅動開發 (BDD) 測試規格：市場體制感知、動態風控與年化 10% 淨利保障防線。
 ==============================================================================================
 Aligned with:
-- wiki/05_Quality_Assurance/端到端行為驅動測試規格-BDD-E2E-Testing-Specs.md
+- docs/05_Quality_Assurance/端到端行為驅動測試規格-BDD-E2E-Testing-Specs.md
 - Rule #0: 靜默失敗防治 (Fail-Silent Prevention)
 - 10-Year Net CAGR > 10% with Max Drawdown <= 15%
 """
