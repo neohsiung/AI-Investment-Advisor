@@ -37,12 +37,31 @@ SPY に対して純超過リターンを出せるかどうかは、確認でき�
 
 ## クイックスタート
 
-```bash
-git clone https://github.com/neohsiung/AI-Investment-Advisor.git
-cd AI-Investment-Advisor
-cp .env.example .env
-./start.sh
-```
+前提：Docker（Compose v2）と空きメモリ約 4 GB。Python と Node.js はローカル開発にだけ必要です。
+
+1. **インストール。**
+
+   ```bash
+   git clone https://github.com/neohsiung/AI-Investment-Advisor.git
+   cd AI-Investment-Advisor
+   ./install.sh
+   ```
+
+   `install.sh` は前提条件の確認、シークレット生成、コンテナのビルド、マイグレーション、安全なデフォルト（`ai_trading_enabled` の既定値は false）の適用を行い、最後にスケジューラ（Celery worker と beat）を起動します。同じマシンにこのプロジェクトの別スタック（同じ compose プロジェクト名、同じコンテナ名、または本番環境）がある場合、インストールは**拒否**されます。名前は `.env` の `ADVISOR_PROJECT_NAME` と `ADVISOR_CONTAINER_PREFIX` で決まります。
+
+2. **キーを入力。** [設定ページ](http://127.0.0.1:8088/settings)で LLM プロバイダーのキー（インストール時に入力済みなら不要）と、お持ちのデータソースのキーを入れます。キーは暗号化してデータベースに保存され、`.env` には置きません。LLM キーがないとレポートは生成されません。
+3. **最初のレポート。** スケジューラが平日の米東部時間 17:00 に生成します。今すぐ欲しい場合：
+
+   ```bash
+   ./start.sh report
+   ```
+
+   数分後に[レポートページ](http://127.0.0.1:8088/reports)を開きます。
+4. **取引はオフのまま。** コードを読んで取引すると決めるまで `ai_trading_enabled=false` を維持してください。実注文にはブローカーのキーと `etoro_mode=real` も必要です。
+
+開発スタック（ホットリロード、別の compose プロジェクト `advisor_dev`）：`docker compose up -d`。単一ボックスのスタックには触れません。
+
+アクセス先：
 
 | サービス | URL |
 |:---------|:----|

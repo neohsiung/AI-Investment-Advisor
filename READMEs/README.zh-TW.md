@@ -71,24 +71,31 @@ AI Investment Advisor 是自架的量化投資系統：多個 LLM agent 評估�
 
 ## 快速開始
 
-### 前置需求
+前置需求：Docker 與 Compose v2，空出約 4 GB 記憶體。Python、Node.js 只有本地開發才需要。
 
-- Docker 與 Docker Compose
-- Python 3.10 以上，本地開發用
-- Node.js 20 以上，前端開發用
+1. **安裝。**
 
-### 啟動
+   ```bash
+   git clone https://github.com/neohsiung/AI-Investment-Advisor.git
+   cd AI-Investment-Advisor
+   ./install.sh
+   ```
 
-```bash
-# 1. 複製並設定
-git clone https://github.com/neohsiung/AI-Investment-Advisor.git
-cd AI-Investment-Advisor
-cp .env.example .env
-# 編輯 .env，設定 APP_SECRET_KEY 和 LLM_CREDENTIAL_KEY
+   `install.sh` 會檢查前置需求、產生金鑰、建置容器、套用 migration、套用安全預設值（`ai_trading_enabled` 預設為 false），最後才啟動排程（Celery worker 與 beat）。同一台機器已有這個專案的另一套 stack（同 compose 專案名、同容器名，或正式環境）時，安裝會**拒絕**。名字由 `.env` 的 `ADVISOR_PROJECT_NAME`、`ADVISOR_CONTAINER_PREFIX` 決定。
 
-# 2. 一鍵啟動所有服務
-./start.sh
-```
+2. **填金鑰。** 開 [設定頁](http://127.0.0.1:8088/settings)，填 LLM 提供者的金鑰（安裝時已輸入就不用），有的話一併填資料源金鑰。金鑰加密存在資料庫，不放 `.env`。沒有 LLM 金鑰就產不出報告。
+3. **拿到第一份報告。** 排程在週一到週五美東 17:00 產生報告。想現在就要：
+
+   ```bash
+   ./start.sh report
+   ```
+
+   幾分鐘後到 [報告頁](http://127.0.0.1:8088/reports) 看。
+4. **保持交易關閉。** 讀過程式碼、決定要交易之前，維持 `ai_trading_enabled=false`。真實下單還需要券商金鑰與 `etoro_mode=real`。
+
+開發環境（熱重載，獨立的 compose 專案 `advisor_dev`）：`docker compose up -d`，不會動到單機 stack。
+
+單機 stack 的入口：
 
 | 服務 | 網址 |
 |:-----|:-----|
