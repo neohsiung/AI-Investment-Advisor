@@ -147,6 +147,9 @@ def test_digest_title_symbol_follows_the_week(d, symbol):
 
 def test_weekly_digest_is_sent_with_the_state_symbol(engine):
     titles = []
-    cds.write_weekly_digest(engine, USER, NOW, notify=lambda title, content: titles.append(title), watchdog=_watchdog_ok)
+    def notify(title, content):
+        titles.append(title)
+
+    cds.write_weekly_digest(engine, USER, NOW, notify=notify, watchdog=_watchdog_ok)
     expected = cds.digest_title(cds.build_digest(engine, USER, NOW, watchdog=_watchdog_ok))
     assert titles == [expected]
