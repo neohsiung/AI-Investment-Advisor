@@ -67,7 +67,8 @@ function advisor_guard_identity {
     local problems="" name project wdir norm_wdir mine legacy_seen=0 legacy_elsewhere=0 legacy_names=""
     while IFS=$'\t' read -r name project wdir; do
         [ -z "$name" ] && continue
-        norm_wdir="$(cd "$wdir" 2>/dev/null && pwd -P || echo "$wdir")"
+        norm_wdir=""
+        if [ -n "$wdir" ]; then norm_wdir="$(cd "$wdir" 2>/dev/null && pwd -P || echo "$wdir")"; fi
         mine=0
         if [ "$project" = "$ADVISOR_PROJECT_NAME" ] && [ "$norm_wdir" = "$here" ]; then mine=1; fi
 
@@ -87,9 +88,6 @@ function advisor_guard_identity {
         fi
         if [ "$mine" = "0" ] && [[ "$expected" == *" ${name} "* ]]; then
             problems+="  - container name '${name}' is already taken (project '${project:-none}', ${wdir:-unknown dir})"$'\n'
-        fi
-        if [ "$norm_wdir" = "$here" ] && [ -n "$project" ] && [ "$project" != "$ADVISOR_PROJECT_NAME" ]; then
-            problems+="  - this checkout already runs compose project '${project}' (container ${name}), but .env names '${ADVISOR_PROJECT_NAME}'"$'\n'
         fi
     done <<< "$rows"
 

@@ -220,3 +220,31 @@ class TestReportCommand:
         r = box.run("start.sh", "report")
         assert r.returncode != 0
         assert not any(" exec " in c for c in box.calls())
+
+
+class TestReviewFindings:
+    def test_tunnel_is_guarded_in_unpinned_production_checkout(self, box):
+        here = str(box.dir.resolve())
+        box.containers(("advisor_prod_api", LEGACY_PROJECT, here))
+        box.write_env()
+        r = box.run("start.sh", "tunnel")
+        assert r.returncode != 0
+        assert not any("tunnel" in c for c in box.calls())
+
+    def test_dev_stack_in_same_checkout_does_not_block_install(self, box):
+        box.containers(("advisor_dev_db", "advisor_dev", str(box.dir.resolve())))
+        r = box.run(*INSTALL)
+        assert r.returncode == 0, r.stdout + r.stderr
+
+    def test_container_without_workdir_label_is_not_treated_as_ours(self, box):
+        box.containers(("advisor_prod_api", "", ""))
+        r = box.run(*INSTALL)
+        _refused(r, box)
+
+    def test_restore_without_scheduler_does_not_restart_it(self, box):
+        here = str(box.dir.resolve())
+        box.containers(("advisor_api", "advisor", here))
+        box.write_env()
+        box.env["ADVISOR_SCHEDULER"] = "0"
+        box.run("start.sh", "restore")
+        assert not any("restart" in c and "celery_beat" in c for c in box.calls())

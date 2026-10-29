@@ -42,6 +42,7 @@ fi
 # 專案名與容器名取自 .env。
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/deploy_guard.sh
+cd "$SCRIPT_DIR"
 source "$SCRIPT_DIR/scripts/lib/deploy_guard.sh"
 
 # The scheduler (celery worker + beat) is its own compose profile so that a bare
@@ -472,6 +473,7 @@ function run_migrations {
 }
 
 function start_tunnel {
+    guard_deployment || return 1
     # The tunnel now points at the webhook-only nginx vhost (port 8080), which
     # publishes /webhook/* and /callback/* and 404s everything else. Those
     # endpoints carry their own credentials — X-API-Key for webhooks, provider
@@ -730,7 +732,11 @@ function cmd_restore {
     fi
 
     echo "Restarting services to apply restored configuration..."
-    $PROD_COMPOSE restart mcp_server celery_beat worker
+    if [ "${ADVISOR_SCHEDULER:-1}" = "1" ]; then
+        $PROD_COMPOSE restart mcp_server celery_beat worker
+    else
+        $PROD_COMPOSE restart mcp_server
+    fi
     wait_for_api || true
     echo "✅ Restore complete."
 }
