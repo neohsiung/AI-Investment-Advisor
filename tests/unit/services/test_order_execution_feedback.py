@@ -382,3 +382,29 @@ def test_custom_settings_repo_overrides():
     assert service.slippage_alert_threshold_bps == 12.5
     assert service.default_eta == 0.28
     assert service.dynamic_calibration_enabled is False
+
+
+class MockSettingsService:
+    """Shape of SettingsService: exposes get_setting(key, default), no get()."""
+
+    def __init__(self, settings: dict):
+        self.settings = settings
+
+    def get_setting(self, key: str, default=None, user_id=None):
+        return self.settings.get(key, default)
+
+
+def test_settings_service_shape_is_read_not_defaulted():
+    """A SettingsService-shaped repo (get_setting only) must supply the value, not trigger the default."""
+    service = OrderExecutionFeedbackService(
+        user_id="u", settings_repo=MockSettingsService({"almgren_chriss_eta_default": 0.31})
+    )
+    assert service.default_eta == 0.31
+
+
+def test_unreadable_settings_repo_is_logged_not_silent(caplog):
+    """A repo with neither get nor get_setting is a wiring bug and must say so."""
+    service = OrderExecutionFeedbackService(user_id="u", settings_repo=object())
+    with caplog.at_level("WARNING"):
+        assert service.default_eta == service.DEFAULT_ALMGREN_CHRISS_ETA
+    assert "almgren_chriss_eta_default" in caplog.text
