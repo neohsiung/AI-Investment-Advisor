@@ -106,6 +106,16 @@ def _extract_message(exc: Exception) -> str:
     # Some SDKs embed body in .body
     if hasattr(exc, "body") and exc.body:
         parts.append(str(exc.body).lower())
+    # httpx.HTTPStatusError keeps the provider's wording only in the response body, not in str(exc);
+    # without it a LiteLLM "budget_exceeded" 429 looked like a plain rate limit.
+    # httpx 的 HTTPStatusError 只有回應內文帶供應商訊息；缺了它，LiteLLM 的 budget_exceeded 429 會被當成一般速率限制。
+    response = getattr(exc, "response", None)
+    try:
+        text = getattr(response, "text", None)
+    except RuntimeError:  # httpx.ResponseNotRead on a streamed response; the str/status parts still apply
+        text = None
+    if isinstance(text, str) and text:
+        parts.append(text[:2000].lower())
     return " ".join(parts)
 
 
