@@ -26,6 +26,17 @@ export function usePortfolioSummary() {
   };
 }
 
+// Whether the New York date is a trading day. One cheap call, asked once: the answer cannot change within a day,
+// and a failure just means the ordinary loading line stays. 紐約日期是否為交易日；一天內不會變，失敗就維持一般載入文字。
+export function useMarketToday() {
+  const { data } = useSWR<ApiResponse<{ state: "closed" | "trading_day" | "unknown" }>>("/api/v1/market/today", v1Fetcher, {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+    dedupingInterval: 3600000,
+  });
+  return { marketState: data?.data?.state };
+}
+
 export function usePositions() {
   const { data, error, isLoading, mutate } = useSWR<ApiResponse<PositionItem[]>>("/api/v1/dashboard/positions", v1Fetcher, {
     refreshInterval: REFRESH_INTERVAL,

@@ -13,9 +13,9 @@ import { ErrorBoundary, ComponentFallback } from "@/core/components/ErrorBoundar
 
 import { usePortfolioStatus } from "@/features/portfolio/use-cases/usePortfolioStatus";
 import { useIntelligenceStatus } from "@/features/intelligence/use-cases/useIntelligenceStatus";
-import { useDashboardSocket, useAgentsStatus, usePositions, useAlerts } from "@/hooks/useDashboard";
+import { useDashboardSocket, useAgentsStatus, usePositions, useAlerts, useMarketToday } from "@/hooks/useDashboard";
 import { useRequireAuth } from "@/hooks/useAuth";
-import { Loader2 } from "lucide-react";
+import { DashboardLoading } from "@/features/portfolio/components/DashboardLoading";
 
 const toast = {
   success: (msg: string) => console.log(`SUCCESS: ${msg}`),
@@ -31,6 +31,7 @@ export default function CommandCenter() {
 
   const { status: socketStatus } = useDashboardSocket();
   const { isLoading: isAuthLoading } = useRequireAuth();
+  const { marketState } = useMarketToday();
 
   const [isReporting, setIsReporting] = React.useState(false);
   const [isRebalancing, setIsRebalancing] = React.useState(false);
@@ -62,16 +63,7 @@ export default function CommandCenter() {
   const isGlobalLoading = isAuthLoading || isSummaryLoading;
 
   if (isGlobalLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-10 w-10 text-primary animate-spin" />
-          <p className="text-xs font-label uppercase tracking-widest text-on-surface-variant opacity-60">
-            資產中心初始化中...
-          </p>
-        </div>
-      </div>
-    );
+    return <DashboardLoading marketState={marketState} />;
   }
 
   return (

@@ -1,7 +1,7 @@
 import pytz
 import pandas as pd
 from datetime import datetime, time, timedelta
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 
 try:
     import pandas_market_calendars as mcal
@@ -13,7 +13,7 @@ class MarketClock:
     Professional Utility for US Market Hours and DST Handling.
     動態美股市場時鐘：處理夏令/冬令切換與交易所休市日。
     """
-    
+
     def __init__(self, exchange_name: str = 'NYSE'):
         self.exchange_name = exchange_name
         self.nyse = mcal.get_calendar(exchange_name) if mcal is not None else None
@@ -27,13 +27,13 @@ class MarketClock:
         now = datetime.now(pytz.utc)
         if self.nyse is not None:
             schedule = self.nyse.schedule(start_date=now.date(), end_date=now.date())
-            
+
             if schedule.empty:
                 return False
-                
+
             market_open = schedule.iloc[0]['market_open']
             market_close = schedule.iloc[0]['market_close']
-            
+
             # Apply buffer if needed (e.g. for pre-market checks)
             return (market_open - pd.Timedelta(minutes=buffer_minutes)) <= now <= market_close
 
@@ -45,6 +45,18 @@ class MarketClock:
         close_time = ny_now.replace(hour=16, minute=0, second=0, microsecond=0)
         return open_time <= ny_now <= close_time
 
+    def session_today(self, now: Optional[datetime] = None) -> Optional[bool]:
+        """
+        Is the New York date of `now` a NYSE trading day (half days count as trading days)?
+        True / False from the exchange calendar; None when there is no calendar. It never falls back to a
+        weekday guess: a holiday reported as an open day is a wrong fact about a system that moves real money.
+        紐約日期那天是不是 NYSE 交易日（半日市算交易日）。沒有交易所日曆就回 None，不退回只判週末。
+        """
+        if self.nyse is None:
+            return None
+        ny_date = (now or datetime.now(pytz.utc)).astimezone(self.tz).date()
+        return not self.nyse.schedule(start_date=ny_date, end_date=ny_date).empty
+
     def get_market_status(self) -> Dict[str, Any]:
         """
         Get detailed US market status including DST information.
@@ -52,7 +64,7 @@ class MarketClock:
         """
         now = datetime.now(self.tz)
         is_dst = now.dst().total_seconds() != 0
-        
+
         # Get next open
         today = datetime.now(pytz.utc).date()
         if self.nyse is not None:
@@ -63,9 +75,9 @@ class MarketClock:
         else:
             next_open = (now.replace(hour=9, minute=30, second=0, microsecond=0) + timedelta(days=1)).isoformat()
             next_close = (now.replace(hour=16, minute=0, second=0, microsecond=0)).isoformat()
-        
+
         is_open = self.is_market_open()
-        
+
         return {
             "is_open": is_open,
             "is_dst": is_dst,

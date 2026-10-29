@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/v1/market/today` reports whether the New York date is a NYSE trading day (`closed`, `trading_day`, or `unknown` when no exchange calendar is installed; it never guesses from the weekday). The dashboard's loading line says "紐約今天休市，美股不開盤" on a confirmed closed day and keeps the ordinary text otherwise.
+
 ## [0.4.0] - 2026-09-20
 
 Major architecture transition to declarative workflows, dynamic agent registry,

@@ -33,6 +33,7 @@ from src.api.v1.endpoints import ticker_universe
 from src.api.v1.endpoints import backtest
 from src.api.v1.endpoints import council
 from src.api.v1.endpoints import loop_health
+from src.api.v1.endpoints import market as market_ep
 from src.api.v1.endpoints import net_alpha
 from src.api.v1.endpoints import mission as mission_ep
 from src.api.v1.endpoints import workflows
@@ -54,6 +55,7 @@ api_v1_router.include_router(backtest.router, prefix="/backtest", tags=["Backtes
 api_v1_router.include_router(council.router, prefix="/council", tags=["Council Decisions"])
 api_v1_router.include_router(loop_health.router, prefix="/loop-health", tags=["Loop Health"])
 api_v1_router.include_router(net_alpha.router, prefix="/net-alpha", tags=["Net Alpha"])
+api_v1_router.include_router(market_ep.router, prefix="/market", tags=["Market"])
 api_v1_router.include_router(mission_ep.router, prefix="/mission", tags=["Mission"])
 api_v1_router.include_router(workflows.router, prefix="/workflows", tags=["Workflows"])
 api_v1_router.include_router(agents_ep.router, prefix="/agents", tags=["Agents"])
@@ -87,5 +89,3 @@ api_v1_router.include_router(
     prefix="/execution",
     tags=["Execution & Slippage"],
 )
-
-
