@@ -244,3 +244,105 @@ class TestTieredRemediation:
         assert len(breaches) == 1
         assert breaches[0]["name"] == "repeat:taskA:TIMEOUT"
         assert "did something" in breaches[0]["detail"]
+
+
+class TestScheduleGaps:
+    """A closed outage in the heartbeat task must raise a breach, even though every task succeeded afterwards.
+    心跳任務出現已結束的中斷，即使事後任務都成功，也必須告警。
+
+    2026-10-27: the Mac hosting production slept for hours. `task_success` only asks "did it run recently", which is
+    true again the moment the host wakes, so nothing alerted.
+    """
+
+    @staticmethod
+    def _ticks(start, end, step_min=15):
+        from datetime import timedelta
+        out, t = [], start
+        while t <= end:
+            out.append(t)
+            t += timedelta(minutes=step_min)
+        return out
+
+    def test_closed_gap_is_found(self):
+        from datetime import datetime, timezone
+        from src.services.self_ops_service import find_closed_gaps
+        utc = timezone.utc
+        # Real shape of 2026-10-27: 15-minute ticks until 06:45, silence, resumes 11:00.
+        times = self._ticks(datetime(2026, 10, 27, 4, 0, tzinfo=utc), datetime(2026, 10, 27, 6, 45, tzinfo=utc)) \
+            + self._ticks(datetime(2026, 10, 27, 11, 0, tzinfo=utc), datetime(2026, 10, 27, 11, 30, tzinfo=utc))
+        gaps = find_closed_gaps(times, max_gap_seconds=2100, ended_since=datetime(2026, 10, 27, 10, 50, tzinfo=utc))
+        assert len(gaps) == 1
+        start, end, seconds = gaps[0]
+        assert (start.hour, start.minute) == (6, 45) and (end.hour, end.minute) == (11, 0)
+        assert seconds == 4 * 3600 + 15 * 60
+
+    def test_normal_cadence_has_no_gap(self):
+        from datetime import datetime, timezone
+        from src.services.self_ops_service import find_closed_gaps
+        utc = timezone.utc
+        times = self._ticks(datetime(2026, 10, 27, 4, 0, tzinfo=utc), datetime(2026, 10, 27, 8, 0, tzinfo=utc))
+        assert find_closed_gaps(times, 2100, datetime(2026, 10, 27, 0, 0, tzinfo=utc)) == []
+
+    def test_gap_that_ended_before_the_window_is_not_reported_again(self):
+        from datetime import datetime, timezone
+        from src.services.self_ops_service import find_closed_gaps
+        utc = timezone.utc
+        times = [datetime(2026, 10, 27, 6, 45, tzinfo=utc), datetime(2026, 10, 27, 11, 0, tzinfo=utc)]
+        assert find_closed_gaps(times, 2100, ended_since=datetime(2026, 10, 27, 11, 30, tzinfo=utc)) == []
+
+    def test_open_gap_is_left_to_the_dead_man_switch(self):
+        from datetime import datetime, timezone
+        from src.services.self_ops_service import find_closed_gaps
+        utc = timezone.utc
+        only_run = [datetime(2026, 10, 27, 6, 45, tzinfo=utc)]
+        assert find_closed_gaps(only_run, 2100, datetime(2026, 10, 27, 0, 0, tzinfo=utc)) == []
+
+    def test_check_reports_breach_with_severity_by_length(self):
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import MagicMock
+        from src.services.self_ops_service import SelfOpsService
+        now = datetime.now(timezone.utc)
+        short = [now - timedelta(minutes=70), now - timedelta(minutes=10)]    # 60 min gap
+        long_ = [now - timedelta(hours=5), now - timedelta(minutes=10)]       # ~4.8 h gap
+        for times, severity in ((short, "warning"), (long_, "critical")):
+            conn = MagicMock()
+            conn.execute.return_value.fetchall.return_value = [(t,) for t in times]
+            breaches = SelfOpsService(user_id="u")._check_schedule_gaps(conn)
+            assert len(breaches) == 1 and breaches[0]["severity"] == severity
+            assert breaches[0]["name"].startswith("schedule_gap:")
+
+    def test_heartbeat_task_is_on_the_beat_schedule(self):
+        """If the heartbeat leaves the schedule the check would go blind; fail loudly instead."""
+        from src.infrastructure.celery_app import app
+        from src.services.self_ops_service import HEARTBEAT_TASK
+        tasks = [e["task"] for e in app.conf.beat_schedule.values()]
+        assert f"src.infrastructure.tasks.dispatch_{HEARTBEAT_TASK}" in tasks
+
+    def test_gap_already_reported_is_not_reported_again(self):
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import MagicMock
+        from src.services.self_ops_service import SelfOpsService
+        now = datetime.now(timezone.utc)
+        conn = MagicMock()
+        conn.execute.return_value.fetchall.return_value = [(now - timedelta(hours=5),), (now - timedelta(minutes=10),)]
+        conn.execute.return_value.fetchone.return_value = None  # INSERT ... ON CONFLICT DO NOTHING inserted nothing
+        assert SelfOpsService(user_id="u")._check_schedule_gaps(conn) == []
+
+    def test_unreadable_cadence_is_reported_not_ignored(self):
+        from datetime import timedelta
+        from unittest.mock import MagicMock, patch
+        from src.services.self_ops_service import SelfOpsService
+        schedule = {"x": {"task": "src.infrastructure.tasks.dispatch_sentinel_tick", "schedule": timedelta(minutes=15)}}
+        fake_app = MagicMock()
+        fake_app.conf.beat_schedule = schedule
+        with patch("src.infrastructure.celery_app.app", fake_app):
+            breaches = SelfOpsService(user_id="u")._check_schedule_gaps(MagicMock())
+        assert [b["name"] for b in breaches] == ["schedule_gap:heartbeat_cadence_unusable"]
+
+    def test_failure_of_the_gap_check_becomes_a_breach(self):
+        from unittest.mock import MagicMock, patch
+        from src.services.self_ops_service import SelfOpsService
+        svc = SelfOpsService(user_id="u")
+        with patch.object(svc, "_check_schedule_gaps", side_effect=RuntimeError("db down")):
+            breaches = svc._guarded_schedule_gaps(MagicMock())
+        assert breaches[0]["name"] == "schedule_gap:check_failed" and breaches[0]["severity"] == "critical"

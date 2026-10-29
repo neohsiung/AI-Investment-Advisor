@@ -4,7 +4,7 @@ SelfOpsService — dead-man switches + config-drift detection (Loop 2).
 Watches for the ABSENCE of expected periodic outcomes, the failure mode
 behind every incident of 2026-07 week 2: the digest worker that was never
 scheduled, distill_memories AttributeError-ing nightly, risk_keywords
-sitting empty for months. Three checks, all pure SQL (zero LLM cost):
+sitting empty for months. Four checks, all pure SQL (zero LLM cost):
 
 1. task_success dead-man:每個 beat task 應在 max_gap_seconds 內至少成功一次
    (expectations auto-derived from celery beat_schedule — which doubles as
@@ -15,6 +15,9 @@ sitting empty for months. Three checks, all pure SQL (zero LLM cost):
    SQL lives in code, the table only references the key (no SQL-in-DB).
 3. repeat-failure escalation: ≥3 soft_fail/failure of the same task in
    24h → alert even if a success eventually slipped through.
+4. schedule_gap: a hole in the heartbeat task's history longer than its
+   cadence allows, reported once after it closes (the host slept; every
+   task succeeded again afterwards, so the dead-man switch stays green).
 
 Alerts go to event_queue (P1 → carried by the hourly digest) and, for
 critical breaches, directly to notification channels. Re-alerts for the
@@ -23,7 +26,7 @@ same breach are suppressed for ALERT_COOLDOWN_HOURS.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import text
@@ -111,6 +114,46 @@ DIVERGENCE_WINDOW_MINUTES = 60
 # dispatcher 在窗口內至少要跑過這麼多次，子任務為 0 才有意義；否則低頻的
 # dispatcher（每日報表、每週驗證）在閒置時都會被誤判為異常。
 DIVERGENCE_MIN_DISPATCHES = 3
+
+# Heartbeat for the schedule-gap check. sentinel_tick runs on every beat cadence of the trading loop, so a hole in
+# its history is a hole in risk monitoring.
+# 排程缺口檢查用的心跳任務：sentinel_tick 的歷史出現空洞，就代表風險監控出現空洞。
+HEARTBEAT_TASK = "sentinel_tick"
+
+# Only gaps that ended within this window are considered. Duplicates are prevented by claiming each gap by name (see
+# _claim_gap), not by the window, so a check that runs late after a host wake still sees the gap.
+# 只看在此窗口內結束的缺口；去重靠依名稱登記（_claim_gap），不靠窗口，所以主機醒來後延遲的檢查仍看得到。
+GAP_REPORT_WINDOW_MINUTES = 120
+
+# A heartbeat whose allowed gap exceeds this cannot detect an outage worth reporting (e.g. a cron list form that
+# derive_max_gap_seconds cannot read falls back to 2.5 h), so the check says so instead of going blind.
+# 容許間隔超過此值的心跳偵測不出值得回報的中斷（例如 derive_max_gap_seconds 讀不懂的 cron 列表會退到 2.5 小時）。
+GAP_MAX_USABLE_CADENCE_SECONDS = 3600
+
+# Look-back for the heartbeat history. A gap longer than this is still caught by the task_success dead-man switch.
+# 心跳歷史的回看範圍；超過此長度的中斷仍由 task_success dead-man 抓到。
+GAP_LOOKBACK_HOURS = 24
+
+# A gap at least this long is critical (direct notification); shorter ones go to the digest only.
+# 達此長度為 critical（直接通知），較短的只進摘要。
+GAP_CRITICAL_SECONDS = 2 * 3600
+
+
+def find_closed_gaps(
+    times: List[datetime], max_gap_seconds: int, ended_since: datetime
+) -> List[Tuple[datetime, datetime, int]]:
+    """Return (start, end, seconds) for each hole in `times` longer than `max_gap_seconds` that ended at or after
+    `ended_since`. A gap still open (no run after it) is not reported here; the dead-man switch owns that case.
+    回傳 `times` 中長於 max_gap_seconds、且在 ended_since 之後結束的每個缺口；尚未結束的缺口交給 dead-man。
+    """
+    ordered = sorted(times)
+    gaps = []
+    for earlier, later in zip(ordered, ordered[1:], strict=False):
+        seconds = int((later - earlier).total_seconds())
+        if seconds > max_gap_seconds and later >= ended_since:
+            gaps.append((earlier, later, seconds))
+    return gaps
+
 
 # Business invariants checked by key. SQL stays in code (規範十: no SQL in
 # data). Each returns (ok: bool, detail: str).
@@ -326,10 +369,12 @@ class SelfOpsService:
 
             repeat = self._check_repeat_failures(conn)
             divergence = self._check_dispatcher_divergence(conn)
+            gaps = self._guarded_schedule_gaps(conn)
             conn.commit()
 
         breaches.extend(repeat)
         breaches.extend(divergence)
+        breaches.extend(gaps)
         if breaches:
             self._emit_alerts(breaches)
         return {"checked": True, "breaches": breaches}
@@ -467,6 +512,104 @@ class SelfOpsService:
                 ),
             })
         return breaches
+
+    def _guarded_schedule_gaps(self, conn) -> List[Dict]:
+        """Run the gap check in a savepoint so its failure is reported as a breach, neither dropping the other
+        checks' breaches nor poisoning the surrounding transaction.
+        在 savepoint 內執行缺口檢查：失敗時以 breach 回報，不丟掉其他檢查的結果，也不弄壞外層交易。"""
+        try:
+            with conn.begin_nested():
+                return self._check_schedule_gaps(conn)
+        except Exception as e:
+            logger.error(f"self_ops: schedule-gap check failed: {e}", exc_info=True)
+            return [{
+                "name": "schedule_gap:check_failed",
+                "severity": "critical",
+                "detail": f"schedule-gap check raised {type(e).__name__}: {e}",
+            }]
+
+    def _check_schedule_gaps(self, conn) -> List[Dict]:
+        """
+        Catch outages that are over by the time anyone checks.
+        偵測「檢查時已經結束」的中斷。
+
+        task_success asks whether a task ran recently, which is true again as soon as the host wakes. On 2026-10-27
+        the Mac running production slept for hours; sentinel ticks, order reconciliation and broker sync all stopped,
+        containers stayed healthy, and the dead-man switches reported 0 breaches. This looks at the heartbeat's
+        history instead: any hole longer than its scheduled cadence allows is a breach, once.
+        task_success 只問「最近有沒有跑」，主機醒來就又成立。2026-10-27 正式環境所在的 Mac 睡了數小時，
+        哨兵、訂單對帳、券商同步全停，容器維持 healthy，dead-man 回報 0 breach。這裡改看心跳的歷史：
+        任何超過排程週期容許值的空洞都算一次 breach。
+        """
+        from src.infrastructure.celery_app import app as celery_app
+
+        dispatcher = f"{_TASK_PREFIX}dispatch_{HEARTBEAT_TASK}"
+        schedules = [e["schedule"] for e in celery_app.conf.beat_schedule.values() if e.get("task") == dispatcher]
+        if not schedules:
+            # Never go quiet: a heartbeat that left the schedule blinds this check.
+            # 不可靜默：心跳離開排程，這個檢查就瞎了。
+            return [{
+                "name": "schedule_gap:heartbeat_unscheduled",
+                "severity": "critical",
+                "detail": f"{dispatcher} is not in the beat schedule; schedule-gap detection is blind",
+            }]
+        max_gap = min(derive_max_gap_seconds(sched) for sched in schedules)
+        if any(not hasattr(sched, "_orig_minute") for sched in schedules) or max_gap > GAP_MAX_USABLE_CADENCE_SECONDS:
+            return [{
+                "name": "schedule_gap:heartbeat_cadence_unusable",
+                "severity": "critical",
+                "detail": (
+                    f"{dispatcher} schedule is not a plain crontab or allows {max_gap // 60} min between runs; "
+                    f"schedule-gap detection cannot work with it"
+                ),
+            }]
+
+        rows = conn.execute(
+            text("""
+                SELECT finished_at FROM task_runs
+                WHERE task_name = :task AND status = 'success'
+                  AND finished_at > NOW() - (:hours * INTERVAL '1 hour')
+                ORDER BY finished_at
+            """),
+            {"task": f"{_TASK_PREFIX}{HEARTBEAT_TASK}", "hours": GAP_LOOKBACK_HOURS},
+        ).fetchall()
+        ended_since = datetime.now(timezone.utc) - timedelta(minutes=GAP_REPORT_WINDOW_MINUTES)
+
+        breaches = []
+        for start, end, seconds in find_closed_gaps([r[0] for r in rows], max_gap, ended_since):
+            start_utc, end_utc = start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+            name = f"schedule_gap:{HEARTBEAT_TASK}:{end_utc.strftime('%Y%m%dT%H%MZ')}"
+            if not self._claim_gap(conn, name, seconds):
+                continue
+            breaches.append({
+                "name": name,
+                "severity": "critical" if seconds >= GAP_CRITICAL_SECONDS else "warning",
+                "detail": (
+                    f"{HEARTBEAT_TASK} produced nothing from {start_utc:%Y-%m-%d %H:%M} to "
+                    f"{end_utc:%Y-%m-%d %H:%M} UTC ({seconds // 60} min, allowed {max_gap // 60}); risk "
+                    f"monitoring, order reconciliation and broker sync were likely stopped "
+                    f"(host asleep, worker or beat down)"
+                ),
+            })
+        return breaches
+
+    def _claim_gap(self, conn, name: str, seconds: int) -> bool:
+        """Record that this gap has been reported. True only for the first caller, so a gap alerts once.
+        The row is disabled, so check_all's dead-man loop ignores it; it reuses expected_outcomes to avoid a
+        migration (the kind constraint only allows two values).
+        登記此缺口已回報，只有第一次回 True。列為 disabled，dead-man 迴圈不會讀；
+        借用 expected_outcomes 以免做 migration。
+        """
+        row = conn.execute(
+            text("""
+                INSERT INTO expected_outcomes (name, kind, target, max_gap_seconds, enabled, last_alerted_at)
+                VALUES (:name, 'named_check', :target, :seconds, FALSE, NOW())
+                ON CONFLICT (name) DO NOTHING
+                RETURNING id
+            """),
+            {"name": name, "target": HEARTBEAT_TASK, "seconds": seconds},
+        ).fetchone()
+        return row is not None
 
     # ── Tiered remediation (Loop 2d, B-P2.3) ─────────────────────────────
 
