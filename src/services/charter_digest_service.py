@@ -23,6 +23,7 @@ from src.config.parameter_registry import Parameter, load_registry
 from src.data.models import (CharterEvent, CharterState, ParameterChange, ParameterTrial, RotationPairObservation,
                              StrategyTrial, ThresholdBandObservation)
 from src.services import enablement_checker
+from src.services.charter_state_service import BLOCKING_MODES
 from src.services.council_halt_gate import SKIP_MARKER
 from src.services.marginal_band_evaluator import evaluate_key
 from src.services.mission_watchdog_service import MissionWatchdogService
@@ -40,7 +41,7 @@ RATE_WINDOW_DAYS = 30            # observed rate = decisions observed in this wi
 LOOSEN_QUARTER_QUOTA = 1         # same rule as parameter_engine.budget_gate quarter_quota_ok / 與 budget_gate 同規則
 LAST_LOOSENINGS = 4              # the engine's degrade window / 引擎降級視窗
 EVENT_WINDOW_DAYS = 7
-DIGEST_TITLE = "📋 章程週報 / Charter weekly digest"
+DIGEST_TITLE_TEXT = "章程週報 / Charter weekly digest"
 _TITLES = {
     "apply": "⚙️ 章程引擎套用參數變更 / Charter engine applied a change",
     "rollback": "↩️ 章程引擎回滾放寬 / Charter engine rolled back a loosening",
@@ -52,6 +53,23 @@ _TITLES = {
 }
 
 Notify = Callable[[str, str], None]
+
+
+def digest_title(d: Dict[str, Any]) -> str:
+    """The week's state in the first character, so the notification list shows it without opening the digest:
+    🛑 the engine degraded this week, 🧊 it is frozen now or froze this week, 📋 neither. An unreadable state is not
+    reported as fine or as broken: the symbol stays 📋 and the body says unknown. Same symbols as the realtime notices.
+    標題第一個字元標示本週狀態：🛑 本週降級、🧊 現在凍結或本週凍結過、📋 都沒有。讀不到狀態不宣稱正常也不宣稱異常，
+    符號維持 📋，內文寫 unknown。符號與即時通知同一組。"""
+    kinds = {ev["kind"] for ev in d["events_7d"]}
+    st = d["charter_state"]
+    if "degrade" in kinds:
+        symbol = "🛑"
+    elif "freeze" in kinds or st.get("human_stop") or st.get("mode") in BLOCKING_MODES:
+        symbol = "🧊"
+    else:
+        symbol = "📋"
+    return f"{symbol} {DIGEST_TITLE_TEXT}"
 
 
 def make_notifier(user_id: str) -> Notify:
@@ -367,7 +385,7 @@ def write_weekly_digest(engine: Any, user_id: str, now: datetime, notify: Option
     text = render_digest(d)
     error = None
     try:
-        (notify or make_notifier(user_id))(DIGEST_TITLE, text)
+        (notify or make_notifier(user_id))(digest_title(d), text)
     except Exception as e:
         error = str(e)
         logger.warning("charter weekly digest: notify failed: %s", e)

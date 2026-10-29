@@ -120,3 +120,36 @@ def test_charter_state_missing_is_stated(engine):
         s.merge(CharterState(id=1, mode="apply", reason="t", since=NOW - timedelta(days=3), human_stop=False))
         s.commit()
     assert cds.build_digest(engine, USER, NOW, watchdog=_watchdog_ok)["charter_state"]["mode"] == "apply"
+
+
+def _digest(mode="apply", human_stop=False, kinds=()):
+    state = (
+        {"missing": True}
+        if mode is None
+        else {"mode": mode, "since": "2026-10-01", "reason": "", "human_stop": human_stop}
+    )
+    return {"charter_state": state, "events_7d": [{"kind": k, "key": KEY, "at": "2026-10-20T00:00:00"} for k in kinds]}
+
+
+@pytest.mark.parametrize("d,symbol", [
+    (_digest(), "📋"),
+    (_digest(kinds=("apply", "rollback")), "📋"),
+    (_digest(mode="frozen"), "🧊"),
+    (_digest(human_stop=True), "🧊"),
+    (_digest(kinds=("freeze", "resume")), "🧊"),
+    (_digest(kinds=("freeze", "degrade")), "🛑"),
+    (_digest(mode="frozen", kinds=("degrade",)), "🛑"),
+    (_digest(mode=None), "📋"),
+])
+def test_digest_title_symbol_follows_the_week(d, symbol):
+    assert cds.digest_title(d) == f"{symbol} 章程週報 / Charter weekly digest"
+
+
+def test_weekly_digest_is_sent_with_the_state_symbol(engine):
+    titles = []
+    def notify(title, content):
+        titles.append(title)
+
+    cds.write_weekly_digest(engine, USER, NOW, notify=notify, watchdog=_watchdog_ok)
+    expected = cds.digest_title(cds.build_digest(engine, USER, NOW, watchdog=_watchdog_ok))
+    assert titles == [expected]
