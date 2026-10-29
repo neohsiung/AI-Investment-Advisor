@@ -123,7 +123,11 @@ def test_charter_state_missing_is_stated(engine):
 
 
 def _digest(mode="apply", human_stop=False, kinds=()):
-    state = {"missing": True} if mode is None else {"mode": mode, "since": "2026-10-01", "reason": "", "human_stop": human_stop}
+    state = (
+        {"missing": True}
+        if mode is None
+        else {"mode": mode, "since": "2026-10-01", "reason": "", "human_stop": human_stop}
+    )
     return {"charter_state": state, "events_7d": [{"kind": k, "key": KEY, "at": "2026-10-20T00:00:00"} for k in kinds]}
 
 
@@ -144,4 +148,5 @@ def test_digest_title_symbol_follows_the_week(d, symbol):
 def test_weekly_digest_is_sent_with_the_state_symbol(engine):
     titles = []
     cds.write_weekly_digest(engine, USER, NOW, notify=lambda title, content: titles.append(title), watchdog=_watchdog_ok)
-    assert titles == [cds.digest_title(cds.build_digest(engine, USER, NOW, watchdog=_watchdog_ok))]
+    expected = cds.digest_title(cds.build_digest(engine, USER, NOW, watchdog=_watchdog_ok))
+    assert titles == [expected]
