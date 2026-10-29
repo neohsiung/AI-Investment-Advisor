@@ -24,9 +24,15 @@ function advisor_sync_code {
         return 0
     fi
 
-    if ! git merge-base --is-ancestor HEAD origin/main; then
+    # --is-ancestor: 0 = yes, 1 = no, anything else = git itself failed (e.g. no origin/main ref).
+    local rc=0
+    git merge-base --is-ancestor HEAD origin/main || rc=$?
+    if [ "$rc" -eq 1 ]; then
         echo "❌ Detached HEAD $(git rev-parse --short HEAD) is not part of origin/main's history — refusing to move."
         echo "   Compare with: git log --oneline origin/main..HEAD"
+        return 1
+    elif [ "$rc" -ne 0 ]; then
+        echo "❌ Could not compare HEAD with origin/main (git exit $rc) — is there a refs/remotes/origin/main? HEAD is unchanged."
         return 1
     fi
     if ! git checkout --quiet --detach origin/main; then

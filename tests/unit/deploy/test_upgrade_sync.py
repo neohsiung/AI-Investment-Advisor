@@ -114,3 +114,15 @@ def test_unreachable_origin_fails_instead_of_continuing(machine: Machine):
     result = machine.sync()
     assert result.returncode != 0
     assert machine.head() == machine.c1
+
+
+def test_missing_origin_main_ref_is_reported_as_such_not_as_diverged(machine: Machine):
+    git(machine.work, "checkout", "-q", "--detach", machine.c1)
+    git(machine.origin, "branch", "-q", "-m", "main", "trunk")   # origin no longer has a main branch
+    git(machine.work, "update-ref", "-d", "refs/remotes/origin/main")
+    result = machine.sync()
+    out = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert machine.head() == machine.c1
+    assert "not part of origin/main's history" not in out
+    assert "Could not compare" in out
