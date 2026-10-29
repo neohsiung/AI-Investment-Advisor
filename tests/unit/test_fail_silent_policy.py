@@ -2,7 +2,7 @@
 Enforces the fail-silent rule on decision-path modules.
 對決策路徑模組強制執行「不得靜默失敗」規則。
 
-Rule (AGENTS.md constraint #0, wiki/05_Quality_Assurance/靜默失敗防治):
+Rule (AGENTS.md constraint #0, docs/05_Quality_Assurance/靜默失敗防治):
 an `except` on a decision path must not BOTH log below `warning` AND return a
 value that looks like a real answer. Pick one.
 
@@ -170,7 +170,7 @@ def test_decision_path_has_no_silent_substitution(rel_path):
         f"Either log at warning or above, or let the error propagate. "
         f"If you must substitute a default, mark it (_fallback_reason / "
         f"_insufficient_data) and surface the mark to the caller. "
-        f"See wiki/05_Quality_Assurance/靜默失敗防治-Fail-Silent-Prevention.md"
+        f"See docs/05_Quality_Assurance/靜默失敗防治-Fail-Silent-Prevention.md"
     )
 
 

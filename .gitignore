@@ -59,10 +59,6 @@ wiki/
 scratch/
 backups/
 Archive/
-# docs/ stays local, except design records (dev-standard §5: docs/design/DD-*.md).
-# docs/ 維持本機專用，只有設計決策紀錄進版控。
-docs/*
-!docs/design/
 reports/
 .taskboard/
 

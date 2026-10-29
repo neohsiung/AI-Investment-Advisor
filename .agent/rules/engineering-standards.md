@@ -22,7 +22,7 @@
 
 ### 2.2 混合儲存策略 (Hybrid Strategy - Rule #9)
 
-[詳細配置範例與優缺點比較，請參閱《混合儲存架構指南》](混合儲存架構-Hybrid-Storage-Architecture)
+詳細配置範例與優缺點比較，見 `docs/` 內資料層相關文件（舊 wiki 的《混合儲存架構指南》沒有搬過來）。
 
 - **ORM Admin Layer**: 針對 `User`, `Settings`, `Logs` 等管理類實體，強制使用 **SQLAlchemy ORM** 以提升開發效率。
 - **Raw SQL Performance Layer**: 針對 `Transactions`, `MarketData`, `pgvector` 等大數據或高效能場景，強制使用 **Raw SQL (SQLAlchemy Core)** 以利精確優化。
@@ -159,7 +159,7 @@
 ### 6.3 驗證要求
 
 - **關鍵路徑測試**: 必須包含網路異常、API 限流 (Rate Limit) 及無數據回傳等反向情境測試。
-- **文件同步**: 完成實作後，必須更新 Wiki 數據源矩陣文檔。
+- **文件同步**: 完成實作後，必須更新 `docs/` 內的數據源矩陣文檔（若該頁尚未搬入 `docs/`，先搬再改）。
 
 ---
 
@@ -188,7 +188,7 @@
   ```python
   # ❌ 嚴禁寫法：
   # if slip_svc.is_opening_auction_window(): ...
-  
+
   # ✅ 正確寫法：
   is_window, win_reason = slip_svc.is_opening_auction_window()
   if is_window:
@@ -207,8 +207,7 @@
 - **小額例行調倉 100% 0-LLM**：對於金額低於小額門檻（`src/services/inference_hurdle_gate_service.py` 的 `DEFAULT_SMALL_ORDER_BYPASS_THRESHOLD_USD`）的常規再平衡、例行建倉或因子輪動，**嚴禁**喚醒包含多位專家的評議會 (Council Swarm)；強制走數理引擎快速通道（逆波動平價、凱利公式、因子權重向量），將邊際推理成本壓至 $0.00。
 - **大額/黑天鵝升級機制**：僅在預期 Alpha 收益能充份覆蓋推論成本、或遭遇未登錄黑天鵝與宏觀突發事件時，才允許由 `InferenceHurdleGateService` 解鎖並調用高等級推理模型。
 
-### 8.5 知識庫 (Wiki) 與代碼庫雙向同步紀律 (Wiki & Codebase Bi-directional Sync)
-- **同步更新**：新增或修改任何核心服務與架構節點時，必須同步在 `wiki/` 建立/更新對應說明文檔，並在 `wiki/_Sidebar.md` 與 `wiki/Home.md` 登錄。
-- **扁平連結與驗證**：遵循 GitHub Wiki 扁平結構規範，提交前必須執行 `python .agent/skills/wiki-maintainer/scripts/verify_wiki_links.py` 確保 0 斷鏈。
-- **品質驗證門檻**：以 CI 為準（`.github/workflows/ci-cd.yml`：pytest＋覆蓋率、Alembic、Bandit、wiki 連結、ruff 只擋新增）。本機先跑 `scripts/ci_local.sh`；測試數用 `pytest --collect-only -q | tail -1` 查，不寫進文件。
-
+### 8.5 文件 (docs/) 與代碼庫雙向同步紀律 (Docs & Codebase Sync)
+- **同步更新**：新增或修改任何核心服務與架構節點時，必須同步在 `docs/` 建立/更新對應說明文檔，並在 `docs/Home.md` 或 `docs/README.md` 登錄。
+- **相對連結與驗證**：內部連結用相對路徑，提交前必須執行 `python .agent/skills/docs-maintainer/scripts/verify_docs_links.py` 確保 0 斷鏈。
+- **品質驗證門檻**：以 CI 為準（`.github/workflows/ci-cd.yml`：pytest＋覆蓋率、Alembic、Bandit、docs/ 連結、ruff 只擋新增）。本機先跑 `scripts/ci_local.sh`；測試數用 `pytest --collect-only -q | tail -1` 查，不寫進文件。

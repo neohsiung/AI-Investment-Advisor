@@ -44,10 +44,10 @@ Rules every AI coding agent must follow, whatever its capability level:
 5. **Touching any `config/*.yaml`: run `tests/unit/config` and `tests/invariants` before deploying** (a malformed
    settings schema once made the quality gate crash and evicted 7 of 8 active tickers).
 6. **Do not write numbers that drift (trade counts, costs, caps) into docs** — query the DB or the API instead.
-7. **Every development batch ends with a reader-ready technical document and a wiki synthesis** (or an explicit
-   "no wiki change needed" with the reason). Behaviour claims carry a verification command; see
+7. **Every development batch ends with a reader-ready technical document and a `docs/` synthesis** (or an explicit
+   "no docs change needed" with the reason). Behaviour claims carry a verification command; see
    `.agent/rules/documentation-standards.md` §1.6.
-   每批開發結束必須交付讀者可用的技術文件並統整 wiki（或明確聲明「無需更新」與理由）；行為描述須附驗證指令。
+   每批開發結束必須交付讀者可用的技術文件並統整 `docs/`（或明確聲明「無需更新」與理由）；行為描述須附驗證指令。
 <!-- MISSION:END -->
 
 **Current capability (stated honestly; re-verify from the DB, do not trust this text).** The order path is wired
@@ -69,7 +69,7 @@ an explicit operator setting). Do not read the schema defaults as the production
 正式環境由操作者明確設為 true）。設定檔預設值不等於正式環境狀態，請查詢實際值。
 
 **Agent counts refer to different subsystems — four numbers, all real**
-(verified against source 2026-08-23; canonical table in the wiki page
+(verified against source 2026-08-23; canonical table in the docs page
 代理人戰略協定 §2.1):
 
 - **10** — the Council debate roster, run in parallel as Layer 1 of
@@ -80,7 +80,7 @@ an explicit operator setting). Do not read the schema defaults as the production
   Momentum 0.25, Sentiment 0.20, Risk 0.20
   (`src/services/confidence_compositor_service.py`). Exits are scored
   separately by `ExitCompositorService` on different factors.
-- **11** — the functional role table in the wiki, which includes CIO, Council
+- **11** — the functional role table in `docs/`, which includes CIO, Council
   and the `extract_actions` skill; not any single execution path.
 
 An earlier revision of this file called the "10 parallel debate agents" claim
@@ -195,7 +195,7 @@ The block above is the shared dev-standard; below is what differs here.
    a three-day outage with every monitor green, confidence scores that were
    hashes of the ticker, three BUY guards that passed because their table was
    empty. A crash gets noticed; a plausible wrong number does not.
-   See `wiki/05_Quality_Assurance/靜默失敗防治-Fail-Silent-Prevention.md`.
+   See `docs/05_Quality_Assurance/靜默失敗防治-Fail-Silent-Prevention.md`.
 
 1. **No hardcoded model names or API keys** — All LLM config is DB-managed
    via `llm_tier_bindings` table; resolved by `ResilientLLMPipeline`.
@@ -273,7 +273,7 @@ workspace/           → Multi-agent workspace (WAL, identity, memory per agent)
 | Documentation standards | `.agent/rules/documentation-standards.md` |
 | Observability standards | `.agent/rules/observability-standards.md` |
 | Security policy | `SECURITY.md` |
-| Full Wiki (8-pillar taxonomy) | `wiki/` (separate git repo) |
+| Technical docs (7-category taxonomy; old wiki retired) | `docs/` (see `docs/README.md`) |
 
 ## Do NOT Touch
 
