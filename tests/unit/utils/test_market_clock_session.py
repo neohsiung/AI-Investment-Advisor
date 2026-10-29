@@ -4,7 +4,6 @@ a holiday shown as an open day is a wrong fact about a system that moves real mo
 只有真的交易所日曆能回答；沒有日曆就回 None，不退回只判週末——把假日說成開市日，是對動真錢的系統說錯事實。
 """
 from datetime import datetime, timezone
-from unittest.mock import patch
 
 import pytest
 

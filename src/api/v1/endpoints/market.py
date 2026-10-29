@@ -24,6 +24,6 @@ async def get_market_today(user_id: str = Depends(get_current_user_id)) -> Dict[
     except Exception as e:
         logger.error(f"get_market_today failed: {e}", exc_info=True)
         # Generic detail: the cause is in the log above, never echoed to the client (CodeQL py/stack-trace-exposure).
-        raise HTTPException(status_code=500, detail="Market day lookup failed")
+        raise HTTPException(status_code=500, detail="Market day lookup failed") from None
     state = "unknown" if session is None else ("trading_day" if session else "closed")
     return {"status": "success", "data": {"state": state}}

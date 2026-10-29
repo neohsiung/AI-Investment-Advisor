@@ -4,6 +4,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from typing import Dict, Any, Optional
+from src.api.v1.endpoints import market as market_ep
 from src.config.owner import get_owner_id
 from src.utils.logger import setup_logger
 
@@ -33,7 +34,6 @@ from src.api.v1.endpoints import ticker_universe
 from src.api.v1.endpoints import backtest
 from src.api.v1.endpoints import council
 from src.api.v1.endpoints import loop_health
-from src.api.v1.endpoints import market as market_ep
 from src.api.v1.endpoints import net_alpha
 from src.api.v1.endpoints import mission as mission_ep
 from src.api.v1.endpoints import workflows
