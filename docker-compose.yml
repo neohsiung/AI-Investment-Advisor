@@ -1,5 +1,10 @@
 # version is handled automatically by Compose V2
 
+# Own compose project, distinct from the single-box stack (docker-compose.prod.yml,
+# named by ADVISOR_PROJECT_NAME), so `docker compose up` here never touches it.
+# 與單機 stack 分開的 compose 專案名，在此 `docker compose up` 不會動到單機 stack。
+name: advisor_dev
+
 include:
   - infra/signoz/docker/docker-compose.yaml
 
@@ -170,9 +175,8 @@ services:
       - POSTGRES_DB=${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./deployment/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -186,7 +190,7 @@ services:
     image: redis:7-alpine
     container_name: investment_advisor_redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

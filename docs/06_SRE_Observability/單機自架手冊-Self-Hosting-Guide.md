@@ -11,6 +11,7 @@ tags: [sre, self-hosting, docker, deployment, operations]
 ### 版本紀錄 (Version History)
 | 日期 (Date) | 版本 (Version) | 變更說明 (Description) | 作者 (Author) |
 | :--- | :--- | :--- | :--- |
+| 2026-10-29 | v2.1.0 | 乾淨安裝：專案名與容器名可設定、同機守衛、排程獨立 profile、補「填金鑰」與「第一份報告」 | M4 |
 | 2026-09-20 | v2.0.0 | 整併自 docs/SELF_HOSTING.md，對齊 M1~M8 單機 7 核心架構與開箱安裝流程 | Antigravity |
 | 2026-06-01 | v1.0.0 | 初始自架手冊 | DevOps Team |
 
@@ -52,32 +53,56 @@ flowchart TD
 | **Disk** | 10 GB SSD 可用空間 | 20 GB NVMe SSD |
 | **作業系統** | Linux / macOS / WSL2 | macOS / Ubuntu 22.04 LTS |
 
-### 3. 單指令安裝與快速啟動 (One-Line Setup)
-
-本專案支援免手動設定之開箱引導精靈：
+### 3. 安裝到第一份報告
 
 ```bash
-# 1. 執行單指令安裝腳本（自動檢查 Docker、建立 .env 並初始化資料庫）
+# 1. 安裝：檢查 Docker、建 .env、產生金鑰、建置、migration、種子，最後才起排程
 ./install.sh
 
-# 2. 啟動生產模式叢集
-./start.sh prod
+# 2. 開 http://127.0.0.1:8088/settings 填 LLM 金鑰（沒有金鑰就沒有報告）
 
-# 3. 進入瀏覽器儀表板
-open http://127.0.0.1:8088
+# 3. 立即排入第一份報告（否則等週一到週五美東 17:00）
+./start.sh report
 ```
 
+報告出現在 `http://127.0.0.1:8088/reports`。查詢報告列表：`curl -s http://127.0.0.1:8088/api/v1/dashboard/reports`。
+
 > [!WARNING]
-> **交易安全門禁**：全新安裝時，`ai_trading_enabled` 硬性預設為 `false`。在未透過 Web 介面深入檢視決策卡與模擬績效前，請勿連線真實入金之券商帳號。
+> **交易安全門禁**：`ai_trading_enabled` 的設定預設值是 `false`（安裝腳本的種子寫入目前不會生效，見 [DD-2026-1029-clean-install-seed-and-brake](../design/DD-2026-1029-clean-install-seed-and-brake.md)）。讀過程式碼、決定要交易之前請維持。真實下單另需券商金鑰與 `etoro_mode=real`。
+
+#### 3.1 專案名與容器名
+
+`.env` 的 `ADVISOR_PROJECT_NAME`（預設 `advisor`）決定 compose 專案名，volume 與網路由它衍生；`ADVISOR_CONTAINER_PREFIX`（預設 `advisor`）決定容器名 `<prefix>_api`、`<prefix>_db` 等。容器之間用服務名（`postgres`、`mcp_server`、`redis`、`nginx`）互連，不依賴容器名。
+
+`install.sh`、`./start.sh up|upgrade|restore` 在建置與啟動之前先查本機，遇到下列任一情況就**拒絕**並說明：同名 compose 專案已被別的目錄使用、要用的容器名已被占用、本機已有正式環境特徵（容器 `advisor_prod_*`、專案 `investment_advisor`、volume `investment_advisor_advisor_db_data`）而這個目錄不是它。
+
+**既有正式環境（改版前就在跑的那一台）** 在自己的 `.env` 釘住舊名字，一次就好；沒釘住時 `./start.sh up|upgrade` 會拒絕並印出要加的兩行：
+
+```bash
+ADVISOR_PROJECT_NAME=investment_advisor
+ADVISOR_CONTAINER_PREFIX=advisor_prod
+```
+
+#### 3.2 排程
+
+`worker` 與 `celery_beat` 是 compose profile `scheduler`，直接 `docker compose up` 不會起。`./start.sh` 預設帶上這個 profile；`ADVISOR_SCHEDULER=0 ./start.sh up` 可不起排程（此時健檢也不要求它們）。`install.sh` 先起核心服務、寫好安全預設值，才起排程。
+
+#### 3.3 開發環境
+
+`docker compose up -d` 使用獨立專案 `advisor_dev`（資料庫與 redis 只綁 `127.0.0.1`），不會動到單機 stack。
 
 ### 4. 日常維運指令集
 
 ```bash
-./start.sh status             # 檢查 7 大核心容器健康狀態
-./start.sh backup             # 執行 PostgreSQL 與 n8n/設定檔本機備份
-./start.sh wizard             # 重新執行運算成本方案 (Frugal/Balanced/Aggressive) 切換
-./start.sh stop               # 優雅關閉所有背景工作容器
+./start.sh health             # 健檢；不健康時回傳非 0
+./start.sh backup             # PostgreSQL 與設定檔備份
+./start.sh upgrade            # 備份、拉新版、遷移、健檢
+./start.sh wizard             # 重新執行運算成本方案切換
+./start.sh report             # 立即排入每日報告
+./start.sh down               # 停止所有容器
 ```
+
+驗證本節的指令（不啟動任何容器）：`.venv/bin/python -m pytest tests/unit/deploy -q`。
 
 ---
 
@@ -87,7 +112,7 @@ open http://127.0.0.1:8088
 `investment-advisor` runs completely within a local Docker network behind an Nginx reverse proxy on `http://127.0.0.1:8088`.
 
 ### 2. Quickstart
-Execute `./install.sh` to run the initialization wizard, followed by `./start.sh prod` to bring up the 7 core containers.
+Run `./install.sh`, add your LLM key in Settings, then `./start.sh report` for the first report (otherwise weekdays 17:00 US Eastern). The installer refuses to run when the machine already has a stack with the same compose project or container names; see section 3.1.
 
 ---
 

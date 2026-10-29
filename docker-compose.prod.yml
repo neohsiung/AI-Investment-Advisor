@@ -7,7 +7,7 @@ services:
     build:
       context: .
       dockerfile: services/mcp_server/Dockerfile
-    container_name: advisor_prod_api
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_api
     restart: always
     user: root
     extra_hosts:
@@ -29,7 +29,7 @@ services:
       - FRONTEND_CALLBACK_URL=http://localhost:3001/auth/callback
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - DB_HOST=advisor_prod_db
+      - DB_HOST=postgres
       - OTEL_SERVICE_NAME=mcp_server_prod
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
@@ -84,7 +84,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: advisor_prod_ui
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_ui
     restart: always
     ports:
       - "127.0.0.1:3001:3000"
@@ -104,7 +104,7 @@ services:
   # The `scheduler` service ran `celery beat` identically to the `celery_beat`
   # service below, so every beat task fired TWICE (double sentinel ticks,
   # duplicate daily reports/digests) against a live brokerage. Single beat
-  # authority is now `celery_beat` (container advisor_prod_beat). If a
+  # authority is now `celery_beat` (container <prefix>_beat). If a
   # multi-user fan-out dispatcher is introduced later (see roadmap Phase 3),
   # it must be a NEW command — never a second `celery beat`.
   # 2026-07-12 移除：scheduler 與下方 celery_beat 執行相同的 celery beat,
@@ -113,7 +113,7 @@ services:
   # 4. PostgreSQL Database
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: advisor_prod_db
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_db
     restart: always
     ports:
       - "127.0.0.1:5432:5432"
@@ -134,7 +134,7 @@ services:
   # 5. Redis Cache & Message Broker
   redis:
     image: redis:7-alpine
-    container_name: advisor_prod_cache
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_cache
     restart: always
     # 2026-08-10: --maxclients raised from the 10000 default and nofile pinned.
     # Defence in depth only — the real fix for the outage was closing the
@@ -188,7 +188,7 @@ services:
     # Pinned to the same digest dev uses. `:latest` meant a `docker compose
     # pull` could swap the workflow engine under a running deployment.
     image: n8nio/n8n@sha256:fdf1e22bc04a03e38da41da5a56ba9b9a48510f480874290ea9c180844cbdb0c
-    container_name: advisor_prod_n8n
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_n8n
     restart: always
     ports:
       - "127.0.0.1:5678:5678"
@@ -223,10 +223,14 @@ services:
   # 原本是兩個除了名字之外完全相同的 worker（各 -c 2）。單機上兩個行程並不比
   # 一個行程跑四個子行程更耐故障——共用主機、broker 與資料庫。合併為一個。
   worker:
+    # Scheduler profile: a bare `docker compose up` leaves worker and beat down.
+    # `./start.sh` and `./install.sh` turn it on (install.sh only after seeding).
+    # 排程 profile：直接 `docker compose up` 不會起 worker 與 beat。
+    profiles: [scheduler]
     build:
       context: .
       dockerfile: services/mcp_server/Dockerfile
-    container_name: advisor_prod_worker
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_worker
     restart: always
     command: sh -c "celery -A src.infrastructure.celery_app worker --loglevel=info -c ${WORKER_CONCURRENCY:-4}"
     user: root
@@ -234,7 +238,7 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - DB_HOST=advisor_prod_db
+      - DB_HOST=postgres
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - OTEL_SERVICE_NAME=worker_prod
@@ -270,10 +274,11 @@ services:
 
   # P2-3: Celery Beat
   celery_beat:
+    profiles: [scheduler]
     build:
       context: .
       dockerfile: services/mcp_server/Dockerfile
-    container_name: advisor_prod_beat
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_beat
     restart: always
     command: sh -c "celery -A src.infrastructure.celery_app beat --loglevel=info"
     user: root
@@ -281,7 +286,7 @@ services:
       - .env
     environment:
       - NODE_ENV=production
-      - DB_HOST=advisor_prod_db
+      - DB_HOST=postgres
       - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       - REDIS_PASSWORD=${REDIS_PASSWORD}
       - DB_USER=${DB_USER}
@@ -342,9 +347,9 @@ services:
     #    webhook/callback 的 vhost。此服務曾在 M3 整併 compose 時被誤刪。
     profiles: [tunnel]
     image: ngrok/ngrok:3-alpine
-    container_name: advisor_prod_ngrok
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_ngrok
     restart: always
-    command: http --url=${NGROK_DOMAIN} advisor_prod_gateway:8080
+    command: http --url=${NGROK_DOMAIN} nginx:8080
     environment:
       - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
     depends_on:
@@ -354,11 +359,11 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: advisor_prod_gateway
+    container_name: ${ADVISOR_CONTAINER_PREFIX:-advisor}_gateway
     restart: always
     ports:
       # 127.0.0.1:8088 (was 0.0.0.0:80) — localhost-only; privileged :80 needs vmnetd helper.
-      # ngrok reaches nginx over advisor-net (advisor_prod_gateway:80), unaffected by host port.
+      # ngrok reaches nginx over advisor-net (nginx:80), unaffected by host port.
       - "127.0.0.1:8088:80"
     volumes:
       - ./infra/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -367,8 +372,11 @@ services:
         condition: service_started
       mcp_server:
         condition: service_healthy
+      # The scheduler is its own profile; the gateway must not need it to start.
+      # 排程是獨立 profile，閘道不能因它沒起而起不來。
       worker:
         condition: service_started
+        required: false
     networks:
       - advisor-net
 

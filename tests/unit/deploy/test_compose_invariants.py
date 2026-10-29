@@ -75,10 +75,10 @@ class TestProdCompose:
         指向 :80 會把無登入的儀表板與 /api/ 對外開放；:8080 只公開 webhook/callback。
         """
         command = _services(PROD)["ngrok"].get("command", "")
-        assert "advisor_prod_gateway:8080" in command, (
+        assert command.rstrip().endswith(" nginx:8080"), (
             f"ngrok must target the webhook-only vhost on :8080, got: {command!r}"
         )
-        assert "advisor_prod_gateway:80 " not in f"{command} ", "ngrok must not target :80"
+        assert not command.rstrip().endswith(" nginx:80"), "ngrok must not target :80"
 
     @pytest.mark.parametrize("name,profile", sorted(OPT_IN_ONLY.items()))
     def test_optional_services_are_profiled(self, name, profile):
