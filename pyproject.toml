@@ -122,7 +122,7 @@ channels-line = ["line-bot-sdk==3.22.0"]
 
 # Test + security tooling. Never installed into a production image.
 dev = [
-    "pytest>=9.0.3",
+    "pytest>=9.0.3,<9.2",  # 9.2 與 pytest-asyncio 0.21.1 不相容（_arg2fixturedefs），升 asyncio 後再放寬
     "pytest-asyncio==0.21.1",
     "pytest-cov==4.1.0",
     "pytest-xdist==3.8.0",
