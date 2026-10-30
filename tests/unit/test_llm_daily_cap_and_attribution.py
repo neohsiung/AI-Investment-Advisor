@@ -202,3 +202,106 @@ def test_compositor_passes_essential_to_its_router():
     svc.user_id, svc._router, svc._pipelines, svc.essential = "u", router, {}, True
     asyncio.run(svc._get_pipeline("fast"))
     assert router.get_resilient_gateway.call_args.kwargs.get("essential") is True
+
+
+# ── review follow-ups: council / action extractor exemption, cap cache ────────
+
+def _calls_in(path, func_name, attr):
+    tree = ast.parse((SRC.parent / path).read_text(encoding="utf-8"))
+    for fn in ast.walk(tree):
+        if isinstance(fn, (ast.AsyncFunctionDef, ast.FunctionDef)) and fn.name == func_name:
+            return [n for n in ast.walk(fn) if isinstance(n, ast.Call)
+                    and isinstance(n.func, ast.Attribute) and n.func.attr == attr]
+    raise AssertionError(f"{func_name} not found in {path}")
+
+
+def test_sentinel_mode_council_calls_say_whether_they_are_essential():
+    """A stop-loss council must still run its Risk veto and CIO when the day's budget is gone."""
+    calls = _calls_in("src/services/council_service.py", "_run_debate_logic", "_call_agent_llm")
+    assert calls and all("essential" in {k.arg for k in c.keywords} for c in calls)
+
+
+@pytest.mark.parametrize("essential", [True, False])
+def test_council_agent_call_passes_essential_to_pipeline(monkeypatch, essential):
+    from unittest.mock import AsyncMock
+    from src.services.council_service import CouncilService
+    built = {}
+
+    class _Fake:
+        def __init__(self, **kw):
+            built.update(kw)
+        execute = AsyncMock(return_value=("ok", []))
+
+    monkeypatch.setattr("src.infrastructure.llm.resilient_pipeline.ResilientLLMPipeline", _Fake)
+    monkeypatch.setattr("src.infrastructure.llm.llm_config_chain.build_config_chain", lambda uid, tier: [_candidate()])
+    svc = CouncilService.__new__(CouncilService)
+    svc.user_id = "u"
+    asyncio.run(svc._call_agent_llm("Risk", {}, tier="fast", essential=essential))
+    assert built.get("essential") is essential
+
+
+def test_action_extractor_is_essential():
+    """It turns an already-paid council decision (possibly an exit) into orders; dropping it loses the decision."""
+    path = SRC.parent / "src/agents/action_extractor.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    pipes = [n for n in ast.walk(tree) if isinstance(n, ast.Call)
+             and getattr(n.func, "id", getattr(n.func, "attr", "")) == "ResilientLLMPipeline"]
+    assert pipes and all(
+        any(k.arg == "essential" and getattr(k.value, "value", None) is True for k in c.keywords) for c in pipes)
+
+
+class _FakeRepo:
+    reads = 0
+
+    def get(self, user_id, key, default=None):
+        type(self).reads += 1
+        return 0.25
+
+
+def test_default_cap_is_cached_for_a_short_ttl_not_read_per_call(monkeypatch):
+    from src.infrastructure.llm import daily_spend_cap as m
+    _FakeRepo.reads = 0
+    clock = [1000.0]
+    monkeypatch.setattr(m, "AlchemySettingsRepository", _FakeRepo)
+    monkeypatch.setattr(m, "_now", lambda: clock[0])
+    m.clear_default_cap_cache()
+    first = m.default_cap("u")
+    assert first is not None and first.cap_usd == 0.25
+    m.default_cap("u")
+    assert _FakeRepo.reads == 1
+    clock[0] += m.CAP_CACHE_TTL_SECONDS + 1
+    m.default_cap("u")
+    assert _FakeRepo.reads == 2
+
+
+def test_unreadable_setting_is_not_cached(monkeypatch, caplog):
+    from src.infrastructure.llm import daily_spend_cap as m
+
+    class _Boom:
+        reads = 0
+
+        def get(self, *a, **k):
+            type(self).reads += 1
+            raise RuntimeError("db down")
+
+    monkeypatch.setattr(m, "AlchemySettingsRepository", _Boom)
+    m.clear_default_cap_cache()
+    with caplog.at_level(logging.WARNING):
+        assert m.default_cap("u") is None
+        assert m.default_cap("u") is None
+    assert _Boom.reads == 2
+    assert "llm_daily_cap_unreadable" in caplog.text
+
+
+def test_spend_reading_is_cached_between_calls(monkeypatch):
+    from src.infrastructure.llm import daily_spend_cap as m
+    reads = []
+    clock = [1000.0]
+    monkeypatch.setattr(m, "AlchemySettingsRepository", _FakeRepo)
+    monkeypatch.setattr(m, "_now", lambda: clock[0])
+    monkeypatch.setattr(m, "_read_spent_today", lambda engine: reads.append(1) or 0.01)
+    m.clear_default_cap_cache()
+    cap = m.default_cap("u", engine=object())
+    cap.check()
+    cap.check()
+    assert len(reads) == 1

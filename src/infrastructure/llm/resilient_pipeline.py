@@ -192,10 +192,10 @@ class ResilientLLMPipeline:
         self._tier = tier
         # DD-2026-1030 L2: daily USD cap. Essential calls (exit / safety paths) bypass it.
         # 每日美元上限；必要呼叫（出場／安全路徑）不受限。
-        # Key absent -> resolve from settings on first use; key present (even None) -> use as given.
+        # Key absent -> resolve from settings (TTL-cached) on each call; key present (even None) -> use as given.
         # 沒傳 daily_cap 鍵就在第一次呼叫時從設定解析；傳了（含 None）就照給的用。
         self._daily_cap: Optional[DailySpendCap] = cost_policy.get("daily_cap")
-        self._cap_resolved: bool = "daily_cap" in cost_policy
+        self._cap_explicit: bool = "daily_cap" in cost_policy
         self._essential: bool = bool(cost_policy.get("essential", False))
 
     @staticmethod
@@ -339,12 +339,10 @@ class ResilientLLMPipeline:
         """Stop the call (DailyBudgetExhaustedError) when today's cap is spent; essential calls skip the check."""
         if self._essential:
             return
-        if not self._cap_resolved:
-            self._daily_cap = default_cap(self._user_id)
-            self._cap_resolved = True
-        if self._daily_cap is None:
+        cap = self._daily_cap if self._cap_explicit else default_cap(self._user_id)  # default_cap is TTL-cached
+        if cap is None:
             return
-        self._daily_cap.check(label=f"{self._agent_name}/{self._tier}")
+        cap.check(label=f"{self._agent_name}/{self._tier}")
 
     def _log_usage(self, gateway: ILLMGateway, candidate: ModelCandidate) -> None:
         """

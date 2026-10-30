@@ -15,6 +15,7 @@ line is approximate, not a hard real-time limit.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Optional
@@ -32,6 +33,14 @@ logger = logging.getLogger(__name__)
 _READ_ERRORS = (SQLAlchemyError, OSError, RuntimeError, ValueError, TypeError, KeyError)
 
 CAP_SETTING_KEY = "llm_daily_cap_usd"
+CAP_CACHE_TTL_SECONDS = 60.0  # setting changes take effect within this long / 設定變更最久這麼久生效
+SPEND_CACHE_TTL_SECONDS = 30.0  # billed spend is refreshed ~15 min upstream; no need to query per call
+_now = time.monotonic  # patched in tests
+_cap_cache: dict = {}  # user_id -> (expires_at, DailySpendCap | None)
+
+
+def clear_default_cap_cache() -> None:
+    _cap_cache.clear()
 
 
 class DailyBudgetExhaustedError(Exception):
@@ -77,16 +86,39 @@ def _read_spent_today(engine: Any, today: Optional[date] = None) -> float:
     return float(row[0] or 0.0)
 
 
+def _cached_spend(read: Callable[[], float]) -> Callable[[], float]:
+    state: dict = {"at": None, "value": 0.0}
+
+    def _spent() -> float:
+        now = _now()
+        if state["at"] is None or now - state["at"] >= SPEND_CACHE_TTL_SECONDS:
+            state["value"] = read()  # a failed read raises and is NOT cached
+            state["at"] = now
+        return state["value"]
+
+    return _spent
+
+
 def default_cap(user_id: Optional[str] = None, engine: Any = None) -> Optional[DailySpendCap]:
     """The cap every pipeline gets when its builder passes none: the `llm_daily_cap_usd` setting. / 預設上限。
-    None when unset or 0 (disabled). An unreadable setting also returns None, with a warning, never a guessed number.
-    未設或 0 回 None（停用）；讀不到設定時警告並視為停用，不猜數字。"""
+    None when unset or 0 (disabled). An unreadable setting returns None with a warning (not cached), never a guess.
+    Cached per user for CAP_CACHE_TTL_SECONDS so the disabled path costs ~no DB read per LLM call.
+    未設或 0 回 None（停用）；讀不到設定時警告、不快取、視為停用。每位使用者快取 60 秒，避免每次呼叫都讀資料庫。"""
+    now = _now()
+    hit = _cap_cache.get(user_id)
+    if hit is not None and hit[0] > now:
+        return hit[1]
     try:
         raw = AlchemySettingsRepository().get(resolve_user_id(user_id), CAP_SETTING_KEY, 0.0)
-        cap = float(raw or 0.0)
+        cap_usd = float(raw or 0.0)
     except _READ_ERRORS as exc:
         logger.warning("llm_daily_cap_unreadable: setting %s unreadable (%s); cap disabled", CAP_SETTING_KEY, exc)
         return None
-    if cap <= 0:
-        return None
-    return DailySpendCap(cap_usd=cap, spent_today_usd=lambda: _read_spent_today(engine or get_db_engine()))
+    cap = None
+    if cap_usd > 0:
+        cap = DailySpendCap(
+            cap_usd=cap_usd,
+            spent_today_usd=_cached_spend(lambda: _read_spent_today(engine or get_db_engine())),
+        )
+    _cap_cache[user_id] = (now + CAP_CACHE_TTL_SECONDS, cap)
+    return cap

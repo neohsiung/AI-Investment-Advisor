@@ -28,7 +28,7 @@ class CouncilService:
     """
     Orchestrates the Agent Council, including debate protocols and consensus formation.
     協調 Agent 委員會，包含辯論協議與共識達成。
-    
+
     Supports Map-Reduce for full portfolio analysis and dynamic model routing.
     支援用於全投資組合分析的 Map-Reduce 與動態模型路由。
     """
@@ -84,12 +84,14 @@ class CouncilService:
         self.settings_repo = AlchemySettingsRepository(engine=get_db_engine())
         self.model_router = SettingsAwareModelRouter(self.settings_repo)
         self.gateway = OpenRouterGateway()
-    
-    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart", 
-                              temperature: float = 0.7, max_tokens: int = 2000) -> str:
+
+    async def _call_agent_llm(self, agent_name: str, context: Dict[str, Any], tier: str = "smart",
+                              temperature: float = 0.7, max_tokens: int = 2000,
+                              essential: bool = False) -> str:
         """
         PAD Phase 2: Replace AgentFactory.create_*_agent().run() with direct gateway calls.
         Generic method to call LLM for any agent role.
+        essential=True (sentinel-mode councils) is exempt from the daily LLM cap (DD-2026-1030 L2).
         """
         try:
             from src.infrastructure.llm.llm_config_chain import build_config_chain
@@ -104,13 +106,14 @@ class CouncilService:
                 user_id=self.user_id,
                 agent_name=agent_name,
                 tier=tier,
+                essential=essential,
             )
 
             from src.utils.prompt_utils import load_agent_prompt
 
             # [Rule #13] Dynamic 指標原則: Load system prompt from prompts/*.txt instead of hardcoded strings
             system_prompt = load_agent_prompt(agent_name)
-            
+
             try:
                 from src.repositories.memory_repository import AgentState
                 agent_state = AgentState()
@@ -156,7 +159,7 @@ class CouncilService:
                         system_prompt += f"\n\n## Historical Debate Precedents & Decision Lessons (A3 Attribution):\n{precedents_block}"
                 except Exception as prec_err:
                     logger.debug(f"Council: failed to load precedent guidance for CIO (non-blocking): {prec_err}")
-            
+
             messages = [
                 Message(role="system", content=system_prompt),
                 Message(role="user", content=json.dumps(context))
@@ -176,6 +179,7 @@ class CouncilService:
                                 user_id=self.user_id,
                                 agent_name=agent_name,
                                 tier="fast",
+                                essential=essential,
                             )
                             response, _ = await fast_pipeline.execute(messages, temperature=temperature, max_tokens=max_tokens)
                         else:
@@ -314,17 +318,17 @@ class CouncilService:
         """
         Starts a high-level Council Session.
         啟動高階委員會議程。
-        
+
         If scope="portfolio", it triggers the Map-Reduce flow.
         若 scope="portfolio"，則觸發 Map-Reduce 流程。
         """
         session_id = str(uuid.uuid4())
         logger.info(f"Council Session {session_id} started. Topic: {topic} | Scope: {scope} | User: {user_id}")
-        
+
         # 0. Check Scope for Map-Reduce
         if scope == "portfolio":
             return await self._run_map_reduce_portfolio(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id, mode=mode)
-        
+
         # Default Single Topic Flow (Thread-blocking wrapper for async compatibility)
         return await self._run_standard_session(session_id, topic, context_data, market_volatility=market_volatility, user_id=user_id, mode=mode)
 
@@ -358,7 +362,7 @@ class CouncilService:
             "portfolio": portfolio,
             "topic": topic
         }
-        
+
         # Context dict that passes services and context properties to nodes
         context = {
             "user_id": user_id,
@@ -585,7 +589,7 @@ class CouncilService:
         Core asynchronous logic for running an agent debate and capturing the transcript.
         執行 Agent 辯論並記錄逐字稿的核心非同步邏輯。
         """
-        
+
         # 1. Experience Replay — semantic recall first (real embeddings), then
         # keyword full-text as fallback. (2026-07-11)
         # 2026-07-14: raised k=1 -> k=5 (a single closest match was starving
@@ -617,14 +621,14 @@ class CouncilService:
         tier = self.router.select_tier(
             RoutingContext(topic=topic, round_num=1, market_volatility=market_volatility, user_id=self.user_id)
         )
-        
+
         # Instantiate Agents with retrieved context
         # [Fix] Wrap in try-except to prevent one agent failure from crashing the whole council
         # PAD Phase 2: Remove agent instantiation; we'll call via _call_agent_llm
         # [B-PLAN] v2.0: 12 核心 Agents（3个 Scout + 7 分析 + CIO + Engineer）
         agent_names = [
             "Macro",
-            "Momentum", 
+            "Momentum",
             "Fundamental",
             "Sentiment",
             "Thematic",
@@ -639,12 +643,12 @@ class CouncilService:
         # 3. Debate
         stances = []
         transcript = []
-        
+
         # Inject Memory and User Focus
         # v5.0: Instantiate UserFocusService with the correct user_id
         uf_service = UserFocusService(user_id=user_id, settings_service=self.settings_service)
         user_focus = await uf_service.get_user_focus()
-        
+
         # [NEW] v4.5.1: Competitor Penetration check for leaders
         competitor_analysis = None
         # Extract ticker from topic (assuming topic like "Analysis of TSLA")
@@ -700,12 +704,13 @@ class CouncilService:
             "adaptive_prior_context": adaptive_context.prompt_guidance if adaptive_context else "",
             "regime": adaptive_context.current_regime if adaptive_context else "SIDEWAYS_HIGH_VOL",
         }
-        
+
+        sentinel_mode = mode == "sentinel"  # stop-loss councils are exempt from the daily LLM cap
         # PAD Phase 2: Replace agent.run() with _call_agent_llm
         for agent_name in agent_names:
             try:
                 logger.debug(f"Council: Running agent {agent_name}...")
-                res = await self._call_agent_llm(agent_name, debate_context, tier=tier)
+                res = await self._call_agent_llm(agent_name, debate_context, tier=tier, essential=sentinel_mode)
                 stances.append(f"[{agent_name}]: {res}")
                 transcript.append(f"[{agent_name}]: {res}")
             except Exception as e:
@@ -717,12 +722,12 @@ class CouncilService:
             RoutingContext(topic=topic, round_num=99, user_id=self.user_id)
         )
         debates_text = "\n".join(stances)
-        
+
         # Determine if Structural Cooling was detected by MacroAgent
         fractal_debate_rules = ""
         if "Structural Cooling Detected" in debates_text:
              fractal_debate_rules = "FRACTAL RULE APPLIED: Structural Cooling detected. Systematically reduce weight of traditional cyclical stocks (e.g., industrials, materials) and increase weight of software/infrastructure moats."
-        
+
         final_context = {
             "topic": topic,
             "council_transcript": debates_text,
@@ -735,19 +740,19 @@ class CouncilService:
             "adaptive_prior_context": adaptive_context.prompt_guidance if adaptive_context else "",
             "meta_weights": adaptive_context.meta_weights if adaptive_context else None,
         }
-        
+
         try:
             # v9.1: High-verbosity logging for cio context to debug consensus issues
             logger.info(f"Council: Launching CIO Consensus for topic: {topic}")
             logger.debug(f"Council: CIO Final Context Keys: {list(final_context.keys())}")
-            
+
             # PAD Phase 2: Replace AgentFactory with _call_agent_llm
-            decision = await self._call_agent_llm("CIO", final_context, tier=consensus_tier)
-            
+            decision = await self._call_agent_llm("CIO", final_context, tier=consensus_tier, essential=sentinel_mode)
+
             if not decision:
                 logger.warning("Council: CIO response was empty.")
                 decision = "Council reached no consensus (Empty response)."
-                
+
         except Exception as e:
             # Log full context only on error to avoid bloating logs
             logger.error(f"Council: CIO agent failed: {e}", exc_info=True)
@@ -774,7 +779,8 @@ class CouncilService:
                     "explicitly with your reasoning. If VETO, state what must change."
                 ),
             }
-            risk_challenge = await self._call_agent_llm("Risk", risk_challenge_context, tier="fast")
+            risk_challenge = await self._call_agent_llm(
+                "Risk", risk_challenge_context, tier="fast", essential=sentinel_mode)
             transcript.append(f"[Risk Challenge]: {risk_challenge}")
 
             final_synth_context = {
@@ -788,7 +794,8 @@ class CouncilService:
                     "sizing to account for it. Do not ignore the challenge."
                 ),
             }
-            revised = await self._call_agent_llm("CIO", final_synth_context, tier=consensus_tier)
+            revised = await self._call_agent_llm(
+                "CIO", final_synth_context, tier=consensus_tier, essential=sentinel_mode)
             if revised:
                 decision = revised
         except Exception as e:
@@ -862,7 +869,7 @@ class CouncilService:
             log_dir = "logs"
             os.makedirs(log_dir, exist_ok=True)
             log_file = os.path.join(log_dir, "workflow_cold_backup.jsonl")
-            
+
             entry = {
                 "timestamp": datetime.now().isoformat(),
                 "user_id": user_id,
@@ -871,11 +878,11 @@ class CouncilService:
                 "consensus": consensus,
                 "verifier_note": verifier_note
             }
-            
+
             def append_to_file():
                 with open(log_file, "a", encoding="utf-8") as f:
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            
+
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, append_to_file)
             logger.info(f"Cold Processing Backup written successfully for session {session_id}")

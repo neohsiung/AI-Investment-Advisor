@@ -204,7 +204,7 @@ class ActionExtractorAgent:
             if not chain:
                 return []
             pipeline = ResilientLLMPipeline(config_chain=chain, user_id=self.user_id,
-                                             agent_name=self.name, tier="fast")
+                                             agent_name=self.name, tier="fast", essential=True)
             gateway = pipeline._gateway_factory(chain[0])
             config = pipeline._build_llm_config(chain[0], temperature=0.1, max_tokens=800)
             prompt = (
