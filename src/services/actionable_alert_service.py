@@ -403,6 +403,7 @@ class ActionableAlertHubService:
                     action="SELL",
                     quantity=held_qty,
                     confidence_score=10.0,
+                    strategy_name="position_exit",  # DD-2026-1031: named exit, not the "AutomatedTrading" default
                     rationale="Interactive Alert Hub 1-tap manual emergency close",
                 )
                 status_str = res.get("status") or ("success" if res.get("success") else "submitted")
