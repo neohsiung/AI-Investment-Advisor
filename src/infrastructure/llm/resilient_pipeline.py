@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from src.domain.interfaces import ILLMGateway, LLMConfig, Message
 from src.infrastructure.llm import credit_signal
-from src.infrastructure.llm.daily_spend_cap import DailySpendCap
+from src.infrastructure.llm.daily_spend_cap import DailySpendCap, default_cap
 from src.infrastructure.llm.error_classifier import (
     ErrorCategory,
     classify_error,
@@ -192,7 +192,10 @@ class ResilientLLMPipeline:
         self._tier = tier
         # DD-2026-1030 L2: daily USD cap. Essential calls (exit / safety paths) bypass it.
         # 每日美元上限；必要呼叫（出場／安全路徑）不受限。
+        # Key absent -> resolve from settings on first use; key present (even None) -> use as given.
+        # 沒傳 daily_cap 鍵就在第一次呼叫時從設定解析；傳了（含 None）就照給的用。
         self._daily_cap: Optional[DailySpendCap] = cost_policy.get("daily_cap")
+        self._cap_resolved: bool = "daily_cap" in cost_policy
         self._essential: bool = bool(cost_policy.get("essential", False))
 
     @staticmethod
@@ -334,7 +337,12 @@ class ResilientLLMPipeline:
 
     def _enforce_daily_cap(self) -> None:
         """Stop the call (DailyBudgetExhaustedError) when today's cap is spent; essential calls skip the check."""
-        if self._daily_cap is None or self._essential:
+        if self._essential:
+            return
+        if not self._cap_resolved:
+            self._daily_cap = default_cap(self._user_id)
+            self._cap_resolved = True
+        if self._daily_cap is None:
             return
         self._daily_cap.check(label=f"{self._agent_name}/{self._tier}")
 

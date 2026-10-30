@@ -129,3 +129,76 @@ def test_compositor_marks_an_exhausted_cap_instead_of_inventing_a_score():
     _score, factors = asyncio.run(svc._score_via_llm("AMZN", "fundamental", "score {ticker}", "fast"))
     assert _Gateway.calls == 0
     assert "daily" in str(factors.get("_fallback_reason", "")).lower()
+
+
+# ── default cap + essential marks (DD-2026-1030 L2, wiring to every pipeline) ─
+
+def _patch_default_cap(monkeypatch, cap):
+    monkeypatch.setattr("src.infrastructure.llm.resilient_pipeline.default_cap", lambda user_id: cap)
+
+
+def test_pipeline_without_daily_cap_resolves_it_from_settings(monkeypatch):
+    """The ~25 call sites that build a pipeline directly must be covered without being edited one by one."""
+    from src.infrastructure.llm.daily_spend_cap import DailyBudgetExhaustedError
+    _patch_default_cap(monkeypatch, _cap(0.10, lambda: 0.10))
+    with pytest.raises(DailyBudgetExhaustedError):
+        _run(_pipeline())
+    assert _Gateway.calls == 0
+
+
+def test_explicit_none_cap_means_disabled_not_default(monkeypatch):
+    _patch_default_cap(monkeypatch, _cap(0.10, lambda: 0.10))
+    _run(_pipeline(daily_cap=None))
+    assert _Gateway.calls == 1
+
+
+def test_default_cap_unset_in_settings_lets_calls_through(monkeypatch):
+    _patch_default_cap(monkeypatch, None)
+    _run(_pipeline())
+    assert _Gateway.calls == 1
+
+
+def _sentinel_pipeline_kwargs(monkeypatch, agent_name):
+    """Run SentinelService._call_agent_llm with a fake pipeline class; return the kwargs it was built with."""
+    from unittest.mock import AsyncMock
+    from src.services.sentinel_service import SentinelService
+    built = {}
+
+    class _FakePipeline:
+        def __init__(self, **kw):
+            built.update(kw)
+        execute = AsyncMock(return_value=("{}", []))
+
+    monkeypatch.setattr("src.infrastructure.llm.resilient_pipeline.ResilientLLMPipeline", _FakePipeline)
+    monkeypatch.setattr("src.infrastructure.llm.llm_config_chain.build_config_chain", lambda uid, tier: [_candidate()])
+    monkeypatch.setattr("src.infrastructure.llm.auto_tier.resolve_effective_tier", lambda tier, *a, **k: tier)
+    monkeypatch.setattr("src.services.hard_token_budget_guard_service.HardTokenBudgetGuardService",
+                        lambda user_id: MagicMock(should_allow_llm=lambda task_type: (True, "")))
+    svc = SentinelService.__new__(SentinelService)
+    svc.user_id, svc.model_router = "u", MagicMock()
+    asyncio.run(svc._call_agent_llm(agent_name, {}, tier="fast"))
+    return built
+
+
+@pytest.mark.parametrize("agent", ["Sentinel", "Risk"])
+def test_sentinel_risk_calls_are_essential(monkeypatch, agent):
+    assert _sentinel_pipeline_kwargs(monkeypatch, agent).get("essential") is True
+
+
+@pytest.mark.parametrize("agent", ["Thematic", "Momentum", "Macro"])
+def test_other_sentinel_agents_stay_under_the_cap(monkeypatch, agent):
+    assert _sentinel_pipeline_kwargs(monkeypatch, agent).get("essential", False) is False
+
+
+def test_exit_compositor_llm_is_essential():
+    from src.services.exit_compositor_service import ExitCompositorService
+    assert ExitCompositorService(user_id="u")._llm.essential is True
+
+
+def test_compositor_passes_essential_to_its_router():
+    from src.services.confidence_compositor_service import CompositorService
+    router = MagicMock()
+    svc = CompositorService.__new__(CompositorService)
+    svc.user_id, svc._router, svc._pipelines, svc.essential = "u", router, {}, True
+    asyncio.run(svc._get_pipeline("fast"))
+    assert router.get_resilient_gateway.call_args.kwargs.get("essential") is True

@@ -16,7 +16,6 @@ Phase B extension:
 import logging
 from typing import Any, Dict, List, Optional
 from src.domain.interfaces import LLMConfig
-from src.infrastructure.llm.daily_spend_cap import cap_from_settings
 from src.infrastructure.llm.tier_config import TierConfig
 from src.config.owner import resolve_user_id
 
@@ -272,6 +271,5 @@ class BudgetAwareModelRouter:
             user_id=user_id,
             agent_name=agent_name,
             tier=tier,
-            daily_cap=cap_from_settings(self.settings, user_id=user_id),
             essential=essential,
         )

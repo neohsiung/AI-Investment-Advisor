@@ -22,7 +22,9 @@ from typing import Any, Callable, Optional
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from src.config.owner import resolve_user_id
 from src.data.database import get_db_engine
+from src.repositories.settings_repository import AlchemySettingsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -75,25 +77,16 @@ def _read_spent_today(engine: Any, today: Optional[date] = None) -> float:
     return float(row[0] or 0.0)
 
 
-def cap_from_settings(
-    settings_service: Any, user_id: Optional[str] = None, engine: Any = None
-) -> Optional[DailySpendCap]:
-    """Build the cap from the `llm_daily_cap_usd` setting; None when unset/0/unreadable-as-disabled.
-    An unreadable setting returns None with a warning (cap off), never a guessed number.
-    以設定 `llm_daily_cap_usd` 建立上限；未設或 0 回 None。讀不到設定時警告並視為停用，不猜數字。"""
+def default_cap(user_id: Optional[str] = None, engine: Any = None) -> Optional[DailySpendCap]:
+    """The cap every pipeline gets when its builder passes none: the `llm_daily_cap_usd` setting. / 預設上限。
+    None when unset or 0 (disabled). An unreadable setting also returns None, with a warning, never a guessed number.
+    未設或 0 回 None（停用）；讀不到設定時警告並視為停用，不猜數字。"""
     try:
-        raw = settings_service.get_setting(CAP_SETTING_KEY, user_id=user_id)
+        raw = AlchemySettingsRepository().get(resolve_user_id(user_id), CAP_SETTING_KEY, 0.0)
         cap = float(raw or 0.0)
     except _READ_ERRORS as exc:
         logger.warning("llm_daily_cap_unreadable: setting %s unreadable (%s); cap disabled", CAP_SETTING_KEY, exc)
         return None
     if cap <= 0:
         return None
-
-    def _spent() -> float:
-        eng = engine
-        if eng is None:
-            eng = get_db_engine()
-        return _read_spent_today(eng)
-
-    return DailySpendCap(cap_usd=cap, spent_today_usd=_spent)
+    return DailySpendCap(cap_usd=cap, spent_today_usd=lambda: _read_spent_today(engine or get_db_engine()))
