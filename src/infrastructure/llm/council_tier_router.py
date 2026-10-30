@@ -123,6 +123,8 @@ class CouncilTierRouter(ITierRouter):
         context: RoutingContext,
         budget_router: Any,
         db_session: Optional[Any] = None,
+        agent_name: str = "council_tier_router",
+        essential: bool = False,
     ) -> Any:
         """
         Select the appropriate tier for `context`, then return a
@@ -149,4 +151,6 @@ class CouncilTierRouter(ITierRouter):
             user_id=user_id,
             tier=tier,
             db_session=db_session,
+            agent_name=agent_name,
+            essential=essential,
         )

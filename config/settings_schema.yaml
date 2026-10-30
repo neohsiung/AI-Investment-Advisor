@@ -1696,6 +1696,15 @@ settings:
     label_en: Tradable capital (USD)
     label_zh: 可交易資本（USD）
     help_en: "Additional hard USD cap on capital the autonomous path may deploy (0 = no USD cap; the percentage cap still applies)."
+  - key: llm_daily_cap_usd
+    group: trading
+    type: float
+    default: 0.0
+    min: 0.0
+    label_en: Daily LLM Spend Cap (USD)
+    label_zh: 每日 LLM 花費上限（USD）
+    help_en: "Stop non-essential LLM calls once today's billed spend (llm_real_cost_daily) reaches this amount; exit and safety paths are exempt. 0 = no cap. Approximate: billed spend is refreshed about every 15 minutes (DD-2026-1030)."
+    help_zh: 當日計費花費（llm_real_cost_daily）達此金額後停止非必要 LLM 呼叫；出場與安全路徑不受限。0＝不設上限。屬粗略界線，計費約每 15 分鐘更新（DD-2026-1030）。
   - key: monthly_data_subscription_cost_usd
     group: trading
     type: float
@@ -4523,13 +4532,3 @@ settings:
     label_zh: 壓力測試最大可容忍回撤門檻
     help_en: Maximum portfolio drawdown tolerance under extreme shocks before triggering critical survival warnings (default 0.20 = 20%).
     help_zh: 極端衝擊下投組最大可容忍之回撤門檻（預設 0.20 即 20%），超出時觸發高危生存告警。
-
-
-
-
-
-
-
-
-
-

@@ -16,6 +16,7 @@ Phase B extension:
 import logging
 from typing import Any, Dict, List, Optional
 from src.domain.interfaces import LLMConfig
+from src.infrastructure.llm.daily_spend_cap import cap_from_settings
 from src.infrastructure.llm.tier_config import TierConfig
 from src.config.owner import resolve_user_id
 
@@ -25,7 +26,7 @@ class BudgetAwareModelRouter:
     """
     Router that provides LLM configurations based on requested tier and current budget.
     """
-    
+
     # Budget thresholds as per Phase 6 Implementation Plan
     BUDGET_SOFT_LIMIT = 16.0  # 80% (Warn / Partial Downgrade)
     BUDGET_HARD_LIMIT = 20.0  # 100% (Emergency / Full Downgrade)
@@ -43,11 +44,11 @@ class BudgetAwareModelRouter:
         """
         Get the appropriate LLMConfig for the requested tier, potentially downgraded
         due to budget constraints.
-        
+
         Args:
             requested_tier: "nano", "fast", "smart", "advanced"
             user_id: The internal user ID to check budget for.
-            
+
         Returns:
             LLMConfig for the (potentially downgraded) tier.
         """
@@ -59,16 +60,16 @@ class BudgetAwareModelRouter:
         # 1. Fetch current spend (cached/aggregated in DB)
         spend_summary = self.token_logger.get_user_spending(user_id, days=7)
         total_spent = spend_summary.get("total_cost", 0.0)
-        
+
         # 2. Determine effective tier based on budget
         effective_tier = self._resolve_tier(requested_tier, total_spent)
-        
+
         if effective_tier != requested_tier:
             logger.warning(
                 f"BudgetAwareRouter: Downgrading {requested_tier} -> {effective_tier} "
                 f"due to spend ${total_spent:.2f}"
             )
-            
+
         # 3. Build the final Config
         return self._build_config(effective_tier, user_id)
 
@@ -79,7 +80,7 @@ class BudgetAwareModelRouter:
         user_id = user_id or self.settings.user_id
         if not user_id:
             return False
-            
+
         try:
             from src.services.hard_token_budget_guard_service import HardTokenBudgetGuardService
             guard = HardTokenBudgetGuardService(user_id=user_id)
@@ -90,7 +91,7 @@ class BudgetAwareModelRouter:
 
         spend_summary = self.token_logger.get_user_spending(user_id, days=7)
         total_spent = spend_summary.get("total_cost", 0.0)
-        
+
         return total_spent >= self.BUDGET_SOFT_LIMIT
 
     def _resolve_tier(self, requested: str, spend: float, user_id: str = None) -> str:
@@ -110,12 +111,12 @@ class BudgetAwareModelRouter:
         # Hard Limit reached: Force everything to 'fast'
         if spend >= self.BUDGET_HARD_LIMIT:
             return "fast"
-        
+
         # Soft Limit reached: Downgrade 'smart' or 'advanced' to 'fast'
         if spend >= self.BUDGET_SOFT_LIMIT:
             if requested in ["smart", "advanced"]:
                 return "fast"
-            
+
         return requested
 
     def _build_config(self, tier_name: str, user_id: str) -> LLMConfig:
@@ -128,7 +129,7 @@ class BudgetAwareModelRouter:
 
         # Fetch DB settings
         db_settings = self.settings.get_all_settings(user_id)
-        
+
         # Resolve model name (Strictly DB via TierConfig)
         model_name = self.tier_cfg.resolve(tier_name, db_settings)
         if not model_name:
@@ -141,23 +142,23 @@ class BudgetAwareModelRouter:
             model_name = model_name.strip().strip('"').strip("'")
 
         spec = self.tier_cfg.get_spec(tier_name)
-        
+
         # Provider resolution (DB only)
         provider = db_settings.get("AI_PROVIDER", db_settings.get("ai_provider", "OpenRouter"))
-        
+
         # API Key Mapping (Strictly DB)
         api_key_field = f"source_{provider.lower()}_api_key"
         direct_provider_key = f"{provider.lower()}_api_key"
-        
+
         raw_key = db_settings.get(api_key_field) or db_settings.get(direct_provider_key) or db_settings.get("API_KEY")
         if not raw_key:
              raise ValueError(
                  f"No API Key found in database for user {user_id} and provider {provider}. "
                  "Environment variable fallbacks are strictly prohibited."
              )
-            
+
         api_key = raw_key.strip().strip('"').strip("'") if isinstance(raw_key, str) else raw_key
-        
+
         return LLMConfig(
             provider=provider,
             model=model_name,
@@ -248,9 +249,14 @@ class BudgetAwareModelRouter:
         user_id: str,
         tier: str,
         db_session: Any = None,
+        agent_name: str = "budget_aware_router",
+        essential: bool = False,
     ) -> Any:
         """
         Return a ResilientLLMPipeline configured for (user_id, tier).
+
+        agent_name: caller attribution for llm_usage_logs; pass your own name, not the default bucket.
+        essential: exit / safety paths set True so the daily LLM cap (llm_daily_cap_usd) never stops them.
 
         Existing callers that use get_config() are unaffected.
         New callers can use this for automatic multi-model fallback.
@@ -264,6 +270,8 @@ class BudgetAwareModelRouter:
         return ResilientLLMPipeline(
             config_chain=chain,
             user_id=user_id,
-            agent_name="budget_aware_router",
+            agent_name=agent_name,
             tier=tier,
+            daily_cap=cap_from_settings(self.settings, user_id=user_id),
+            essential=essential,
         )

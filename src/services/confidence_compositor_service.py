@@ -183,6 +183,7 @@ class CompositorService:
         pipeline = self._router.get_resilient_gateway(
             user_id=self.user_id,
             tier=tier,
+            agent_name="confidence_compositor",
         )
         self._pipelines[tier] = pipeline
         return pipeline
@@ -834,4 +835,3 @@ Return JSON:
     def _ticker_hash(self, ticker: str) -> int:
         """Deterministic hash per ticker for reproducible fallback scores."""
         return int(hashlib.sha256(ticker.encode()).hexdigest()[:8], 16)
-
