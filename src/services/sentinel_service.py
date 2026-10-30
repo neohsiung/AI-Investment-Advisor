@@ -2526,7 +2526,8 @@ class SentinelService:
                         ticker=ticker,
                         action="SELL",
                         quantity=holding_qty,  # 動態計算：使用實際持倉量
-                        confidence_score=emergency_score, strategy_name="emergency_exit",  # DD-2026-1031
+                        confidence_score=emergency_score,
+                        strategy_name="emergency_exit",  # DD-2026-1031
                         rationale=f"🚨 Sentinel 緊急防禦機制啟動 (Emergency Liquidation)。\n判定: {rationale[:100]}..."
                     )
 
