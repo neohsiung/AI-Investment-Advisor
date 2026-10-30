@@ -497,10 +497,8 @@ class SentinelService:
                 return json.dumps({"status": "failed", "error": f"No model configured for tier={tier}"})
 
             pipeline = ResilientLLMPipeline(
-                config_chain=chain,
-                user_id=self.user_id,
-                agent_name=agent_name,
-                tier=tier,
+                config_chain=chain, user_id=self.user_id, agent_name=agent_name, tier=tier,
+                essential=agent_name in ("Sentinel", "Risk"),  # exempt from the daily LLM cap (DD-2026-1030)
             )
 
             agent_prompts = {

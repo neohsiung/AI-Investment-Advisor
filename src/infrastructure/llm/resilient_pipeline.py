@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from src.domain.interfaces import ILLMGateway, LLMConfig, Message
 from src.infrastructure.llm import credit_signal
+from src.infrastructure.llm.daily_spend_cap import DailySpendCap, default_cap
 from src.infrastructure.llm.error_classifier import (
     ErrorCategory,
     classify_error,
@@ -171,7 +172,14 @@ class ResilientLLMPipeline:
         user_id: str = "system",
         agent_name: str = "",
         tier: str = "",
+        **cost_policy: Any,
     ):
+        """cost_policy (keyword-only, DD-2026-1030 L2): ``daily_cap`` (DailySpendCap | None) and ``essential`` (bool).
+        Taken as **kwargs only to stay inside the max-args lint limit; unknown keys raise TypeError.
+        cost_policy 僅接受 daily_cap 與 essential，其餘鍵丟 TypeError（為了不超過參數數量的 lint 上限）。"""
+        unknown = set(cost_policy) - {"daily_cap", "essential"}
+        if unknown:
+            raise TypeError(f"unexpected keyword arguments: {sorted(unknown)}")
         if not config_chain:
             raise ValueError("config_chain must have at least one candidate")
         self.config_chain = config_chain
@@ -182,6 +190,13 @@ class ResilientLLMPipeline:
         self._user_id = user_id
         self._agent_name = agent_name
         self._tier = tier
+        # DD-2026-1030 L2: daily USD cap. Essential calls (exit / safety paths) bypass it.
+        # 每日美元上限；必要呼叫（出場／安全路徑）不受限。
+        # Key absent -> resolve from settings (TTL-cached) on each call; key present (even None) -> use as given.
+        # 沒傳 daily_cap 鍵就在第一次呼叫時從設定解析；傳了（含 None）就照給的用。
+        self._daily_cap: Optional[DailySpendCap] = cost_policy.get("daily_cap")
+        self._cap_explicit: bool = "daily_cap" in cost_policy
+        self._essential: bool = bool(cost_policy.get("essential", False))
 
     @staticmethod
     def _default_gateway_factory(candidate: ModelCandidate) -> ILLMGateway:
@@ -200,6 +215,7 @@ class ResilientLLMPipeline:
             (response_text, attempts) on success.
 
         Raises:
+            DailyBudgetExhaustedError: if a daily cap is set, reached, and the call is not essential.
             AllCandidatesFailedError: if every candidate fails with a fallback-eligible error.
             Exception: immediately if a non-fallback error occurs (e.g. AUTH_FAILURE).
         """
@@ -213,6 +229,8 @@ class ResilientLLMPipeline:
             else:
                 norm_messages.append(Message(role="user", content=str(m)))
         messages = norm_messages
+
+        self._enforce_daily_cap()
 
         attempts: List[AttemptRecord] = []
         has_fallback = len(self.config_chain) > 1
@@ -317,6 +335,15 @@ class ResilientLLMPipeline:
         # All candidates exhausted
         raise AllCandidatesFailedError(attempts)
 
+    def _enforce_daily_cap(self) -> None:
+        """Stop the call (DailyBudgetExhaustedError) when today's cap is spent; essential calls skip the check."""
+        if self._essential:
+            return
+        cap = self._daily_cap if self._cap_explicit else default_cap(self._user_id)  # default_cap is TTL-cached
+        if cap is None:
+            return
+        cap.check(label=f"{self._agent_name}/{self._tier}")
+
     def _log_usage(self, gateway: ILLMGateway, candidate: ModelCandidate) -> None:
         """
         Persist token usage for this successful call to llm_usage_logs.
@@ -398,7 +425,7 @@ class ResilientLLMPipeline:
         temperature = kwargs.get("temperature")
         if temperature is None:
             temperature = candidate.extra_config.get("temperature", 0.7)
-            
+
         max_tokens = kwargs.get("max_tokens")
         if max_tokens is None:
             max_tokens = candidate.extra_config.get("max_tokens", 2048)

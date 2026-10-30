@@ -146,8 +146,10 @@ class CompositorService:
         "Risk": "fast",
     }
 
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, essential: bool = False):
         self.user_id = resolve_user_id(user_id)
+        # essential=True: exit / safety scoring, never stopped by the daily LLM cap (DD-2026-1030 L2).
+        self.essential = essential
         self.min_threshold = 5.0  # 5/10 minimum to execute
         self.max_single_allocation = 0.25  # 25% of excess cash max
         self.min_allocation = 0.05  # 5% minimum allocation
@@ -183,6 +185,8 @@ class CompositorService:
         pipeline = self._router.get_resilient_gateway(
             user_id=self.user_id,
             tier=tier,
+            agent_name="confidence_compositor",
+            essential=getattr(self, "essential", False),
         )
         self._pipelines[tier] = pipeline
         return pipeline
@@ -834,4 +838,3 @@ Return JSON:
     def _ticker_hash(self, ticker: str) -> int:
         """Deterministic hash per ticker for reproducible fallback scores."""
         return int(hashlib.sha256(ticker.encode()).hexdigest()[:8], 16)
-

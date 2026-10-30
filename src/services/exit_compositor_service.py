@@ -99,7 +99,7 @@ class ExitCompositorService:
         # _fallback_score) so the Risk factor goes through exactly the same
         # budget-aware router and JSON parsing as the entry side.
         # 重用其 LLM 管線，讓風險因子與買進側走同一套路由與 JSON 解析。
-        self._llm = CompositorService(user_id=user_id)
+        self._llm = CompositorService(user_id=user_id, essential=True)
 
     # ── Public API ──
 
@@ -789,4 +789,3 @@ def compute_dynamic_atr_exit(
         locked_profit_pct=locked_profit_pct,
         drawdown_from_peak_pct=round(drawdown_from_peak_pct, 2),
     )
-
