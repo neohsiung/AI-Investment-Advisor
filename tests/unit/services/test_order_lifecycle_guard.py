@@ -379,6 +379,38 @@ async def test_intraday_churn_throttler_blocks_reverse_trade():
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("exit_name", ["stop_loss", "emergency_exit", "position_exit"])
+async def test_intraday_churn_throttler_exempts_safety_exits(exit_name):
+    """Safety exits are not delayed by a recent reverse trade (DD-2026-1031: position_exit joins the exempt set)."""
+    settings_repo = MagicMock()
+    values = {"intraday_churn_cooldown_hours": "24.0", "ai_trading_enabled": "true"}
+    settings_repo.get.side_effect = lambda u, k: values.get(k)
+
+    recent_tx = MagicMock()
+    recent_tx.ticker = "META"
+    recent_tx.action = "BUY"
+    recent_tx.entry_category = "trade"
+    recent_tx.trade_date = (datetime.now() - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S")
+    tx_repo = MagicMock()
+    tx_repo.get_all_by_user.return_value = [recent_tx]
+
+    svc = AutomatedTradingService(settings_repo=settings_repo, tx_repo=tx_repo)
+
+    with patch("src.services.trading_protections_service.TradingProtectionsService") as MockProt:
+        MockProt.return_value.check.return_value = None
+        res = await svc.evaluate_and_execute_trade(
+            user_id="user-1",
+            ticker="META",
+            action="SELL",
+            quantity=1.0,
+            confidence_score=8,
+            strategy_name=exit_name,
+        )
+
+    assert "Intraday churn throttler" not in str(res.get("reason", ""))
+
+
+@pytest.mark.anyio
 async def test_intraday_churn_throttler_allows_same_direction(mock_broker):
     """Same direction trade (BUY after BUY) is not blocked by flip-flop churn throttler."""
     settings_repo = MagicMock()

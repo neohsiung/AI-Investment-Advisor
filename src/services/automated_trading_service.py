@@ -105,12 +105,12 @@ class AutomatedTradingService:
     """
     Automated Trading Service.
     自動化交易服務。
-    
+
     Handles the execution of trades based on AI confidence scores and user-defined thresholds.
     根據 AI 信心分數與使用者定義的閾值處理交易執行。
     """
-    
-    def __init__(self, settings_repo: Optional[AlchemySettingsRepository] = None, 
+
+    def __init__(self, settings_repo: Optional[AlchemySettingsRepository] = None,
                  interaction_service: Optional[InteractionService] = None,
                  notification_service: Optional[NotificationService] = None,
                  tx_repo: Optional[AlchemyTransactionRepository] = None):
@@ -146,12 +146,12 @@ class AutomatedTradingService:
         """
         Evaluate and potentially execute a trade based on confidence score.
         評估並可能根據信心分數執行交易。
-        
+
         v7.0: Support weight-based position sizing (fractional shares)
         - If target_weight/current_weight/delta_weight provided: calculate quantity from weights
         - Otherwise: use legacy quantity-based approach
         """
-        
+
         # 0. Non-equity pseudo symbol guard (杜絕偽標的如 CASH/USD 下單)
         sym_upper = (ticker or "").strip().upper()
         if not sym_upper or sym_upper in RESERVED_NON_EQUITY_SYMBOLS:
@@ -234,7 +234,7 @@ class AutomatedTradingService:
                 is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
                 # 3. New position opening from zero
                 is_new_position = (current_weight == 0 or current_weight is None) and (not is_sell)
-                
+
                 if not (is_full_close or is_safety or is_new_position) and abs(float(delta_weight)) < min_hurdle:
                     logger.info(
                         f"Min Turnover Hurdle: Skipping {ticker} trade — delta_weight={delta_weight:+.4f} "
@@ -297,7 +297,7 @@ class AutomatedTradingService:
                 cooldown_hours = float(raw_cooldown) if raw_cooldown is not None else 24.0
             except (ValueError, TypeError):
                 cooldown_hours = 24.0
-            is_emergency_stop = str(strategy_name or "").lower() in ("stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "emergency_liquidation")
+            is_emergency_stop = str(strategy_name or "").lower() in ("stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "emergency_liquidation", "position_exit")  # DD-2026-1031
 
             if cooldown_hours > 0 and not is_emergency_stop:
                 all_txs = self.tx_repo.get_all_by_user(user_id)
@@ -633,21 +633,21 @@ class AutomatedTradingService:
                     )
             except Exception as e:
                 logger.warning(f"AutomatedTrading: Failed to factor macro stress into execution hurdle: {e}")
-        
+
         # ── Normalize confidence to 0-10 scale for consistent comparison ──
         if confidence_score is not None and confidence_score > 10:
             normalized_confidence = confidence_score / 10.0
         else:
             normalized_confidence = float(confidence_score if confidence_score is not None else 0)
-        
+
         # v8.2: Enhanced Excess Cash Detection with multiple trigger patterns
         # 增強現金過高檢測，支援多種觸發模式
         is_excess_cash = (
-            "現金比例過高" in rationale or 
+            "現金比例過高" in rationale or
             "現金水位過高" in rationale or
             "現金水位明顯過高" in rationale or
             "現金再投資" in rationale or
-            "Excess Cash" in rationale or 
+            "Excess Cash" in rationale or
             "High Cash" in rationale or
             "cash_ratio >" in rationale  # Quantitative pattern
         )
@@ -670,7 +670,7 @@ class AutomatedTradingService:
             f"evaluating trade for {ticker}. Score: {normalized_confidence:.1f} (raw={confidence_score}), "
             f"Min: {min_threshold:.1f}, Threshold: {threshold:.1f} (ExcessCash={is_excess_cash})"
         )
-        
+
         # 3. Decision Logic (三段式閥值)
         # 3a. Below minimum → skip silently, no notification
         # Exemption: Safety controls and rebalance liquidations are pre-authorized
@@ -682,10 +682,10 @@ class AutomatedTradingService:
                 f"Skipping silently for {ticker}."
             )
             return {"status": "skipped", "reason": f"Score {normalized_confidence:.1f} below minimum threshold {min_threshold:.1f}"}
-        
+
         # Prepare Order object
         order_action = OrderAction.BUY if action.upper() == "BUY" else OrderAction.SELL
-        
+
         # v6.0: Position Sizing Guard (現金水位與持倉比例守衛)
         # ─────────────────────────────────────────────────
         if order_action == OrderAction.BUY:
@@ -826,15 +826,15 @@ class AutomatedTradingService:
                         if quantity > max_amount:
                             logger.warning(f"Position Sizing: Clamped ${quantity:.2f} → ${max_amount:.2f} ({max_pct*100:.0f}% of tradable capital ${nlv:.2f})")
                             quantity = max_amount
-                        
+
                         # Check minimum
                         if quantity < min_amount:
                             logger.info(f"Position Sizing: Amount ${quantity:.2f} below minimum ${min_amount:.2f}. Skipping.")
                             return {"status": "skipped", "reason": f"Amount ${quantity:.2f} below minimum (${min_amount:.2f})"}
-                        
+
                         if quantity != original_qty:
                             logger.info(f"Position Sizing: Adjusted {ticker} amount ${original_qty:.2f} → ${quantity:.2f} (NLV: ${nlv:.2f}, Cash: ${cash:.2f})")
-                        
+
                         # Phase 2: Explicit rounding for USD amount
                         quantity = round(quantity, 2)
             except Exception as e:
@@ -848,7 +848,7 @@ class AutomatedTradingService:
                     "status": "blocked",
                     "reason": f"Position sizing unavailable ({type(e).__name__}); BUY blocked for safety",
                 }
-        
+
         # v7.0: SELL Position Sizing Guard (持倉守衛 — 最後防線)
         # ─────────────────────────────────────────────────
         if order_action == OrderAction.SELL:
@@ -860,14 +860,14 @@ class AutomatedTradingService:
                     for p in positions:
                         p_sym = str(getattr(p, 'symbol', '')).strip().upper()
                         t_sym = ticker.strip().upper()
-                        
+
                         # Handle unresolved ID_xxxx symbols
                         if p_sym.startswith("ID_"):
                             # Check if the broker can resolve it
                             resolved = None
                             if hasattr(broker, '_resolve_id_to_symbol'):
                                 resolved = broker._resolve_id_to_symbol(p_sym[3:])
-                            
+
                             if resolved:
                                 p_sym = resolved.strip().upper()
                             else:
@@ -882,20 +882,20 @@ class AutomatedTradingService:
                                 p_sym = p_sym[:-len(suffix)]
                         if p_sym == t_sym:
                             actual_holding += getattr(p, 'quantity', 0)
-                    
+
                     original_qty = quantity
-                    
+
                     if actual_holding <= 0:
                         logger.info(f"SELL Guard: No active position for {ticker}. Skipping trade.")
                         return {"status": "skipped", "reason": f"No active position for {ticker}"}
-                    
+
                     if quantity > actual_holding:
                         logger.warning(f"SELL Guard: Clamped {ticker} from {quantity} → {actual_holding} (actual holding)")
                         quantity = actual_holding
-                    
+
                     if quantity != original_qty:
                         logger.info(f"SELL Guard: Adjusted {ticker} qty {original_qty} → {quantity} (holding: {actual_holding})")
-                    
+
                     # Phase 2: Explicit precision for eToro share precision without exceeding actual_holding
                     if quantity >= actual_holding * 0.999:
                         quantity = actual_holding
@@ -914,7 +914,7 @@ class AutomatedTradingService:
                     "status": "blocked",
                     "reason": f"Sell-quantity clamp unavailable ({type(e).__name__}); SELL blocked for safety",
                 }
-        
+
         # Controlled Leverage & Trailing Stop Evaluation (受控槓桿與移動停損評估)
         leverage = 1
         stop_loss_rate = None
@@ -976,7 +976,7 @@ class AutomatedTradingService:
             reason=rationale,
             strategy_name=strategy_name
         )
-        
+
         # 3b. Auto-execute logic (走向全自主通報模式：從要我決策，變成跟我報告)
         auto_exit_enabled = self.settings_repo.get(user_id, "autonomous_exit_enabled")
         if auto_exit_enabled is None:
@@ -1275,7 +1275,7 @@ class AutomatedTradingService:
                 context={"ticker": order.symbol},
                 timeout_seconds=300
             )
-            
+
             if is_approved:
                 logger.info(f"User {user_id} approved trade for {order.symbol}")
                 return await self._execute_trade(user_id, order, confidence_score, rationale, "核准後執行", confidence_breakdown=confidence_breakdown, threshold=threshold)
@@ -1296,7 +1296,7 @@ class AutomatedTradingService:
                     category="approval"
                 )
                 return {"status": "rejected_or_timeout", "reason": f"Trade {status.name if hasattr(status, 'name') else status}"}
-                
+
         except Exception as e:
             logger.error(f"Approval workflow failed: {e}")
             return {"status": "error", "reason": f"Approval workflow failed: {e}"}
@@ -1378,11 +1378,11 @@ class AutomatedTradingService:
             from src.repositories.transaction_repository import AlchemyTransactionRepository
             tx_repo = AlchemyTransactionRepository()
             broker_order_id = str(result.get("order_id", ""))
-            
+
             execution_price = order.price
             if not execution_price or execution_price <= 0:
                 execution_price = await self._get_current_price(broker, order.symbol, user_id=user_id) or 0.0
-                
+
             # If amount-based order, calculate units (shares) from amount_usd / execution_price
             # 若為金額型訂單，由 amount_usd / execution_price 計算出實際股數
             is_amount_sizing = getattr(order, 'sizing_mode', None) == OrderSizingMode.AMOUNT or (order.action == OrderAction.BUY and order.amount_usd)
@@ -1394,9 +1394,9 @@ class AutomatedTradingService:
                 if (qty is None or qty <= 0) and execution_price > 0:
                     qty = (order.amount_usd or 0.0) / execution_price
             qty = max(float(qty or 0.0), 0.0001)
-            
+
             amount = order.amount_usd or (float(execution_price) * float(qty))
-            
+
             raw_meta = {
                 "order_status": execution_status,
                 "broker_order_id": broker_order_id,
@@ -1408,11 +1408,11 @@ class AutomatedTradingService:
                 "placed_at": datetime.now().isoformat(),
                 "amount_usd": order.amount_usd,
             }
-            
+
             # If pending: keep entry_category='sync_adjustment' so it does not count as a filled trade yet
             # If executed: entry_category='trade'
             category = "trade" if execution_status == "executed" else "sync_adjustment"
-            
+
             tx_id = tx_repo.add(
                 user_id=user_id,
                 ticker=order.symbol,
@@ -1495,13 +1495,13 @@ class AutomatedTradingService:
         strategy_name: str = None,
     ) -> Dict[str, Any]:
         """Execute the trade via the BrokerFactory."""
-        
+
         broker = BrokerFactory.get_broker(user_id)
         if not broker:
             msg = "Broker validation failed: No preferred broker configured."
             logger.error(msg)
             return {"status": "failed", "reason": msg}
-            
+
         logger.info(f"Executing {order.action.value} {order.symbol} via {broker.get_name()}")
 
         # Phase 27: Fractional share precision & minimum size adaptor guard
@@ -1580,7 +1580,7 @@ class AutomatedTradingService:
                     }
             except Exception as bg_err:
                 logger.warning(f"CalendarBlackoutService non-blocking check error: {bg_err}")
-        
+
         lock_svc = OrderInflightLockService(user_id=user_id)
         raw_lock_ttl = self.settings_repo.get(user_id, "order_lock_ttl_seconds")
         lock_ttl = int(raw_lock_ttl) if raw_lock_ttl is not None else 1800
@@ -1595,7 +1595,7 @@ class AutomatedTradingService:
         try:
             # Order execution is synchronous in current design
             result = await broker.execute_order(order)  # ← async
-            
+
             # v6.0: Post-Trade Sync (交易後紀錄同步)
             if result.get("status") not in ["failed", "error"] and not result.get("error"):
                 execution_status = result.get("execution_status", "executed" if result.get("status") == "success" else "unknown")
@@ -1606,7 +1606,7 @@ class AutomatedTradingService:
                 execution_status = "failed"
 
             if result.get("status") not in ["failed", "error"] and not result.get("error"):
-                
+
                 # Record transaction in local ledger with lifecycle status tracking
                 await self._record_order_transaction(
                     user_id=user_id,
@@ -1635,7 +1635,7 @@ class AutomatedTradingService:
                         execution_price = order.price
                         if not execution_price or execution_price <= 0:
                             execution_price = await self._get_current_price(broker, order.symbol, user_id=user_id)
-                        
+
                         if execution_price and execution_price > 0:
                             outcome_svc = OutcomeReflectionService(user_id=user_id)
                             agent_identifier = strategy_name or "AutomatedTrading"
@@ -1686,7 +1686,7 @@ class AutomatedTradingService:
                         f"Order {result.get('order_id')} is {execution_status}. "
                         f"Outcome reflection deferred until reconciliation confirms execution."
                     )
-            
+
             # Send Notification: Three-Pillar Autonomous Post-Action Report
             # (一、行動  二、行動後的狀況影響  三、交易策略改變的行動)
             failed = result.get("status") in ["failed", "error"]
@@ -1743,12 +1743,12 @@ class AutomatedTradingService:
                 )
 
             await self._notify_via_api(
-                user_id=user_id, 
-                title=title, 
-                content=content, 
+                user_id=user_id,
+                title=title,
+                content=content,
                 category="trading"
             )
-            
+
             return result
         except Exception as e:
             await lock_svc.release_lock(order.symbol, user_id=user_id)
@@ -1763,7 +1763,7 @@ class AutomatedTradingService:
                 quote = await broker.get_quote(ticker)
                 if quote and 'price' in quote and float(quote['price']) > 0:
                     return float(quote['price'])
-            
+
             # 2. Try positions from broker
             if hasattr(broker, 'get_positions'):
                 try:
@@ -1807,12 +1807,12 @@ class AutomatedTradingService:
                 self.notification_service = NotificationService.create_with_settings(
                     settings_service=settings_svc, user_id=user_id
                 )
-            
+
             # [T2] Get user's preferred channels (no hardcoding §5.2)
             from src.services.notification_settings_manager import NotificationSettingsManager
             from src.repositories.settings_repository import AlchemySettingsRepository
             nsm = NotificationSettingsManager(
-                settings_repo=AlchemySettingsRepository(), 
+                settings_repo=AlchemySettingsRepository(),
                 user_id=user_id
             )
             user_channels = nsm.get_active_notification_channels()
@@ -1837,10 +1837,10 @@ class AutomatedTradingService:
         """
         from src.agents.skills.skill_loader import SkillLoader
         import json
-        
+
         logger.info(f"AutomatedTradingService: Extracting actions from Council decision for user {user_id}")
         loader = SkillLoader(user_id=user_id)
-        
+
         # Skillified: Use extract_actions skill instead of dedicated agent
         trades_json = await loader.run_skill("extract_actions", user_id=user_id, decision_text=decision_text)
         trades = json.loads(trades_json)
@@ -1848,21 +1848,21 @@ class AutomatedTradingService:
         if not trades:
             logger.info("AutomatedTradingService: No actionable trades found in Council decision.")
             return []
-            
+
         results = []
         for trade in trades:
             ticker = trade.get("ticker")
             action = trade.get("action")
             confidence = int(trade.get("confidence", 5))
             reason = trade.get("reason", "Council Recommendation")
-            
+
             # v7.0: Support both legacy (quantity) and new (weight-based) formats
             quantity = None
             target_weight = None
             current_weight = None
             delta_weight = None
             portfolio_value = None
-            
+
             # Try weight-based format first
             if "target_weight" in trade and "delta_weight" in trade:
                 target_weight = float(trade.get("target_weight"))
@@ -1874,14 +1874,14 @@ class AutomatedTradingService:
                 # Legacy format: use quantity
                 quantity = float(trade.get("quantity", 1.0))
                 logger.info(f"AutomatedTradingService: Extracted legacy trade -> {action} {quantity} {ticker} (Confidence: {confidence})")
-            
+
             if ticker and action:
                 res = await self.evaluate_and_execute_trade(
-                    user_id=user_id, 
-                    ticker=ticker, 
-                    action=action, 
+                    user_id=user_id,
+                    ticker=ticker,
+                    action=action,
                     quantity=quantity,
-                    confidence_score=confidence, 
+                    confidence_score=confidence,
                     rationale=reason,
                     target_weight=target_weight,
                     current_weight=current_weight,
@@ -1891,5 +1891,5 @@ class AutomatedTradingService:
                 results.append(res)
             else:
                 logger.warning(f"AutomatedTradingService: Missing required fields in extracted trade: {trade}")
-                
+
         return results
