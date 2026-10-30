@@ -59,8 +59,20 @@ PY
    - **第一段（先做）**：給緊急清倉與人工確認平倉補上明確策略名（緊急清倉用 `emergency_exit`），並把緊急清倉的名字對齊：`automated_trading_service.py` 約 300 行認的是 `emergency_liquidation`，白名單寫的是 `emergency_exit`，兩個名字要統一或都列入。這兩處是賣出的 R3 程式。
    - **第二段（第一段上線並驗證後）**：S2 才把缺名／`AutomatedTrading` 賣單擋下。在這之前，缺名賣單放行並標記 `unnamed_sell`。
    - 要不要照兩段式走，由你決定。我的建議是照兩段式。
-2. **停損路徑是否都帶名字**：上面掃描只看到 `sentinel_service.py` 約 4273 行這一條帶名字的出場；券商端觸發的停損（`stop_loss`、`trailing_stop_loss` 成交列）不經過 `evaluate_and_execute_trade`，由對帳寫入，不受閘門影響。對帳路徑本身有沒有走閘門，**我還沒查**。
-3. **`portfolio_rebalance` 買單**：近 60 天 15 筆，策略名不在現行安全清單，所以現在凍結就會擋，B 案不改變它。列出只為確認這是預期。
+2. **券商端停損成交列走不走閘門**（已查，唯讀）：`order_reconciliation_service.py` 沒有呼叫 `unified_risk_gateway`、`order_allowed` 或任何章程閘門，所以券商端觸發的停損成交列由對帳寫入，不受 S2 影響。可重跑：
+
+```bash
+grep -n "unified_risk_gateway\|order_allowed\|evaluate_trade_risk\|charter" src/services/order_reconciliation_service.py
+```
+
+   無輸出即成立。
+3. **緊急清倉的名字要統一**：程式裡 `emergency_liquidation` 與 `emergency_exit` 並存。`friction_aware_tranche_sizing_service.py`、`trend_hysteresis_lockout_service.py` 兩個名字都認；`strategy_registry.py` 的安全關鍵字清單與本 DD 白名單只有 `emergency_exit`；`automated_trading_service.py` 約 300 行只認 `emergency_liquidation`。第一段補名字時要選一個，或白名單兩個都列。**留哪個由你決定**；我的建議是兩個都列入白名單，緊急清倉的呼叫端用 `emergency_exit`，避免漏掉只認舊名字的下游。可重跑：
+
+```bash
+grep -rn "emergency_liquidation\|emergency_exit" src --include=*.py
+```
+
+4. **`portfolio_rebalance` 買單**：近 60 天 15 筆，策略名不在現行安全清單，所以現在凍結就會擋，B 案不改變它。列出只為確認這是預期。
 
 ## 4 ADR 草稿（ADR-004，實作 PR 一併提交，核可前不進 `mission.yaml`）
 
