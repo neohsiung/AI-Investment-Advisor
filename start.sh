@@ -44,6 +44,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/deploy_guard.sh
 cd "$SCRIPT_DIR"
 source "$SCRIPT_DIR/scripts/lib/deploy_guard.sh"
+# shellcheck source=scripts/lib/deploy_sync.sh
+source "$SCRIPT_DIR/scripts/lib/deploy_sync.sh"
 
 # The scheduler (celery worker + beat) is its own compose profile so that a bare
 # `docker compose up` does not start it. This script turns it on unless told not
@@ -749,10 +751,7 @@ function cmd_upgrade {
 
     if command -v git >/dev/null 2>&1 && [ -d .git ]; then
         echo "Pulling latest code changes via git..."
-        if ! git pull --ff-only; then
-            echo "⚠️  git pull --ff-only failed (local changes detected). Please resolve manually or stash."
-            return 1
-        fi
+        advisor_sync_code || return 1
     fi
 
     run_predeploy_gate || return 1
