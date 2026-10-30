@@ -27,20 +27,39 @@ grep -rn "is_safety_control" src --include=*.py | grep -v "def is_safety"
 | 動作 | 策略在白名單 | 策略不在白名單 | 策略名缺漏 |
 |---|---|---|---|
 | BUY 類 | 放行 | 凍結中擋下 | 凍結中擋下（沿用現行 fail closed） |
-| SELL | 放行 | 凍結中擋下（S2） | **放行並標記**（待決定 1） |
+| SELL | 放行 | 凍結中擋下（S2） | 第一段上線前放行並標記 `unnamed_sell`；第二段起擋下（見 §3） |
 
 - 讀不到狀態：BUY 維持現行 fail closed；SELL 白名單內放行。
 - 非凍結時所有規則不變。
 
 ## 3 需要你決定（實作前）
 
-1. **策略名缺漏的賣單**：我傾向放行並在回傳理由標記 `unnamed_sell`，因為擋掉無法歸類的出場，風險比放行高。代價是有人可以用空策略名繞過 S2。要不要放行？
-2. **`AutomatedTrading` 的賣單**：近 60 天有 3 筆賣單的策略名是 `AutomatedTrading`，不在白名單。S2 實作後它們凍結期間會被擋。我**還沒查**這 3 筆實際是什麼（是通用標籤包著停損，還是別的）。實作前必須先查清楚，查不清楚不可實作 S2。可重跑：
+1. **缺名賣單的處理**。查證結果（唯讀，2026-10-30）：近 60 天 3 筆 `AutomatedTrading` 賣單是新聞 webhook 的主觀減碼（`approval_type` 為「出場自動執行」，凍結前的單）。`AutomatedTrading` 是 `automated_trading_service.py:1403` 在沒傳策略名時補的預設標籤，所以「缺名」與 `AutomatedTrading` 是同一類。可重跑：
 
 ```bash
-docker exec advisor_prod_db psql -U postgres -d advisor_prod -c "select action, coalesce(raw_data->>'strategy_name','(none)') strat, count(*) from transactions where created_at > now()-interval '60 days' and source_file='eToro' and entry_category='trade' group by 1,2 order by 1,2"
+grep -rn '"AutomatedTrading"' src --include=*.py
+python3 - <<'PY'
+import ast,glob
+for f in sorted(glob.glob('src/**/*.py',recursive=True)):
+    for n in ast.walk(ast.parse(open(f).read())):
+        if isinstance(n,ast.Call) and getattr(n.func,'attr',None)=='evaluate_and_execute_trade':
+            kw={k.arg:ast.unparse(k.value) for k in n.keywords if k.arg}
+            print(f"{f}:{n.lineno} action={kw.get('action','?')[:25]} strategy_name={kw.get('strategy_name','<MISSING>')[:45]}")
+PY
 ```
 
+   呼叫端掃描的結果：**沒帶策略名的賣單路徑裡，混著真正的安全出場**。
+   - `sentinel_service.py` 約 2524 行的緊急清倉（Emergency Liquidation）：SELL、沒帶策略名。
+   - `actionable_alert_service.py` 約 400 行的人工確認平倉：SELL、沒帶策略名。
+   - `sentinel_service.py` 約 2239 行的 webhook 交易訊號：策略名沒帶，就是上面那 3 筆的來源，屬於主觀減碼。
+   - `workflow_service.py`、`socket_manager.py`、`evaluate_trade` skill：也沒帶策略名。
+   - 有帶名字的：停損走 `sentinel_service.py` 約 4273 行，預設 `position_exit`（在白名單內），但 `trigger` 可以改成別的名字，例如 `capital_rotation`（會被擋）。
+
+   結論：**不能因為「缺名」就擋賣單**，否則凍結期間緊急清倉與人工平倉會被 S2 誤擋。這比「待決定」更嚴重，是 S2 實作的前提。兩段式做法：
+   - **第一段（先做）**：給緊急清倉與人工確認平倉補上明確策略名（緊急清倉用 `emergency_exit`），並把緊急清倉的名字對齊：`automated_trading_service.py` 約 300 行認的是 `emergency_liquidation`，白名單寫的是 `emergency_exit`，兩個名字要統一或都列入。這兩處是賣出的 R3 程式。
+   - **第二段（第一段上線並驗證後）**：S2 才把缺名／`AutomatedTrading` 賣單擋下。在這之前，缺名賣單放行並標記 `unnamed_sell`。
+   - 要不要照兩段式走，由你決定。我的建議是照兩段式。
+2. **停損路徑是否都帶名字**：上面掃描只看到 `sentinel_service.py` 約 4273 行這一條帶名字的出場；券商端觸發的停損（`stop_loss`、`trailing_stop_loss` 成交列）不經過 `evaluate_and_execute_trade`，由對帳寫入，不受閘門影響。對帳路徑本身有沒有走閘門，**我還沒查**。
 3. **`portfolio_rebalance` 買單**：近 60 天 15 筆，策略名不在現行安全清單，所以現在凍結就會擋，B 案不改變它。列出只為確認這是預期。
 
 ## 4 ADR 草稿（ADR-004，實作 PR 一併提交，核可前不進 `mission.yaml`）
@@ -53,7 +72,8 @@ docker exec advisor_prod_db psql -U postgres -d advisor_prod -c "select action, 
 
 - 凍結中 `order_allowed("BUY", "cash_deployment", ...)`、`"benchmark_parking"`、`"capital_rotation"` 回 False。
 - 凍結中白名單六個策略的 BUY 與 SELL 回 True。
-- 凍結中 `order_allowed("SELL", "rebalance_diversification", ...)` 回 False；策略名 None 的 SELL 回 True 且理由含 `unnamed_sell`。
+- 凍結中 `order_allowed("SELL", "rebalance_diversification", ...)` 回 False；第一段：策略名 None 的 SELL 回 True 且理由含 `unnamed_sell`；第二段：回 False。
+- 緊急清倉與人工確認平倉的呼叫帶白名單內的策略名（AST 掃描測試：這兩處 `evaluate_and_execute_trade` 的 `strategy_name` 不得缺漏）。
 - 未凍結時以上全部回 True（行為不變）。
 - `StrategyRegistry.is_safety_control("cash_deployment")` 仍為 True（共用清單未被動到）。
 
