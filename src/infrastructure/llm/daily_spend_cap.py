@@ -20,10 +20,14 @@ from datetime import date, datetime, timezone
 from typing import Any, Callable, Optional
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.data.database import get_db_engine
 
 logger = logging.getLogger(__name__)
+
+# What an unreadable spend/setting looks like: DB, I/O, or a malformed value. Anything else is a bug and propagates.
+_READ_ERRORS = (SQLAlchemyError, OSError, RuntimeError, ValueError, TypeError, KeyError)
 
 CAP_SETTING_KEY = "llm_daily_cap_usd"
 
@@ -54,7 +58,7 @@ class DailySpendCap:
             return
         try:
             spent = float(self.spent_today_usd())
-        except Exception as exc:
+        except _READ_ERRORS as exc:
             logger.warning("llm_daily_cap_unreadable: %s; call allowed without a cap check (%s)", exc, label)
             return
         if spent >= self.cap_usd:
@@ -71,14 +75,16 @@ def _read_spent_today(engine: Any, today: Optional[date] = None) -> float:
     return float(row[0] or 0.0)
 
 
-def cap_from_settings(settings_service: Any, user_id: Optional[str] = None, engine: Any = None) -> Optional[DailySpendCap]:
+def cap_from_settings(
+    settings_service: Any, user_id: Optional[str] = None, engine: Any = None
+) -> Optional[DailySpendCap]:
     """Build the cap from the `llm_daily_cap_usd` setting; None when unset/0/unreadable-as-disabled.
     An unreadable setting returns None with a warning (cap off), never a guessed number.
     以設定 `llm_daily_cap_usd` 建立上限；未設或 0 回 None。讀不到設定時警告並視為停用，不猜數字。"""
     try:
         raw = settings_service.get_setting(CAP_SETTING_KEY, user_id=user_id)
         cap = float(raw or 0.0)
-    except Exception as exc:
+    except _READ_ERRORS as exc:
         logger.warning("llm_daily_cap_unreadable: setting %s unreadable (%s); cap disabled", CAP_SETTING_KEY, exc)
         return None
     if cap <= 0:
