@@ -2540,6 +2540,7 @@ class SentinelService:
                     action="BUY",
                     quantity=hedge_amount,
                     confidence_score=hedge_score,
+                    strategy_name="emergency_hedge",  # ADR-005: on the frozen whitelist
                     rationale=f"🚨 Sentinel 自動對沖機制啟動 (Auto-Hedging)。建議建立 SQQQ 避險。"
                 )
         except Exception as e:

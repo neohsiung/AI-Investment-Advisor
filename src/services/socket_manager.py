@@ -82,14 +82,14 @@ class ConnectionManager:
         """Processes incoming commands from the user via WebSocket."""
         cmd_type = data.get("type")
         payload = data.get("payload", {})
-        
+
         logger.info(f"Received command {cmd_type} from user {user_id}")
-        
+
         if cmd_type == "EXECUTE_ORDER":
             # Manual trade execution from UI
             from src.services.automated_trading_service import AutomatedTradingService
             trading_svc = AutomatedTradingService()
-            
+
             ticker = payload.get("ticker", "").upper()
             action = payload.get("action", "").upper()
 
@@ -115,21 +115,22 @@ class ConnectionManager:
                 action=action,
                 quantity=quantity,
                 confidence_score=10, # Manual override
+                strategy_name="position_exit" if action == "SELL" else None,  # ADR-005: manual exit while frozen
                 rationale="[MANUAL] Dashboard Terminal Order"
             )
-            
+
             # Send result back via WS
             await self.broadcast_to_user(user_id, {
                 "type": "TRADE_RESULT",
                 "payload": result
             })
-            
+
         elif cmd_type == "REPLY_APPROVAL":
             # Response to an AI-triggered approval request
             if self.interaction_service:
                 request_id = payload.get("request_id")
                 action = payload.get("action") # "approve" or "reject"
-                
+
                 await self.interaction_service.handle_response(request_id, action)
             else:
                 logger.error("InteractionService not registered in SocketManager.")
@@ -137,10 +138,10 @@ class ConnectionManager:
         elif cmd_type == "SYNC_STATE":
             # v7.2: State Reconciliation - fetch missed events since a specific timestamp
             last_received = payload.get("last_received_at") # ISO format string
-            
+
             from src.data.database import get_db_engine
             engine = get_db_engine()
-            
+
             try:
                 # Query recent event logs since the last received timestamp
                 with engine.connect() as conn:
@@ -150,12 +151,12 @@ class ConnectionManager:
                         "WHERE user_id = :uid AND created_at > :since "
                         "ORDER BY created_at ASC LIMIT 50"
                     )
-                    
+
                     # Fallback to last 1 hour if no timestamp provided
                     since = last_received if last_received else (datetime.now() - timedelta(hours=1)).isoformat()
-                    
+
                     rows = conn.execute(query, {"uid": user_id, "since": since}).fetchall()
-                    
+
                     missed_events = []
                     for r in rows:
                         missed_events.append({
@@ -166,7 +167,7 @@ class ConnectionManager:
                                 "timestamp": str(r.created_at)
                             }
                         })
-                    
+
                     if missed_events:
                         await self.broadcast_to_user(user_id, {
                             "type": "SYNC_COMPLETE",
@@ -181,4 +182,3 @@ class ConnectionManager:
 
 
 socket_manager = ConnectionManager()
-
