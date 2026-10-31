@@ -71,6 +71,9 @@ class Mission(BaseModel):
     invariants: Invariants
     promotion: Promotion
     kill_criteria: List[KillCriterion]
+    # ADR-005: the only strategies a frozen charter still lets through (BUY and SELL). Required: a yaml without it must
+    # fail loud, not silently freeze nothing or everything. / ADR-005：凍結期間唯一放行的策略；必填，缺了就大聲失敗。
+    frozen_exit_whitelist: List[str]
 
 
 @lru_cache(maxsize=1)

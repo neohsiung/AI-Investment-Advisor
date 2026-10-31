@@ -51,3 +51,25 @@ def test_adr_003_charter_exists_and_constitution_keys_are_asserted():
     assert m.invariants.single_order_executor is True
     assert m.promotion.min_deflated_sharpe >= 0.95
     assert m.objective.benchmark == "SPY"
+
+
+def test_frozen_exit_whitelist_is_the_pinned_set_and_excludes_buying_strategies():
+    """ADR-005: the only strategies a frozen charter still lets through. Widening it is an R3 change.
+    ADR-005：凍結期間唯一仍放行的策略；放寬屬 R3。"""
+    m = load_mission()
+    assert sorted(m.frozen_exit_whitelist) == sorted((
+        "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
+        "emergency_hedge"))
+    for buying in ("cash_deployment", "benchmark_parking", "capital_rotation", "macro_volatility_hedge",
+                   "rebalance_diversification", "stagnation_pruning"):
+        assert buying not in m.frozen_exit_whitelist, f"{buying} must stay blocked while frozen (ADR-005)"
+    assert len(set(m.frozen_exit_whitelist)) == len(m.frozen_exit_whitelist)
+
+
+def test_adr_005_records_the_frozen_gate_amendment():
+    m = load_mission()
+    adr = next((a for a in m.adr if a.id == "ADR-005"), None)
+    assert adr is not None, "ADR-005 (frozen exit whitelist) missing from config/mission.yaml"
+    for phrase in ("frozen_exit_whitelist", "emergency_hedge", "macro_volatility_hedge",
+                   "charter_unreadable_sell_allowed"):
+        assert phrase in adr.decision, f"ADR-005 decision no longer mentions {phrase!r}"

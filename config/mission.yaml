@@ -107,6 +107,42 @@ adr:
       繁體中文：登錄為 adaptive 卻沒有任何證據來源，只會消耗試驗額度與產生空判決，還暗示了不可能發生的自我調整；降級才是誠實的
       狀態，日後補上記錄器可再經同一條 R3 路徑升級。合併本變更即為操作者核准。
 
+  - id: ADR-005
+    date: 2026-10-31
+    decision: >-
+      Frozen charter gate (amends ADR-003 (5), DD-2026-1031). While charter_state is frozen or human_stop, the charter
+      gate lets an order through only when its strategy_name is listed in frozen_exit_whitelist below, for BUY and
+      SELL alike. Before this change only BUY was gated and the exemption list was StrategyRegistry.is_safety_control,
+      which also names buying strategies (cash_deployment, capital_rotation, benchmark_parking), so a freeze did not
+      stop them and every sell was allowed, which kept turnover from falling. The whitelist holds stop_loss,
+      trailing_stop_loss, trailing_stop, emergency_exit, position_exit, take_profit and emergency_hedge.
+      emergency_hedge is the one buying entry: the Sentinel emergency protocol's SQQQ hedge BUY, named in the same
+      change (it was unnamed, so it was blocked during a freeze); macro_volatility_hedge is deliberately NOT listed,
+      because the macro hedging contract also buys automatically and listing it would let those orders through.
+      position_exit also names the dashboard WebSocket manual SELL, which therefore gains the intraday-reversal
+      cooldown exemption that position_exit already has. If charter_state or this list cannot be read, BUY stays
+      fail closed and a SELL is allowed and marked charter_unreadable_sell_allowed (logged at error, visible in the
+      risk gateway guard_details), so an outage never traps a position. StrategyRegistry.is_safety_control is
+      unchanged and still serves risk_manager and automated_trading. The list is read through load_mission(); editing
+      it is R3 (human approval plus an ADR). Merging this change is the operator's approval.
+      繁體中文：凍結閘門（修訂 ADR-003 (5)，見 DD-2026-1031）。charter_state 為 frozen 或 human_stop 時，買單與賣單都只有
+      strategy_name 列在下方 frozen_exit_whitelist 才放行。先前只擋買單，且豁免清單是 StrategyRegistry.is_safety_control，
+      裡面也有會買進的策略（cash_deployment、capital_rotation、benchmark_parking），凍結擋不住它們，所有賣單又一律放行，
+      換手因此降不下來。白名單：stop_loss、trailing_stop_loss、trailing_stop、emergency_exit、position_exit、take_profit、
+      emergency_hedge。emergency_hedge 是唯一會買進的項目：Sentinel 緊急防禦的 SQQQ 避險買單，同一次變更為它命名
+      （原本沒有策略名，所以凍結時被擋）；macro_volatility_hedge 刻意不列入，因為宏觀避險合約也會自動買進，列入會放行
+      那些買單。position_exit 同時命名儀表板 WebSocket 的人工賣單，該賣單因此取得 position_exit 原有的日內反向單冷卻
+      豁免。charter_state 或本清單讀不到時，買單維持 fail closed，賣單放行並標記 charter_unreadable_sell_allowed（error
+      層級記錄，並出現在風控閘門的 guard_details），故障不會把人困在部位裡。is_safety_control 不動，繼續供 risk_manager
+      與 automated_trading 使用。清單經 load_mission() 讀取；修改它屬 R3（人核可加 ADR）。合併本變更即為操作者核准。
+    reason: >-
+      ADR-003 (5) promised that a freeze stops new non-safety orders, but the implementation exempted strategies that
+      buy, so the freeze did not stop buying, and an unrestricted sell side let turnover (K3/K4) keep accumulating.
+      An explicit, reviewable list in the mission file makes the exemption a decision instead of a side effect of a
+      keyword list shared with other code.
+      繁體中文：ADR-003 (5) 承諾凍結會停止新的非安全下單，但實作豁免了會買進的策略，凍結擋不住買進；賣單又完全不受限，
+      換手（K3/K4）持續累積。把豁免寫成任命檔裡明文、可審查的清單，它才是一個決定，而不是和其他程式共用的關鍵字清單的副作用。
+
 objective:
   benchmark: SPY
   metric: net_excess_return_vs_benchmark   # after LLM, data subscription and broker costs; beta-adjusted
@@ -142,3 +178,14 @@ kill_criteria:                              # any K1/K3/K4 breach freezes new no
   - {id: K5, name: active_sleeve_underperformance, threshold: -3.0, unit: pct_rolling_12m_beta_adjusted}
   - {id: K6, name: decision_path_fallback, threshold: 1,    unit: occurrences}
   - {id: K7, name: evaluator_dsr_or_trials_missing, threshold: 0.95, unit: dsr}
+
+# ADR-005: while charter_state is frozen / human_stop only these strategy_names may trade (BUY and SELL). Editing is R3.
+# ADR-005：凍結或人工停止時，只有這些策略名可以下單（買賣皆然）；修改屬 R3。
+frozen_exit_whitelist:
+  - stop_loss
+  - trailing_stop_loss
+  - trailing_stop
+  - emergency_exit
+  - position_exit
+  - take_profit
+  - emergency_hedge
