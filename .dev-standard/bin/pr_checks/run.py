@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.6.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """本機入口：取 PR 資料、跑七項檢查、印每項結果、依風險級決定能不能合併。不需要 GitHub Actions。
 
   python3 .dev-standard/bin/pr_checks/run.py <PR>             跑全部檢查，印表與決定（不合併）

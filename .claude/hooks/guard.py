@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
+# 由 dev-standard v0.6.2 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
 """guard.py — Claude Code PreToolUse 硬底線（來由：hermes hermes_guard.py 與它的測試，加上 litov 的 worktree 基底檢查；dev-standard §1、§2、§6）
 
 CLAUDE.md／AGENTS.md 是建議，擋不住任何事；這支是擋得住的那一層（exit 2 在權限規則之前生效，bypass 也一樣）。
@@ -62,7 +62,7 @@ OPS = {";", "&&", "||", "|", "&", ";;", "|&"}
 GIT_OPT_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 DEFAULT_GIT_FORBIDDEN = ["checkout", "switch", "reset", "rebase", "merge", "stash", "commit", "cherry-pick",
                          "revert", "clean"]
-SECRET_HOW = "只驗存在／長度，不印值（例：test -s <檔>、`security find-generic-password -s <名> >/dev/null; echo $?`）；需要值請使用者自己處理"
+VALUE_FREE_HINT = "只驗存在／長度，不印值（例：test -s <檔>、`security find-generic-password -s <名> >/dev/null; echo $?`）；需要值請使用者自己處理"
 WT_HOW = "先開分支：.dev-standard/bin/wt.sh new <type>/<描述>（wt 元件）"
 
 # 由 configure() 依 guard.json 填入；沒設 live_tree 就都是 None／空
@@ -721,11 +721,11 @@ ENV_PRINTERS = re.compile(r"^(printenv(\s.*)?|env\s*([|>].*)?)$|/proc/[^\s/]+/en
 
 def check_secret_extraction_text(cmd: str) -> None:
     if KEYCHAIN_READ.search(cmd) and KEYCHAIN_VALUE_FLAG.search(cmd):
-        block("從 Keychain 取出密鑰值（find-*-password 帶 -w／-g）", SECRET_HOW)
+        block("從 Keychain 取出密鑰值（find-*-password 帶 -w／-g）", VALUE_FREE_HINT)
     if KEYCHAIN_DUMP.search(cmd) and KEYCHAIN_DUMP_FLAG.search(cmd):
-        block("dump-keychain -d 會解密列出所有項目", SECRET_HOW)
+        block("dump-keychain -d 會解密列出所有項目", VALUE_FREE_HINT)
     if KEYCHAIN_EXPORT.search(cmd):
-        block("security export 會匯出 Keychain 項目", SECRET_HOW)
+        block("security export 會匯出 Keychain 項目", VALUE_FREE_HINT)
 
 
 def check_secret_extraction_segment(w: list) -> None:
@@ -743,9 +743,9 @@ def check_secret_extraction_segment(w: list) -> None:
         if args[:1] in (["exec"], ["run"]) or (is_compose and args[1:2] in (["exec"], ["run"])):
             for a in args:
                 if ENV_PRINTERS.search(a):
-                    block("在容器裡印環境變數", SECRET_HOW)
+                    block("在容器裡印環境變數", VALUE_FREE_HINT)
                 if is_secret(a):
-                    block(f"在容器裡讀憑證檔 {a}", SECRET_HOW)
+                    block(f"在容器裡讀憑證檔 {a}", VALUE_FREE_HINT)
 
 
 def check_dotenv_out(w: list) -> None:
@@ -940,7 +940,7 @@ def check_bash(cmd: str, cwd: str, root: str, cfg: dict) -> None:
                 paths = paths[:-1]                       # cp 只看來源；cp .env.example .env 是正常設定步驟
             for a in paths:
                 if is_secret(a):
-                    block(f"用 {exe} 讀憑證檔 {a}", SECRET_HOW)
+                    block(f"用 {exe} 讀憑證檔 {a}", VALUE_FREE_HINT)
     # 重導／tee 寫進受保護的路徑
     for tgt in write_targets(segs, cmd):
         hit = protected_hit(to_host(tgt, cwd_run), root, cfg)
@@ -961,7 +961,7 @@ def check_file(tool: str, path: str, root: str, cfg: dict) -> None:
     if not path:
         return
     if is_secret(path):
-        block(f"{tool} 憑證檔 {path}", SECRET_HOW)
+        block(f"{tool} 憑證檔 {path}", VALUE_FREE_HINT)
     if tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         hit = protected_hit(path, root, cfg)
         if hit:

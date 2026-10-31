@@ -1,4 +1,4 @@
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.6.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """七項 PR 檢查＋CI＋R2 reviewer 條件。純函式，不碰網路、不起子行程。
 
 資料由 gh.py 取得，決策在 merge.py。repo 差異全在 PR.cfg（來自 .dev-standard/risk.json）。

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/wt，再跑 sync.py update
+# 由 dev-standard v0.6.2 產生，請勿手改；要改請改 dev-standard 的 components/wt，再跑 sync.py update
 # wt.sh — 一個任務一個 worktree（來由：hermes scripts/dev/wt.sh，DD-2026-1008-agent-workflow）
 #
 #   wt.sh new <branch> [base]    從 base（預設 origin/main）開 <WT_ROOT>/<branch>

@@ -1,4 +1,4 @@
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.6.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """合併決定（純函式）與稽核表。決定看 effective 風險級（宣告與路徑取高），不信任宣告。"""
 from __future__ import annotations
 

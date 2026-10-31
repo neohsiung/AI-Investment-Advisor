@@ -1,4 +1,4 @@
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.6.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """風險級：依改動路徑算出「至少是哪一級」，並解析 PR 第一行宣告。純函式，不碰網路。
 
 規則（STANDARD.md 風險級合併表）：

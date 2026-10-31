@@ -1,4 +1,4 @@
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.6.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """外殼：用 gh 取 PR 資料、合併、留言。決策不在這裡。
 
 整個套件只有這個檔起子行程，且只有三處：`_run`（gh）、`_git_head`（唯讀的 `git rev-parse HEAD`）與 `run_classifier`（risk.json 指定的 argv）。

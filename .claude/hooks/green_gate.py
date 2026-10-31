@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/green-gate，再跑 sync.py update
+# 由 dev-standard v0.6.2 產生，請勿手改；要改請改 dev-standard 的 components/green-gate，再跑 sync.py update
 """green_gate.py — Claude Code Stop hook：綠燈才算完成（來由：hermes DD-2026-1009-claude-loop-workflow；dev-standard §4）
 
 loop 的本體是「一個會失敗的檢查」。「看起來好」「模型說有把握」「沒報錯」都不是檢查。

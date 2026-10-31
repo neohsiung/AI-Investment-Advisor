@@ -94,7 +94,7 @@ number.
 - **Frontend**: Next.js 15 (TypeScript, in `frontend/`)
 - **Backend**: FastAPI + MCP Server (in `services/mcp_server/`)
 
-<!-- DEV-STANDARD:BEGIN v0.6.1 -->
+<!-- DEV-STANDARD:BEGIN v0.6.2 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 

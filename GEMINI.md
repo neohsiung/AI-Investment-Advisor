@@ -35,7 +35,7 @@ Rules every AI coding agent must follow, whatever its capability level:
    每批開發結束必須交付讀者可用的技術文件並統整 `docs/`（或明確聲明「無需更新」與理由）；行為描述須附驗證指令。
 <!-- GENERATED:MISSION:END -->
 
-<!-- DEV-STANDARD:BEGIN v0.6.1 -->
+<!-- DEV-STANDARD:BEGIN v0.6.2 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
