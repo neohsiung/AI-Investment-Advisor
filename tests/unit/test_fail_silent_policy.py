@@ -52,16 +52,23 @@ DECISION_PATH_MODULES = [
     "src/services/unified_risk_gateway_service.py",
     "src/infrastructure/risk_manager.py",
     "src/infrastructure/llm/llm_config_chain.py",
+    "src/agents/action_extractor.py",        # DD-2026-1031: what it returns becomes an order quantity
+    "src/services/workflow_service.py",
 ]
 
 QUIET_LOG_METHODS = {"debug"}
 
 # (module, function, reason). A waiver must say why the silence is correct.
 # 豁免必須寫明「為何這裡的靜默是正確的」。
-ALLOWLIST: set[tuple[str, str]] = set()
+ALLOWLIST: set[tuple[str, str]] = {
+    ("src/services/workflow_service.py", "_event_llm_mode"),
+}
 
 WAIVER_REASONS = {
     # (module, function): reason
+    ("src/services/workflow_service.py", "_event_llm_mode"):
+        "Logs at warning through self.logger (this detector only recognises a bare `logger`) and returns 'off', the "
+        "no-LLM-spend side; it decides whether to spend money, not how much.",
 }
 
 
