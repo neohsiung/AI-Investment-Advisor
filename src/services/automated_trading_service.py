@@ -626,7 +626,7 @@ class AutomatedTradingService:
             min_threshold = 3.0
 
         # Macro stress hurdle adjustment: elevate BUY hurdle during systemic turmoil
-        if action.upper() in ("BUY", "STRONG_BUY"):
+        if action == "BUY":  # action is already normalised to BUY / SELL at the entry
             try:
                 from src.services.event_impact_service import EventImpactService
                 impact_svc = EventImpactService(user_id=user_id)
