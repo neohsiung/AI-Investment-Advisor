@@ -3,7 +3,7 @@ logger = setup_logger("AutomatedTradingService")
 
 import os
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import Dict, Tuple, Any, Optional, Callable, Dict, Tuple, Any, Optional, Callable
 from datetime import datetime, timezone
 import asyncio
 import httpx
@@ -157,6 +157,13 @@ class AutomatedTradingService:
         if not sym_upper or sym_upper in RESERVED_NON_EQUITY_SYMBOLS:
             logger.info(f"Skipping non-equity pseudo symbol '{ticker}' (liquidity/cash instruction, not trade order)")
             return {"status": "skipped", "reason": f"Non-equity pseudo symbol '{ticker}' is not an executable asset"}
+
+        # 0a. Action guard: only BUY / SELL can become an order. Anything else (ADD, HOLD, "", a typo) used to fall
+        # through to a SELL; it is rejected here, before any side effect. 下單動作只收 BUY／SELL，其餘拒絕，不再落成賣單。
+        action = str(action or "").strip().upper()
+        if action not in ("BUY", "SELL"):
+            logger.error("Rejected order for %s: unsupported action %r (only BUY/SELL can be executed)", ticker, action)
+            return {"status": "rejected", "reason": f"action_invalid: {action or '(empty)'}", "ticker": ticker}
 
         # v4.2.2: Ensure notification service is correctly configured for this user
         if not self.notification_service:
@@ -684,7 +691,7 @@ class AutomatedTradingService:
             return {"status": "skipped", "reason": f"Score {normalized_confidence:.1f} below minimum threshold {min_threshold:.1f}"}
 
         # Prepare Order object
-        order_action = OrderAction.BUY if action.upper() == "BUY" else OrderAction.SELL
+        order_action = OrderAction(action)
 
         # v6.0: Position Sizing Guard (現金水位與持倉比例守衛)
         # ─────────────────────────────────────────────────

@@ -53,7 +53,6 @@ def test_only_executor_places_orders():
 KNOWN_EXECUTOR_CALLERS = {
     "src/agents/skills/evaluate_trade/impl.py": 1,
     "src/services/actionable_alert_service.py": 1,
-    "src/services/automated_trading_service.py": 1,
     "src/services/batch_cash_deployment_service.py": 1,
     "src/services/confidence_rebalance_service.py": 1,
     "src/services/sentinel_service.py": 8,
