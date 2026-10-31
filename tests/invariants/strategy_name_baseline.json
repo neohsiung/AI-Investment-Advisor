@@ -32,6 +32,7 @@
     "src/services/order_inflight_lock_service.py": 1,
     "src/services/proposal_shadow_service.py": 1,
     "src/services/sentinel_service.py": 4,
+    "src/services/socket_manager.py": 1,
     "src/services/tactical_factor_rotation_service.py": 3
   }
 }
