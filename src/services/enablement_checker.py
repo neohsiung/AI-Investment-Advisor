@@ -109,7 +109,9 @@ def _c_sim(engine: Any, now: datetime) -> Result:
 def _c_drill(engine: Any, now: datetime) -> Result:
     with sessionmaker(bind=engine)() as s:
         payloads = [(r.payload_json or {}) for r in s.query(CharterEvent).filter(CharterEvent.kind == "drill")]
-    passed = sum(1 for p in payloads if p.get("ok") is True)
+    # A drill recorded before ADR-005 only proved BUYs were refused; it must also show a non-exit SELL was refused.
+    # ADR-005 之前的演練只證明買單被擋，必須同時證明非出場賣單被擋才算。
+    passed = sum(1 for p in payloads if p.get("ok") is True and p.get("nonexit_sell_refused") is True)
     return (OK if passed else NOT_OK), {"drills": len(payloads), "passed": passed}
 
 

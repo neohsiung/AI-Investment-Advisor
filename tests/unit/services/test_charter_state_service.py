@@ -61,7 +61,7 @@ NOT_EXITS = ("cash_deployment", "benchmark_parking", "capital_rotation", "rebala
              "stagnation_pruning", "macro_volatility_hedge", "momentum", "", None)
 
 
-@pytest.mark.parametrize("action", ["HOLD", "WATCH"])
+@pytest.mark.parametrize("action", ["HOLD", "NEUTRAL", "hold"])
 def test_non_order_actions_are_exempt_when_frozen(engine, action):
     _seed(engine, "frozen")
     assert css.order_allowed(action, "momentum", NOW, engine) == (True, "exempt: not an order")
@@ -75,7 +75,8 @@ def test_whitelisted_exit_allowed_when_frozen(engine, strategy, action):
 
 
 @pytest.mark.parametrize("strategy", NOT_EXITS)
-@pytest.mark.parametrize("action", ["BUY", "STRONG_BUY", "ADD", "ACCUMULATE", "SELL", "TRIM", "REDUCE", "EXIT"])
+@pytest.mark.parametrize("action", ["BUY", "STRONG_BUY", "ADD", "ACCUMULATE", "INCREASE", "SELL", "TRIM", "REDUCE",
+                                    "EXIT", "CLOSE", "STRONG_SELL", "LIQUIDATE", "close-out", "WATCH", "sell all", ""])
 def test_non_whitelisted_order_blocked_when_frozen(engine, strategy, action):
     _seed(engine, "frozen")
     ok, why = css.order_allowed(action, strategy, NOW, engine)
@@ -290,3 +291,14 @@ def test_release_is_a_noop_on_a_watchdog_freeze(engine):
     css.apply_watchdog(_result("K1"), NOW, engine)
     css.human_release(engine, NOW)
     assert _row(engine)["mode"] == "frozen"
+
+
+@pytest.mark.parametrize("action", ["CLOSE", "STRONG_SELL", "LIQUIDATE", "WATCH", "sell all"])
+def test_sell_aliases_and_unknown_actions_are_gated_like_a_sell(engine, action):
+    """A sell alias must not read as 'not an order': the executor turns any non-BUY string into a SELL."""
+    _seed(engine, "frozen")
+    assert css.order_allowed(action, "rebalance_diversification", NOW, engine)[0] is False
+    assert css.order_allowed(action, "stop_loss", NOW, engine)[0] is True
+    broken = create_engine("sqlite:///:memory:")
+    ok, why = css.order_allowed(action, "rebalance_diversification", NOW, broken)
+    assert ok is True and css.UNREADABLE_SELL_MARK in why

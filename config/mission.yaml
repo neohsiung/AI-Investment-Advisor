@@ -119,8 +119,11 @@ adr:
       emergency_hedge is the one buying entry: the Sentinel emergency protocol's SQQQ hedge BUY, named in the same
       change (it was unnamed, so it was blocked during a freeze); macro_volatility_hedge is deliberately NOT listed,
       because the macro hedging contract also buys automatically and listing it would let those orders through.
-      position_exit also names the dashboard WebSocket manual SELL, which therefore gains the intraday-reversal
-      cooldown exemption that position_exit already has. If charter_state or this list cannot be read, BUY stays
+      position_exit also names the dashboard WebSocket manual SELL, which therefore gains what position_exit already
+      has as a safety control: the intraday-reversal cooldown exemption, the low-confidence skip exemption and the
+      skipped slippage / open-window guard (the trend-hysteresis emergency exemption does not list position_exit, so it
+      is not gained). Only HOLD and NEUTRAL are exempt from the gate; any other non-BUY action (CLOSE, STRONG_SELL,
+      LIQUIDATE, an unknown string) is gated as a SELL, because the executor treated any non-BUY string as a SELL. If charter_state or this list cannot be read, BUY stays
       fail closed and a SELL is allowed and marked charter_unreadable_sell_allowed (logged at error, visible in the
       risk gateway guard_details), so an outage never traps a position. StrategyRegistry.is_safety_control is
       unchanged and still serves risk_manager and automated_trading. The list is read through load_mission(); editing
@@ -131,8 +134,10 @@ adr:
       換手因此降不下來。白名單：stop_loss、trailing_stop_loss、trailing_stop、emergency_exit、position_exit、take_profit、
       emergency_hedge。emergency_hedge 是唯一會買進的項目：Sentinel 緊急防禦的 SQQQ 避險買單，同一次變更為它命名
       （原本沒有策略名，所以凍結時被擋）；macro_volatility_hedge 刻意不列入，因為宏觀避險合約也會自動買進，列入會放行
-      那些買單。position_exit 同時命名儀表板 WebSocket 的人工賣單，該賣單因此取得 position_exit 原有的日內反向單冷卻
-      豁免。charter_state 或本清單讀不到時，買單維持 fail closed，賣單放行並標記 charter_unreadable_sell_allowed（error
+      那些買單。position_exit 同時命名儀表板 WebSocket 的人工賣單，該賣單因此取得 position_exit 作為安全控制原有的待遇：
+      日內反向單冷卻豁免、低信心略過豁免、略過滑價／開盤窗口護欄（遲滯服務的緊急豁免清單沒有 position_exit，所以不會
+      取得）。只有 HOLD 與 NEUTRAL 免經閘門；其他非買入動作（CLOSE、STRONG_SELL、LIQUIDATE、無法辨識的字串）一律當賣單
+      處理，因為執行器曾把任何非 BUY 的字串當賣單。charter_state 或本清單讀不到時，買單維持 fail closed，賣單放行並標記 charter_unreadable_sell_allowed（error
       層級記錄，並出現在風控閘門的 guard_details），故障不會把人困在部位裡。is_safety_control 不動，繼續供 risk_manager
       與 automated_trading 使用。清單經 load_mission() 讀取；修改它屬 R3（人核可加 ADR）。合併本變更即為操作者核准。
     reason: >-

@@ -14,8 +14,8 @@ Known, accepted trade-off (ADR-003 operator decision): ``transactions`` has no s
 safety exits from other sells and may freeze more often than necessary. Frozen never closes a position.
 Clock contract: every function takes ``now``; time columns are written explicitly; no SQL NOW().
 這是 R3 金錢路徑，故 fail-closed：狀態讀不到就擋買單；凍結或人工停止時只有 mission.yaml 白名單（ADR-005）內的策略
-能下單，買賣皆然；狀態或白名單讀不到時賣單放行並標記 charter_unreadable_sell_allowed，不把人困在部位裡；human_stop 只有人能解；
-三處手動 ai_trading_enabled=true 不動本表，因此無法解除凍結。K3 無法分離安全出場（transactions 無策略欄），
+能下單，買賣皆然；狀態或白名單讀不到時賣單放行並標記 charter_unreadable_sell_allowed，不把人困在部位裡；
+human_stop 只有人能解；三處手動 ai_trading_enabled=true 不動本表，因此無法解除凍結。K3 無法分離安全出場（transactions 無策略欄），
 可能多凍結，已被操作者接受；凍結不清倉。
 """
 import logging
@@ -36,7 +36,11 @@ logger = logging.getLogger(__name__)
 HALTING_KS = ("K1", "K3", "K4")
 BLOCKING_MODES = ("frozen", "human_stop")
 BUY_ACTIONS = ("BUY", "STRONG_BUY", "ADD", "ACCUMULATE")     # same set as UnifiedRiskGateway.is_buy / 與風控閘門一致
-SELL_ACTIONS = ("SELL", "TRIM", "REDUCE", "EXIT")            # orders that reduce a position / 減碼類動作
+# Not orders at all. Every OTHER action that is not a BUY is treated as a sell-like order: the executor used to turn
+# any unrecognised string into a SELL, and the trading-protections service also counts CLOSE / STRONG_SELL / LIQUIDATE
+# as sells, so an allow-list of sell names here would let an alias slip past a freeze.
+# 非訂單動作；其餘非買入者一律當賣單處理（執行器曾把任何無法辨識的字串當賣單，白名單式的賣出別名清單會漏）。
+NON_ORDER_ACTIONS = ("HOLD", "NEUTRAL")
 UNREADABLE_SELL_MARK = "charter_unreadable_sell_allowed"     # visible to the caller, see order_allowed
 
 # emit(kind, key, payload): writes the charter_events row and sends the realtime notice (charter_digest_service.
@@ -88,15 +92,17 @@ def frozen_exit_whitelist() -> frozenset:
 
 
 def order_allowed(action: str, strategy_name: Optional[str], now: datetime, engine: Any = None) -> Tuple[bool, str]:
-    """Gate for one order (ADR-005). Anything that is not a BUY- or SELL-type action is exempt. A strategy on the
-    ``frozen_exit_whitelist`` is exempt without reading the state; every other order needs ``trading_allowed``.
+    """Gate for one order (ADR-005). Only HOLD / NEUTRAL are exempt; any other non-BUY action counts as a sell.
+    A strategy on the ``frozen_exit_whitelist`` is exempt without reading the state; every other order needs
+    ``trading_allowed``.
     Fail-closed asymmetry: an unreadable state or whitelist blocks a BUY but lets a SELL through, marked
     ``charter_unreadable_sell_allowed`` and logged at error, because blocking a SELL could trap a position.
     單筆訂單閘門：非買賣動作免檢；白名單策略免讀狀態；其餘需 trading_allowed。讀不到時買單擋、賣單放行並標記。"""
-    act = str(action).upper().strip()
-    is_buy, is_sell = act in BUY_ACTIONS, act in SELL_ACTIONS
-    if not (is_buy or is_sell):
+    act = str(action).upper().strip().replace("-", "_").replace(" ", "_")
+    if act in NON_ORDER_ACTIONS:
         return True, "exempt: not an order"
+    is_buy = act in BUY_ACTIONS or act == "INCREASE"
+    is_sell = not is_buy
     name = (strategy_name or "").strip().lower()
 
     def unreadable(what: str) -> Tuple[bool, str]:

@@ -31,7 +31,7 @@ def _seed_ok(engine, now, *, first_verdict_days=91, drills=1, digests=8, freeze_
     for k in ADAPTIVE:
         _event(engine, "verdict", now - timedelta(days=first_verdict_days), k, {"verdict": "hold"})
     for i in range(drills):
-        _event(engine, "drill", now - timedelta(days=3 + i), payload={"ok": True})
+        _event(engine, "drill", now - timedelta(days=3 + i), payload={"ok": True, "nonexit_sell_refused": True})
     for i in range(digests):
         _event(engine, "digest", FIRST_SATURDAY - timedelta(days=7 * i), payload={"text": "digest"})
     if freeze_days_ago is not None:
