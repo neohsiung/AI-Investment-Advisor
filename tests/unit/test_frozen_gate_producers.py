@@ -1,6 +1,6 @@
-"""ADR-005 / DD-2026-1031: the orders that must still work while the charter is frozen carry a whitelisted strategy_name,
+"""ADR-005 / DD-2026-1031: orders that must still work while the charter is frozen carry a whitelisted strategy_name,
 and the names on the whitelist have only the producers we expect (an upper bound: a new producer needs a decision).
-ADR-005 / DD-2026-1031：凍結期間仍須能下的單要帶白名單內的策略名；白名單名稱的產生端有上界，新增產生端要有決定。"""
+ADR-005：凍結期間仍須能下的單要帶白名單內的策略名；白名單名稱的產生端有上界，新增產生端要有決定。"""
 import ast
 import re
 from pathlib import Path
@@ -15,11 +15,11 @@ def _calls_with_strategy(path: str, needle: str):
     src = (REPO / path).read_text(encoding="utf-8")
     out = []
     for n in ast.walk(ast.parse(src)):
-        if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "evaluate_and_execute_trade":
-            if needle in (ast.get_source_segment(src, n) or ""):
-                kw = {k.arg: k.value for k in n.keywords if k.arg}
-                v = kw.get("strategy_name")
-                out.append(v.value if isinstance(v, ast.Constant) else (ast.unparse(v) if v is not None else None))
+        is_call = isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "evaluate_and_execute_trade"
+        if is_call and needle in (ast.get_source_segment(src, n) or ""):
+            kw = {k.arg: k.value for k in n.keywords if k.arg}
+            v = kw.get("strategy_name")
+            out.append(v.value if isinstance(v, ast.Constant) else (ast.unparse(v) if v is not None else None))
     return out
 
 
