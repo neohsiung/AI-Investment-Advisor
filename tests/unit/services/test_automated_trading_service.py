@@ -55,15 +55,15 @@ def mock_broker():
     # Execute order returns a mock success status
     broker.execute_order = AsyncMock(return_value={"status": "success", "order_id": "123"})
     broker.get_positions = AsyncMock(return_value=[])
-    
+
     # Mock account for position sizing guards
     account = MagicMock()
     account.total_equity = 1000.0
     account.available_cash = 500.0
     broker.get_account = AsyncMock(return_value=account)
-    
+
     broker.sync_history = AsyncMock(return_value=True)
-    
+
     return broker
 
 @pytest.fixture
@@ -77,16 +77,16 @@ def test_svc(mock_settings_repo, mock_interaction_service, mock_notification_ser
 @pytest.mark.anyio
 async def test_auto_execute_when_score_above_threshold(test_svc, mock_broker):
     user_id = "test_user"
-    
+
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
          patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
         res = await test_svc.evaluate_and_execute_trade(
             user_id, "AAPL", "buy", 10.0, 9, "High momentum"
         )
-        
+
     assert res["status"] == "success"
     mock_broker.execute_order.assert_called_once()
-    
+
     # Check that notification was dispatched via HTTP API
     mock_notify.assert_called_once()
     call_kwargs = mock_notify.call_args[1]
@@ -106,13 +106,13 @@ async def test_auto_execute_when_score_above_threshold(test_svc, mock_broker):
 async def test_require_approval_when_score_between_thresholds(test_svc, mock_interaction_service, mock_broker):
     """Score between min (3) and max (9) -> request approval via interaction service."""
     user_id = "test_user"
-    
+
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
          patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
         res = await test_svc.evaluate_and_execute_trade(
             user_id, "AAPL", "buy", 10.0, 5, "Moderate momentum"
         )
-        
+
     # Interaction service should have been called
     mock_interaction_service.request_approval.assert_called_once()
     assert res["status"] == "success"
@@ -122,17 +122,17 @@ async def test_rejection_or_timeout(test_svc, mock_interaction_service, mock_bro
     user_id = "test_user"
     # Mocking interaction service to return False (rejected or timeout)
     mock_interaction_service.request_approval.return_value = (False, "REJECTED")
-    
+
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
          patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
         res = await test_svc.evaluate_and_execute_trade(
             user_id, "AAPL", "buy", 10.0, 5, "Moderate momentum"
         )
-        
+
     # Should be rejected
     assert res["status"] == "rejected_or_timeout"
     mock_broker.execute_order.assert_not_called()
-    
+
     # Notification for rejection should have been sent via API
     mock_notify.assert_called_once()
     call_kwargs = mock_notify.call_args[1]
@@ -145,9 +145,9 @@ async def test_disabled_trading_returns_blocked(test_svc):
         if key == "ai_trading_enabled": return "false"
         return "10"
     test_svc.settings_repo.get.side_effect = get_mock
-    
+
     res = await test_svc.evaluate_and_execute_trade("u1", "TSLA", "buy", 1, 10, "test")
-    
+
     assert res["status"] == "blocked"
 
 # ──────────────────────────────────────────
@@ -158,16 +158,16 @@ async def test_disabled_trading_returns_blocked(test_svc):
 async def test_skip_when_score_below_min_threshold(test_svc, mock_broker):
     """Score below min_threshold (3) -> skip silently, no broker/notification calls."""
     user_id = "test_user"
-    
+
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker) as mock_factory, \
          patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
         res = await test_svc.evaluate_and_execute_trade(
             user_id, "AAPL", "buy", 10.0, 2, "Low confidence"
         )
-    
+
     assert res["status"] == "skipped"
     assert "below minimum threshold" in res["reason"]
-    
+
     # No broker or notification should be called
     mock_broker.execute_order.assert_not_called()
     mock_notify.assert_not_called()
@@ -177,7 +177,7 @@ async def test_skip_when_score_equals_zero(test_svc, mock_broker):
     """Score 0 is below any reasonable min_threshold -> skip."""
     with patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
         res = await test_svc.evaluate_and_execute_trade("u1", "TSLA", "buy", 1, 0, "No confidence")
-    
+
     assert res["status"] == "skipped"
     mock_notify.assert_not_called()
 
@@ -187,7 +187,7 @@ async def test_exact_min_threshold_triggers_approval(test_svc, mock_interaction_
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
          patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
         res = await test_svc.evaluate_and_execute_trade("u1", "AAPL", "buy", 10.0, 3, "Borderline")
-    
+
     mock_interaction_service.request_approval.assert_called_once()
     assert res["status"] == "success"
 
@@ -201,10 +201,10 @@ async def test_notify_via_direct_service(test_svc, mock_notification_service):
             content="Test Content",
             category="approval"
         )
-        
+
         mock_notification_service.notify_all.assert_called_once()
         call_kwargs = mock_notification_service.notify_all.call_args[1]
-        
+
         assert call_kwargs["user_id"] == "test_user"
         assert "telegram" in call_kwargs["channels"]
         assert call_kwargs["category"] == "approval"
@@ -234,13 +234,13 @@ def mock_broker_with_positions(mock_position):
 async def test_sell_guard_clamps_quantity_to_actual_holding(test_svc, mock_broker_with_positions):
     """SELL quantity > actual holding → quantity clamped to actual holding (0.5)."""
     user_id = "test_user"
-    
+
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
          patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
         res = await test_svc.evaluate_and_execute_trade(
             user_id, "TSLA", "sell", 1.0, 9, "Reduce TSLA exposure"
         )
-    
+
     assert res["status"] == "success"
     # Verify the order was executed with clamped quantity (0.5, not 1.0)
     call_args = mock_broker_with_positions.execute_order.call_args
@@ -251,17 +251,17 @@ async def test_sell_guard_clamps_quantity_to_actual_holding(test_svc, mock_broke
 async def test_sell_guard_skips_when_no_holding(test_svc):
     """SELL with 0 actual holding → skip trade entirely."""
     user_id = "test_user"
-    
+
     broker = MagicMock()
     broker.get_name.return_value = "MockBroker"
     broker.get_positions = AsyncMock(return_value=[])  # No positions
     broker.get_account = AsyncMock()
-    
+
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=broker):
         res = await test_svc.evaluate_and_execute_trade(
             user_id, "TSLA", "sell", 1.0, 9, "Exit TSLA"
         )
-    
+
     assert res["status"] == "skipped"
     assert "No active position" in res["reason"]
     broker.execute_order.assert_not_called()
@@ -270,13 +270,13 @@ async def test_sell_guard_skips_when_no_holding(test_svc):
 async def test_sell_guard_passthrough_when_within_holding(test_svc, mock_broker_with_positions):
     """SELL quantity <= actual holding → no clamping needed."""
     user_id = "test_user"
-    
+
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker_with_positions), \
          patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
         res = await test_svc.evaluate_and_execute_trade(
             user_id, "TSLA", "sell", 0.3, 9, "Partial reduce"
         )
-    
+
     assert res["status"] == "success"
     call_args = mock_broker_with_positions.execute_order.call_args
     order = call_args[0][0] if call_args[0] else call_args[1].get('order')
@@ -341,7 +341,7 @@ async def test_expired_approval_does_not_send_notification(test_svc, mock_intera
     user_id = "test_user"
     from src.domain.interaction import InteractionStatus
     mock_interaction_service.request_approval.return_value = (False, InteractionStatus.EXPIRED)
-    
+
     with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
          patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock) as mock_notify:
         res = await test_svc.evaluate_and_execute_trade(
@@ -918,3 +918,47 @@ async def test_cash_deployment_quantity_not_inflated_by_dynamic_kelly_sizing(tes
 
 
 
+
+
+# ──────────────────────────────────────────
+# DD-2026-1031 follow-up: an unknown action is rejected, never traded as a SELL
+# 下單動作只接受 BUY／SELL；不認得的一律拒絕，不再被當成賣單。
+# ──────────────────────────────────────────
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad_action", ["ADD", "HOLD", "", "STRONG_BUY", "ACCUMULATE", "buy now", None])
+async def test_unknown_action_is_rejected_not_sold(test_svc, mock_broker, bad_action):
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker):
+        res = await test_svc.evaluate_and_execute_trade("test_user", "AAPL", bad_action, 10.0, 9, "x")
+
+    assert res["status"] == "rejected"
+    assert res["reason"].startswith("action_invalid")
+    mock_broker.execute_order.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("action,expected", [("buy", OrderAction.BUY), (" Sell ", OrderAction.SELL)])
+async def test_buy_and_sell_are_normalised_and_still_executed(test_svc, mock_broker, action, expected):
+    mock_broker.get_positions = AsyncMock(return_value=[])
+    with patch('src.services.automated_trading_service.BrokerFactory.get_broker', return_value=mock_broker), \
+         patch.object(test_svc, '_notify_via_api', new_callable=AsyncMock):
+        res = await test_svc.evaluate_and_execute_trade("test_user", "AAPL", action, 10.0, 9, "x")
+
+    assert res.get("reason", "").startswith("action_invalid") is False
+    if mock_broker.execute_order.called:
+        assert mock_broker.execute_order.call_args[0][0].action == expected
+
+
+def test_executor_has_no_default_to_sell_branch():
+    """The order action must be parsed, not derived by `BUY if x == "BUY" else SELL` (anything else became a SELL)."""
+    import ast
+    import inspect
+
+    from src.services import automated_trading_service as mod
+    tree = ast.parse(inspect.getsource(mod))
+    offenders = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.IfExp):
+            body, orelse = ast.unparse(n.body), ast.unparse(n.orelse)
+            if body.endswith("OrderAction.BUY") and orelse.endswith("OrderAction.SELL"):
+                offenders.append(n.lineno)
+    assert offenders == [], f"BUY-if-else-SELL at lines {offenders}"

@@ -43,7 +43,7 @@
   },
   "oversize_files": {
     "src/infrastructure/tasks.py": 2152,
-    "src/services/automated_trading_service.py": 1895,
+    "src/services/automated_trading_service.py": 1838,
     "src/services/batch_cash_deployment_service.py": 1620,
     "src/services/conversation_router.py": 2539,
     "src/services/etoro_service.py": 1504,
@@ -162,7 +162,7 @@
     "src/services/alpha_decay_service.py": 1,
     "src/services/alpha_spread_bidding_service.py": 2,
     "src/services/analytics_service.py": 1,
-    "src/services/automated_trading_service.py": 46,
+    "src/services/automated_trading_service.py": 44,
     "src/services/autonomous_reporting_service.py": 4,
     "src/services/backtest_service.py": 1,
     "src/services/batch_cash_deployment_service.py": 27,
