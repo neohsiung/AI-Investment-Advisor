@@ -6,5 +6,12 @@
         "QODER.md",
         ".cursorrules",
         ".windsurfrules"
+    ],
+    "components": [
+        "guard",
+        "green-gate",
+        "wt",
+        "agents",
+        "pr-checks"
     ]
 }

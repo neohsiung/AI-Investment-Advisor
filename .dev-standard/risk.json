@@ -1,0 +1,130 @@
+{
+  "_doc": "repo 的風險級設定。樣式用 fnmatch：* 會跨 /。通用的 R2（.dev-standard/*、.github/*、.claude/*、.githooks/*、.automerge-off、AGENTS.md、CLAUDE.md）與憑證禁區已內建，不用重列。這個檔只有 base 分支上的版本算數。",
+  "_r3_globs": "會動錢或動正式環境的路徑（交易、部署、金鑰、正式設定）。算出 R3 ⇒ 不自動合併。上線前必須填，空的會在檢查 2 印警告。",
+  "r3_globs": [
+    "src/services/automated_trading_service.py",
+    "src/services/unified_risk_gateway_service.py",
+    "src/services/capital_policy.py",
+    "src/services/etoro_service.py",
+    "src/services/confidence_rebalance_service.py",
+    "src/services/batch_cash_deployment_service.py",
+    "src/services/charter_state_service.py",
+    "src/services/strategy_registry.py",
+    "src/services/enablement_checker.py",
+    "src/services/actionable_alert_service.py",
+    "src/infrastructure/risk_manager.py",
+    "src/domain/strategy_names.py",
+    "src/config/mission.py",
+    "config/mission.yaml",
+    "config/parameter_registry.yaml",
+    "start.sh",
+    "scripts/predeploy_gate.sh",
+    "docker-compose*.yml",
+    "secrets/*",
+    "*.env",
+    "env.production"
+  ],
+  "_r2_globs": "設定、門檻、prompt、schema、migration、被其他 repo 複製出去的檔。",
+  "r2_globs": [
+    "config/*",
+    "prompts/*",
+    "alembic/*",
+    "src/services/sentinel_service.py",
+    "src/services/socket_manager.py",
+    "src/agents/action_extractor.py",
+    "src/services/workflow_service.py",
+    "src/infrastructure/tasks.py",
+    "src/infrastructure/celery_app.py",
+    "tests/invariants/*",
+    ".githooks/*",
+    "scripts/*gate*.sh"
+  ],
+  "_outward_globs": "對外文字、上架資料、部署設定：至少 R2，且 PR 要宣告至少 R2（檢查 4）。",
+  "outward_globs": [],
+  "_forbidden": "regex。PR 不得動的路徑（生產帳本、排程表）。",
+  "forbidden": [],
+  "_trusted_authors": "能留 SCOPE: OK／REVIEW: PASS／RETRO: 的 GitHub 帳號。空＝repo owner。注意 agent 與 owner 同一個 gh 身分時，標記不證明有第二雙眼睛。",
+  "trusted_authors": [],
+  "_ci_ignore": "不算進「CI 全綠」的檢查名稱（例：部署預覽）。",
+  "ci_ignore": [],
+  "_classifier": "選用。argv 清單（不經 shell），改動檔一行一個走 stdin，輸出第一行含恰好一個 R0–R3。結果與路徑樣式取高，只會抬高、不會壓低 r3_globs。classifier 的程式要在 base 分支的 checkout 裡跑，否則 PR 可以改掉判斷它的程式。",
+  "classifier": null,
+  "_require_issue_ref": "true ＝ PR 內文要有 Refs／Closes #N 或 no-issue（檢查 6b）。",
+  "require_issue_ref": false,
+  "_examples": {
+    "litov": {
+      "r3_globs": [
+        "products/*/billing/*",
+        "products/*/release/*",
+        ".github/workflows/release*.yml"
+      ],
+      "r2_globs": [
+        "design-system/kairo/*",
+        "products/*/profile.yaml",
+        "docs/decision-criteria.md",
+        "tools/risk_level.py",
+        "tools/pr_checks/*",
+        "VERSION"
+      ],
+      "outward_globs": [
+        "growth/outbox/*",
+        "products/*/store/*",
+        "site/*",
+        "*release*.yml",
+        "*release*.yaml",
+        "*release*.py",
+        "*deploy*.py",
+        "*deploy*.sh",
+        "*deploy*.yml"
+      ],
+      "forbidden": [
+        "^growth/outbox/[^.]",
+        "^growth/tracker/[^/.]+\\.(csv|tsv|xlsx|json)$",
+        "^growth/tracker/[^/]+/"
+      ],
+      "ci_ignore": [
+        "Cloudflare Pages"
+      ],
+      "note": "R3 樣式為示意，請依 litov 實際的錢與正式環境路徑覆核後再用"
+    },
+    "hermes": {
+      "r3_globs": [
+        "scripts/etoro_orders.py",
+        "scripts/dev/lane.py",
+        "scripts/dev/lane_risk.py",
+        ".claude/hooks/hermes_guard.py",
+        "scripts/dev/auto_deploy.py",
+        "scripts/dev/deploy_plan.py",
+        "cron/*",
+        "scripts/*cron*register*",
+        "scripts/*register*cron*",
+        "install/*",
+        "deploy/*"
+      ],
+      "r2_globs": [
+        "workflow/config/*",
+        "docker-compose*.yml",
+        ".claude/rules/*"
+      ],
+      "outward_globs": [
+        "cache/*",
+        "cron/jobs.json",
+        "TASKBOARD.md",
+        "docker-compose*.yml",
+        "install/*",
+        "deploy/*"
+      ],
+      "forbidden": [
+        "^cache/",
+        "^cron/jobs\\.json$",
+        "^TASKBOARD\\.md$"
+      ],
+      "classifier": [
+        "python3",
+        "scripts/dev/lane_risk.py"
+      ],
+      "require_issue_ref": true,
+      "note": "lane.py（import 閉包）單獨會把 auto_deploy.py／deploy_plan.py 判成 R2，所以部署與 cron 登錄路徑用 r3_globs 補；樣式判出的 R3 不會被 classifier 壓低。cron 登錄路徑請對照實際檔名覆核。"
+    }
+  }
+}
