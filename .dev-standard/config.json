@@ -8,7 +8,6 @@
         ".windsurfrules"
     ],
     "components": [
-        "hooks",
         "guard",
         "green-gate",
         "wt",

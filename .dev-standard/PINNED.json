@@ -2,12 +2,6 @@
   "version": "0.6.1",
   "sha256": "4d9940314e3609c5d6432ccd335800343e111ac13db1fbe5143f2e2e0d42233f",
   "components": {
-    "hooks": {
-      "files": {
-        ".githooks/pre-commit": "0d3c1cf0747174e1438afd118c099da174044d68833628f0013d44e333f1e70d",
-        ".githooks/pre-push": "c083c6d9d2950a95a4751022cd6b557cd45ca28cd65d9755209d231db76ff80c"
-      }
-    },
     "guard": {
       "files": {
         ".claude/hooks/guard.py": "a6a555889c4fc92871dbf79e23a61c5a250f72242b05b03c1d4908ebb2a914e5"

@@ -1,52 +1,31 @@
-#!/bin/sh
-# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/hooks，再跑 sync.py update
-# pre-push.sh — 分支的 PR 已經合併，就不再往上推（來由：litov#25→#34，2026-10-25；dev-standard §1）
+#!/usr/bin/env bash
+# Hermes lane hard gate: agents may commit and open PRs, never push to a
+# protected branch. Installed into every repo/worktree a lane touches.
 #
-# 安裝：cp 到 repo 的 .githooks/pre-push，git config core.hooksPath .githooks
+# Versioned copy (dev-standard §1). Install with scripts/install_git_hooks.sh, which copies it into the
+# shared .git/hooks/. core.hooksPath is deliberately NOT used: it would disable the pre-commit framework hook
+# in .git/hooks/pre-commit (secret scanners).
+# 版控正本。用 scripts/install_git_hooks.sh 複製到共用的 .git/hooks/；不設 core.hooksPath，否則 pre-commit 掃描會失效。
 #
-# 為什麼：PR 合併後再推到同一條分支，新的 commit 不會進 main，也沒有任何訊號。
-#   litov#25 合併後又推了帳號表、網址、改名三個檔，過了半天才被另一個 session 發現。
-#   要補東西，從 main 開新分支、開新 PR。
-#
-# 怎麼判斷：對每一條要推的分支，問 gh「這個 head 有沒有已合併的 PR」。有就擋。
-#   刪除遠端分支（push --delete）不擋。
-#   gh 不在或查詢失敗：印警告放行，不靜默（離線時不該卡住所有 push）。
-#   刻意要重用分支名：DEV_ALLOW_PUSH_MERGED=1 git push …，會印出提醒。
-#
-# 測試用：DEV_GH 可指定 gh 的路徑。
+# Bypassing this hook (--no-verify) is itself a protocol violation: the lane
+# skills forbid it and the runner reinstalls this file on every claim.
+set -euo pipefail
 
-GH="${DEV_GH:-gh}"
-ZERO=0000000000000000000000000000000000000000
-status=0
+PROTECTED_RE='^(main|master|release/.*)$'
 
-while read -r local_ref local_sha remote_ref remote_sha; do
-  case "$remote_ref" in
-    refs/heads/*) branch="${remote_ref#refs/heads/}" ;;
-    *) continue ;;
-  esac
-  [ "$local_sha" = "$ZERO" ] && continue          # 刪除分支
-  case "$branch" in main|master) continue ;; esac  # 推 main 由 guard 擋，這裡不重複
-
-  if ! command -v "$GH" >/dev/null 2>&1; then
-    echo "⚠️  pre-push：找不到 gh，沒檢查 ${branch} 的 PR 是否已合併" >&2
-    continue
-  fi
-  merged=$("$GH" pr list --head "$branch" --state merged --json number --jq '.[].number' 2>/dev/null)
-  rc=$?
-  if [ $rc -ne 0 ]; then
-    echo "⚠️  pre-push：gh 查詢失敗（rc=${rc}），沒檢查 ${branch} 的 PR 是否已合併" >&2
-    continue
-  fi
-  if [ -n "$merged" ]; then
-    nums=$(echo "$merged" | tr '\n' ' ')
-    if [ "${DEV_ALLOW_PUSH_MERGED:-}" = "1" ]; then
-      echo "⚠️  pre-push：${branch} 已有合併的 PR（#${nums}），因 DEV_ALLOW_PUSH_MERGED=1 放行；這些 commit 要另開 PR 才會進 main" >&2
-      continue
+# stdin: <local ref> <local sha> <remote ref> <remote sha>
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    [ -z "${remote_ref:-}" ] && continue
+    branch="${remote_ref#refs/heads/}"
+    if [[ "$branch" =~ $PROTECTED_RE ]]; then
+        echo "pre-push: BLOCKED — pushing to protected branch '$branch' is not allowed." >&2
+        echo "pre-push: agents may push feature branches and open PRs; merging is a human action." >&2
+        exit 1
     fi
-    echo "❌ pre-push：${branch} 的 PR 已合併（#${nums}）。再推上去的 commit 不會進 main。" >&2
-    echo "   → 從 main 開新分支：.dev-standard/bin/wt.sh new <type>/<描述>，把要補的 commit cherry-pick 過去再開 PR" >&2
-    status=1
-  fi
 done
 
-exit $status
+if [ -f "./scripts/pre_push_check.sh" ]; then
+    ./scripts/pre_push_check.sh
+fi
+
+exit 0
