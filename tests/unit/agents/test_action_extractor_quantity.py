@@ -8,10 +8,25 @@ from src.agents.action_extractor import ActionExtractorAgent, parse_order_quanti
 
 
 @pytest.mark.parametrize("raw,expected", [
-    (10, 10.0), ("10", 10.0), (" 2.5 ", 2.5), (3.0, 3.0), ("1,000", 1000.0), ("$250", 250.0),
+    (10, 10.0), ("10", 10.0), (" 2.5 ", 2.5), (3.0, 3.0), ("1,000", 1000.0), ("1,234,567.50", 1234567.5),
 ])
 def test_parse_order_quantity_accepts_plain_positive_numbers(raw, expected):
     assert parse_order_quantity(raw) == expected
+
+
+def test_a_dollar_amount_is_only_accepted_for_a_buy():
+    """BUY quantity is USD; SELL quantity is shares, so '$500' on a SELL would be read as 500 shares."""
+    assert parse_order_quantity("$250", "BUY") == 250.0
+    assert parse_order_quantity("$250", "buy") == 250.0
+    assert parse_order_quantity("$250", "SELL") is None
+    assert parse_order_quantity("$250") is None
+
+
+@pytest.mark.parametrize("raw", ["1,5", "1,00", "1,0,0", "1_000", "$$5", "1e3", "1e400", "10 shares", "5.", ".5x",
+                                 "１０", 10 ** 400, "9" * 400])
+def test_ambiguous_or_overflowing_text_is_unreadable(raw):
+    """European decimals ('1,5' -> 15.0), underscores, exponents and huge integers must not become a quantity."""
+    assert parse_order_quantity(raw, "BUY") is None
 
 
 @pytest.mark.parametrize("raw", [None, "", "  ", "abc", "5%", "10 %", 0, 0.0, -3, "-3", float("nan"), float("inf"),

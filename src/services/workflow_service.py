@@ -1521,10 +1521,13 @@ class EventAnalysisWorkflow(BaseWorkflow):
                     from src.services.automated_trading_service import AutomatedTradingService
                     auto_trade_svc = AutomatedTradingService()
                     for order_data in actionable_orders:
+                        qty_val = quantity_or_skip(order_data, "EventWorkflow")  # None: skip, never a made-up amount
+                        if qty_val is None:
+                            continue
                         await auto_trade_svc.evaluate_and_execute_trade(
                             ticker=order_data['ticker'],
                             action=order_data['action'],
-                            quantity=order_data['quantity'],
+                            quantity=qty_val,
                             confidence_score=order_data['score'],
                             rationale=f"Webhook [{self.event_source}] Triggered: {order_data['reason']}",
                             user_id=self.user_id

@@ -32,23 +32,34 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 
-def parse_order_quantity(raw: Any) -> Optional[float]:
+_PLAIN_NUMBER = re.compile(r"^(\$)?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?$", re.ASCII)
+
+
+def parse_order_quantity(raw: Any, action: Optional[str] = None) -> Optional[float]:
     """A positive finite number, or None. Never a made-up default: a BUY quantity is a USD amount, so an invented
     100.0 is a real $100 order, and a percentage such as ``"5%"`` is a weight, not a quantity (it used to become 5.0).
-    正的有限數字，否則 None；不補預設（BUY 的數量是美元金額），百分比是權重不是數量。"""
+    Text must be a plain decimal with optional strict thousands separators (``1,000.50``); ``1,5``, ``1_000``, ``$$5``
+    and exponents are unreadable. A leading ``$`` is a USD amount, so it is only accepted for a BUY (a SELL quantity
+    is a share count). 正的有限數字，否則 None；千分位必須嚴格；`$` 是美元金額，只有 BUY 接受。"""
     if isinstance(raw, bool) or raw is None:
         return None
     try:
-        value = float(str(raw).strip().replace(",", "").lstrip("$")) if isinstance(raw, str) else float(raw)
-    except (TypeError, ValueError):
+        if isinstance(raw, str):
+            m = _PLAIN_NUMBER.match(raw.strip())
+            if not m or (m.group(1) and str(action or "").strip().upper() != "BUY"):
+                return None
+            value = float(m.group(2).replace(",", "") + (m.group(3) or ""))
+        else:
+            value = float(raw)
+    except (TypeError, ValueError, OverflowError):
         return None
-    return value if value == value and 0 < value < float("inf") else None
+    return value if 0 < value < float("inf") else None
 
 
 def quantity_or_skip(order: Dict[str, Any], source: str) -> Optional[float]:
     """The order's parsed quantity, or None after a warning marked ``quantity_unparseable`` (the caller skips the
     order). 讀得到就回數量；讀不到記一則 quantity_unparseable 警告並回 None，由呼叫端略過該單。"""
-    qty = parse_order_quantity(order.get("quantity"))
+    qty = parse_order_quantity(order.get("quantity"), order.get("action"))
     if qty is None:
         logger.warning("%s: skipping %s %s, quantity_unparseable (raw=%r)",
                        source, order.get("action"), order.get("ticker"), order.get("quantity"))
@@ -130,7 +141,7 @@ class ActionExtractorAgent:
                 if ticker and signal != "HOLD":
                     orders.append({
                         "ticker": ticker, "action": signal,
-                        "quantity": parse_order_quantity(act.get("quantity")),
+                        "quantity": parse_order_quantity(act.get("quantity"), signal),
                         "score": act.get("confidence") or 7,
                         "reason": act.get("rationale") or f"CIO Signal ({signal})",
                         "target_weight": act.get("target_weight"),
@@ -243,7 +254,7 @@ class ActionExtractorAgent:
             return [{
                 "ticker": a.ticker.strip().upper(),
                 "action": a.action.strip().upper(),
-                "quantity": parse_order_quantity(a.quantity),
+                "quantity": parse_order_quantity(a.quantity, a.action),
                 "score": a.confidence,
                 "reason": a.rationale or f"CIO Signal ({a.action.upper()})",
             } for a in parsed.actions if a.ticker and a.action.upper() in ("BUY", "SELL")]
