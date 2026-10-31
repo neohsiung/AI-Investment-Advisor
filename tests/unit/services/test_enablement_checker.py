@@ -275,7 +275,8 @@ def test_drill_passes_and_restores_state(engine):
     seen = []
     res = ec.drill(engine, NOW, lambda kind, key, payload: seen.append((kind, payload, _mode(engine))))
     assert res["ok"] is True
-    assert seen == [("drill", {"ok": True, "buy_refused": True, "stop_loss_allowed": True, "error": None},
+    assert seen == [("drill", {"ok": True, "buy_refused": True, "nonexit_sell_refused": True,
+                                  "stop_loss_allowed": True, "error": None},
                      ("tighten_only", False))]
     with sessionmaker(bind=engine)() as s:
         r = s.query(CharterState).one()
@@ -342,3 +343,11 @@ def test_crashed_drill_resumes_to_prior_mode_not_dry_run(engine, monkeypatch):
     assert _mode(engine) == ("frozen", False)
     assert css.apply_watchdog({"breaches": []}, NOW + timedelta(hours=1), engine) == "resume"
     assert _mode(engine) == ("apply", False)
+
+
+def test_drill_buy_strategy_is_a_real_producer_and_not_on_the_whitelist():
+    """The drill used a legacy name nobody sends; it must exercise a strategy a live order path really uses."""
+    from src.config.mission import load_mission
+    assert ec.DRILL_BUY_STRATEGY == "cash_deployment"
+    assert ec.DRILL_BUY_STRATEGY not in load_mission().frozen_exit_whitelist
+    assert ec.DRILL_SELL_STRATEGY not in load_mission().frozen_exit_whitelist
