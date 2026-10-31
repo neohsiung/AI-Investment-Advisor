@@ -1,0 +1,155 @@
+#!/bin/sh
+# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/hooks，再跑 sync.py update
+# pre-commit.sh — 憑證外洩與誤入版控的防護（來由：hermes .githooks/pre-commit，2026-09-13；dev-standard §6）
+#
+# 安裝：cp 到 repo 的 .githooks/pre-commit，git config core.hooksPath .githooks
+# 不該進版控的目錄列在 .dev-standard/forbidden-dirs（一行一個 regex 前綴，例：^logs/）。
+#
+# 為什麼要第三層：
+#   第一層是 .gitignore 的 `/*` 白名單（擋住頂層 250 項含三個憑證檔）
+#   第二層是首次 commit 前人工掃 `git ls-files`
+# 這兩層都是**當下**有效的。這一層擋的是**以後**——有人為了方便加了一條
+# 放行規則、或新增一個帶密鑰的檔案時，在 commit 當下就攔下來。
+#
+# ⚠️ 掃的是「**即將進入這次 commit** 的內容」（--cached），不是整個工作目錄。
+#    掃工作目錄會被 .gitignore 過濾掉的東西誤導，也會把不相干的檔算進來。
+#
+# ⚠️ .gitignore 不支援行尾註解 —— 2026-09-13 實測，五條帶尾註的排除規則
+#    全部失效，421 個檔案漏進候選清單而 git 不報錯。所以這裡也順便驗一次
+#    「不該進來的目錄有沒有進來」。
+
+# ⚠️ **刻意不用 `set -e`**。2026-09-13 實測：配上
+#       [ -n "$X" ] && fail "..."
+#    這種寫法，條件不成立時整個 && list 回 1，`set -e` 就讓腳本以 1 結束 ——
+#    於是這個 hook **無聲擋掉了每一次 commit**：`git commit` 回 rc=0、
+#    零輸出、而 commit 根本沒產生。查了三輪才發現不是 git 的問題。
+#    這正是這個專案反覆咬人的形狀：一個守衛用「看起來像沒事」的方式壞掉。
+#    現在一律用 if 區塊，並在最後一行明確 exit 0。
+
+# 中文與空白檔名：關掉 quotepath，否則 git 印成 "\344…"，[ -f ] 對不到檔、掃描被無聲略過（reviewer 2026-10-24）
+staged() { git -c core.quotepath=false diff --cached --name-only --diff-filter="${1:-ACM}"; }
+
+fail() { printf '\n\033[31m✗ pre-commit 擋下這次 commit\033[0m\n%s\n\n' "$1"; exit 1; }
+
+# ── ① 檔名層 ────────────────────────────────────────────────────────────
+# ⚠️ `*.example` 要放行 —— `.env.example` **必須**進 repo，
+#    clone 的人要靠它知道有哪些變數、缺了會壞什麼。
+#    這不是把規則放鬆：內容層（② 那段）仍然會掃 `.env.example`，
+#    所以有人把真金鑰寫進範例檔還是會被擋下來。
+BAD_NAMES=$(staged \
+  | grep -E '(^|/)(\.env($|\.)|\.[A-Za-z0-9_-]+_credentials$|credentials\.json$|auth\.json$|id_(rsa|ed25519|ecdsa)$)|\.(pem|key|p12|pfx)$' \
+  | grep -viE '\.(example|sample|template)$|\.pub(lic\.key)?$' || true)
+if [ -n "$BAD_NAMES" ]; then
+  fail "以下檔名看起來是憑證：
+$BAD_NAMES
+
+若確定是誤判，把它加進 .gitignore 或改名；不要用 --no-verify 繞過。"
+fi
+
+# ── ② 內容層 ────────────────────────────────────────────────────────────
+# 佔位符（xxxx / YOUR_ / <...> / example）不算 —— 文件裡本來就會寫範例，
+# 而一個會誤報的閘門會讓整條訊號被忽略（landmine #147）。
+HITS=""
+TMPF=$(mktemp); staged > "$TMPF"
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  m=$(git show ":$f" 2>/dev/null \
+      | grep -nIE '(sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|xoxb-[0-9A-Za-z-]{20,}|BEGIN [A-Z ]*PRIVATE KEY)' \
+      | grep -viE '(x{8,}|YOUR_|<[a-z_]+>|example|placeholder|redacted|\*{6,})' || true)
+  [ -n "$m" ] && HITS="$HITS
+$f:
+$m"
+done < "$TMPF"
+rm -f "$TMPF"
+if [ -n "$HITS" ]; then
+  fail "以下內容看起來是真的金鑰（佔位符已排除）：$HITS"
+fi
+
+# ── ③ 不該進來的目錄 ────────────────────────────────────────────────────
+FORBID=".dev-standard/forbidden-dirs"
+LEAK=""
+if [ -f "$FORBID" ]; then
+  # 空行與註解行要先拿掉：空 pattern 會匹配每一條路徑，變成每次 commit 都被擋（reviewer 2026-10-24）
+  PAT=$(grep -v -e '^[[:space:]]*$' -e '^#' "$FORBID" | paste -sd'|' -)
+  if [ -n "$PAT" ]; then
+    LEAK=$(staged | grep -E "$PAT" || true)
+  fi
+fi
+# 殘留檔：備份、暫存（hermes 曾追蹤 95 個 .bak／tmp 檔，包含下單腳本的備份）
+JUNK=$(staged A | grep -E '(\.bak($|[-.])|\.pre-[a-z0-9-]+$|(^|/)_?tmp_)' || true)
+if [ -n "$JUNK" ]; then
+  fail "以下看起來是備份或暫存檔，不該進版控：
+$JUNK
+
+真的要追蹤就改名；不要用 --no-verify 繞過。"
+fi
+if [ -n "$LEAK" ]; then
+  fail "以下路徑不該進版控（執行期資料 / 大型產物）：
+$LEAK
+
+.gitignore 的白名單可能被改壞了。⚠️ 注意 .gitignore **不支援行尾註解**。"
+fi
+
+# ── ④ 單檔大小 ──────────────────────────────────────────────────────────
+BIG=$(staged | while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  s=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
+  [ "$s" -gt 1048576 ] && printf '  %sKB  %s\n' "$((s/1024))" "$f"
+done)
+if [ -n "$BIG" ]; then
+  fail "以下單檔超過 1MB，確認是不是生成物：
+$BIG"
+fi
+
+# ── ⑤ 選用的串接檢查：.githooks/pre-commit.d/ 底下的每個檔（例：denylist-gate 元件裝的 denylist） ──────
+# 目錄不存在＝沒有選用檢查，照過。任何一個回非 0 就整個擋下並沿用它的結束碼；不吞錯、不用 set -e。
+# 只執行「有執行權限、檔名只含小寫英數與 -」的檔：README、.bak、編輯器暫存檔（x~、.swp）不會被當成檢查跑。略過的會在 stderr 說一聲。
+HOOKD="$(dirname "$0")/pre-commit.d"
+if [ -d "$HOOKD" ]; then
+  for h in "$HOOKD"/*; do
+    [ -f "$h" ] || continue
+    hn=$(basename "$h")
+    if [ ! -x "$h" ] || ! printf '%s' "$hn" | grep -Eq '^[a-z0-9-]+$'; then
+      printf 'pre-commit：略過 pre-commit.d/%s（要有執行權限，且檔名只含小寫英數與 -）\n' "$hn" >&2
+      continue
+    fi
+    sh "$h"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      printf '\n\033[31m✗ pre-commit 擋下這次 commit\033[0m（%s 回傳 %s）\n\n' "$(basename "$h")" "$rc" >&2
+      exit "$rc"
+    fi
+  done
+fi
+
+# ── ⑥ pre-commit framework 串接：repo 根有 .pre-commit-config.yaml 就跑它（detect-secrets、gitleaks 等） ──────
+# 為什麼要串：core.hooksPath=.githooks 一設，git 就不再執行 .git/hooks/*，`pre-commit install` 裝的
+# shim 會無聲失效，密鑰掃描跟著停（investment-advisor 導入前檢查，2026-10-31）。
+# 沒有 config＝沒有這一層，靜默略過。有 config 但找不到 pre-commit＝fail closed（寧可擋住，不可無聲放行）。
+# 逃生口 DEV_PRECOMMIT_FRAMEWORK_SKIP=1：只略過這一層，會大聲警告；其餘檢查照跑。
+# 對應 shim 的 `pre-commit hook-impl --config=.pre-commit-config.yaml --hook-type=pre-commit`，
+# 這裡用 `run --hook-stage pre-commit`：一樣只跑 staged 檔，但不需要 shim 傳進來的 hook 參數。
+if [ -f .pre-commit-config.yaml ]; then
+  if [ "${DEV_PRECOMMIT_FRAMEWORK_SKIP:-}" = "1" ]; then
+    printf '\n\033[31m!!! 警告：DEV_PRECOMMIT_FRAMEWORK_SKIP=1，略過 pre-commit framework（密鑰掃描沒跑）!!!\033[0m\n\n' >&2
+  else
+    if command -v pre-commit >/dev/null 2>&1; then
+      pre-commit run --hook-stage pre-commit
+      rc=$?
+    elif python3 -c 'import pre_commit' >/dev/null 2>&1; then
+      python3 -m pre_commit run --hook-stage pre-commit
+      rc=$?
+    else
+      fail "repo 有 .pre-commit-config.yaml，但找不到 pre-commit（PATH 上沒有，python3 -m pre_commit 也不行）。
+密鑰掃描跑不了，所以擋下這次 commit。
+安裝：pipx install pre-commit（或 uv tool install pre-commit）。
+臨時繞過（會大聲警告，只略過這一層）：DEV_PRECOMMIT_FRAMEWORK_SKIP=1 git commit …"
+    fi
+    if [ "$rc" -ne 0 ]; then
+      printf '\n\033[31m✗ pre-commit 擋下這次 commit\033[0m（pre-commit framework 回傳 %s）\n\n' "$rc" >&2
+      exit "$rc"
+    fi
+  fi
+fi
+
+exit 0

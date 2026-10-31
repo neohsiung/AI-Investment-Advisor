@@ -1,0 +1,72 @@
+# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/ci，再跑 sync.py update
+# dev-standard 共同 CI（來由：investment-advisor ci-cd.yml、secret-scan.yml；dev-standard §6、§9）
+# 放到 .github/workflows/dev-standard.yml。各 repo 自己的測試另一個 workflow，或改下面 tests 那段。
+name: dev-standard
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# 最小權限：只讀內容與 PR（investment secret-scan 的做法）
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  rules:
+    name: 規則檔沒漂移
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # --no-local：core.hooksPath 是本機狀態，新 clone 一定沒設；settings.json 的掛載（已進版控）仍會檢查
+      - run: python3 .dev-standard/sync.py check --no-local
+
+  secrets:
+    name: 金鑰掃描（gitleaks）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  junk:
+    name: 沒有追蹤殘留檔
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 備份、暫存、個人設定不在版控
+        run: |
+          bad=$(git ls-files | grep -E '(\.bak($|[-.])|\.pre-[a-z0-9-]+$|(^|/)_?tmp_|settings\.local\.json$)' || true)
+          if [ -n "$bad" ]; then echo "這些檔不該被追蹤："; echo "$bad"; exit 1; fi
+
+  lint:
+    name: lint（只擋新增違規）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # job 層級的 if 不支援 hashFiles（整個 workflow 會壞）：改在 step 判斷，沒有設定檔就跳過
+      - id: detect
+        run: |
+          if [ -f pyproject.toml ] || [ -f ruff.toml ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "has=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.detect.outputs.has == 'true'
+        uses: astral-sh/ruff-action@v3
+
+  tests:
+    name: 測試
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # job 層級的 if 不支援 hashFiles：改在 step 判斷，沒有測試檔就跳過
+      - id: detect
+        run: |
+          if [ -n "$(find tests -name '*.py' -print -quit 2>/dev/null)" ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "has=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.detect.outputs.has == 'true'
+        uses: astral-sh/setup-uv@v5
+      # 每個 repo 改成自己的指令（例：uv run pytest -q；scripts/ci_local.sh）
+      - if: steps.detect.outputs.has == 'true'
+        run: uv run --with pytest --with pyyaml pytest -q

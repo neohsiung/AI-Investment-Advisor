@@ -1,0 +1,25 @@
+# 由 dev-standard v0.6.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+name: pr-checks
+# 選用的外殼：只跑七項檢查的靜態項（風險級、檔案範圍、對外影響、DERIVED、驗收）。
+# 需要留言標記、CI 結論、其他 PR 的項目，與合併本身，由本機 run.py <PR> [--merge] 在合併當下做；Actions 停用時照樣能合併。
+# 風險級設定讀 base 分支的 .dev-standard/risk.json，PR 不能在同一個改動裡改掉自己的門檻。
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  static:
+    name: 七項檢查（靜態項）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 .dev-standard/bin/pr_checks/run.py "$PR_NUMBER" --ci
