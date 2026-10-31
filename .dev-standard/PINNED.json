@@ -25,11 +25,6 @@
         ".claude/agents/architect.md": "44b8a7a03743dda6fae1732619b53ad124eb3e5982e699e4751251f75d88c403"
       }
     },
-    "ci": {
-      "files": {
-        ".github/workflows/dev-standard.yml": "792c2f72b311e5e7c64328dd31f4b34142d359a9243cd29152b9014d5d3a46f4"
-      }
-    },
     "pr-checks": {
       "files": {
         ".dev-standard/bin/pr_checks/__init__.py": "26f2c357f105e33b18a346bb2db8ec818bb2e2dc94295b55880254d4624c6c7b",

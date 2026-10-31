@@ -12,7 +12,6 @@
         "green-gate",
         "wt",
         "agents",
-        "ci",
         "pr-checks"
     ]
 }
