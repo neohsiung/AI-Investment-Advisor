@@ -93,20 +93,23 @@ class UnifiedRiskGatewayService:
         guard_details: Dict[str, Any] = {}
         is_buy = act in ("BUY", "STRONG_BUY", "ADD", "ACCUMULATE")
 
-        # 0. Charter halt (G7, R3): frozen / human_stop / unreadable state blocks NEW non-safety BUYs only.
-        # 章程停機：凍結、人工停止或狀態讀不到，只擋非安全的新買單；賣單與安全控制不受影響。
-        if is_buy:
-            halt_ok, halt_why = charter_state_service.order_allowed(act, strategy_name, datetime.now(timezone.utc))
-            if not halt_ok:
-                guard_details["charter_halt"] = {"passed": False, "reason": halt_why}
-                return RiskGatewayResult(
-                    allowed=False,
-                    severity=RiskSeverity.BLOCKED,
-                    primary_blocker="CharterHalt",
-                    reasons=[f"[Charter] {halt_why}"],
-                    guard_details=guard_details,
-                    evaluated_at=now_iso,
-                )
+        # 0. Charter halt (G7, R3, ADR-005): while frozen / human_stop only whitelisted exit strategies pass, BUY and
+        # SELL alike. An unreadable state blocks a BUY; a SELL goes through but carries a visible marker.
+        # 章程停機：凍結或人工停止時，買賣都只放行白名單內的出場策略；狀態讀不到時買單擋、賣單放行並帶標記。
+        halt_ok, halt_why = charter_state_service.order_allowed(act, strategy_name, datetime.now(timezone.utc))
+        if not halt_ok:
+            guard_details["charter_halt"] = {"passed": False, "reason": halt_why}
+            return RiskGatewayResult(
+                allowed=False,
+                severity=RiskSeverity.BLOCKED,
+                primary_blocker="CharterHalt",
+                reasons=[f"[Charter] {halt_why}"],
+                guard_details=guard_details,
+                evaluated_at=now_iso,
+            )
+        if charter_state_service.UNREADABLE_SELL_MARK in halt_why:
+            guard_details["charter_halt"] = {
+                "passed": True, "reason": halt_why, "marker": charter_state_service.UNREADABLE_SELL_MARK}
 
         # ---------------------------------------------------------
         # 1. Trading Protections (Drawdown, Lockout, Cooldown, Churn, Flip-Flop)

@@ -7,14 +7,14 @@ def mock_dependencies():
     repo = MagicMock()
     repo.engine = MagicMock()
     repo.get_all_thresholds.return_value = {}
-    
+
     market_service = MagicMock()
     market_service.get_current_prices = AsyncMock(return_value={"AAPL": 90.0, "NVDA": 130.0, "MSFT": 105.0})
-    
+
     tx_service = MagicMock()
     tx_service.get_user_tickers.return_value = ["AAPL", "NVDA", "MSFT"]
     tx_service.get_position_lots.return_value = []
-    
+
     settings_service = MagicMock()
     settings_map = {
         "enable_fixed_stops": False,  # Default for long-term investing
@@ -31,12 +31,12 @@ def mock_dependencies():
         return settings_map.get(key, default)
     settings_service.get_setting.side_effect = get_setting
     settings_service._settings_map = settings_map
-    
+
     keyword_service = MagicMock()
-    
+
     mock_buffer = MagicMock()
     mock_buffer.try_acquire = AsyncMock(return_value=True)
-    
+
     return {
         "repo": repo,
         "market": market_service,
@@ -88,7 +88,7 @@ async def test_check_position_exits_default_long_term_no_fixed_stops(sentinel):
     sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
     sentinel._acquire_cooldown = AsyncMock(return_value=False)  # multi-factor on cooldown
     sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
-    
+
     triggers = await sentinel._check_position_exits()
     # In long-term mode, neither -10% nor +30% should trigger mechanical fixed exits
     assert len(triggers) == 0
@@ -110,7 +110,7 @@ async def test_check_position_exits_stop_loss_when_enabled(sentinel, mock_depend
     }
     sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
     sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
-    
+
     triggers = await sentinel._check_position_exits()
     assert len(triggers) == 1
     assert triggers[0]["ticker"] == "AAPL"
@@ -136,7 +136,7 @@ async def test_check_position_exits_take_profit_when_enabled(sentinel, mock_depe
     }
     sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
     sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
-    
+
     triggers = await sentinel._check_position_exits()
     assert len(triggers) == 1
     assert triggers[0]["ticker"] == "NVDA"
@@ -162,7 +162,7 @@ async def test_check_position_exits_normal_holding(sentinel):
     sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
     sentinel._acquire_cooldown = AsyncMock(return_value=False)
     sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
-    
+
     triggers = await sentinel._check_position_exits()
     assert len(triggers) == 0
 
@@ -183,14 +183,14 @@ async def test_check_position_exits_multi_factor(sentinel):
     sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
     sentinel._acquire_cooldown = AsyncMock(return_value=True)
     sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
-    
+
     mock_exit_compositor = MagicMock()
     mock_exit_compositor.score_exit = AsyncMock(return_value={
         "composite_score": 7.8,
         "breakdown": [{"agent": "momentum_reversal", "confidence": 9.0}],
         "rationale": "Breakdown below 20MA and thesis violated",
     })
-    
+
     with patch("src.services.exit_compositor_service.ExitCompositorService", return_value=mock_exit_compositor):
         triggers = await sentinel._check_position_exits()
         assert len(triggers) == 1
@@ -214,12 +214,12 @@ async def test_check_position_exits_capital_rotation_success(sentinel):
         }
     }
     sentinel._acquire_cooldown = AsyncMock(return_value=True)
-    
+
     # Candidate opportunity with high score (8.8)
     candidates_override = [
         {"ticker": "TSM", "composite_score": 8.8}
     ]
-    
+
     # Holding has exit_score = 4.5 -> retention conviction = 10.0 - 4.5 = 5.5
     # Delta = 8.8 - 5.5 = 3.3 >= rotation_min_score_delta (2.0)
     # Like-for-like research scores: holding 5.5, candidate 8.8 -> delta 3.3 >= 2.0
@@ -229,7 +229,7 @@ async def test_check_position_exits_capital_rotation_success(sentinel):
         "composite_score": 4.5,
         "breakdown": [{"agent": "fundamental", "confidence": 4.5}],
     })
-    
+
     with patch("src.services.exit_compositor_service.ExitCompositorService", return_value=mock_exit_compositor):
         triggers = await sentinel._check_capital_rotation_opportunities(
             mock_allocation, candidates_override=candidates_override
@@ -258,12 +258,12 @@ async def test_check_position_exits_capital_rotation_below_delta(sentinel):
         }
     }
     sentinel._acquire_cooldown = AsyncMock(return_value=True)
-    
+
     # Candidate score 7.5
     candidates_override = [
         {"ticker": "QCOM", "composite_score": 7.5}
     ]
-    
+
     # Holding has exit_score = 3.0 -> retention conviction = 7.0
     # Delta = 7.5 - 7.0 = 0.5 < rotation_min_score_delta (2.0)
     mock_exit_compositor = MagicMock()
@@ -271,7 +271,7 @@ async def test_check_position_exits_capital_rotation_below_delta(sentinel):
         "composite_score": 3.0,
         "breakdown": [],
     })
-    
+
     with patch("src.services.exit_compositor_service.ExitCompositorService", return_value=mock_exit_compositor):
         triggers = await sentinel._check_capital_rotation_opportunities(
             mock_allocation, candidates_override=candidates_override
@@ -293,7 +293,7 @@ async def test_check_allocation_drift_rebalance_disabled(sentinel, mock_dependen
         }
     }
     sentinel._get_current_allocation = AsyncMock(return_value=mock_allocation)
-    
+
     triggers = await sentinel._check_allocation_drift()
     assert len(triggers) == 0
 
@@ -314,13 +314,13 @@ async def test_handle_position_exits_submits_trades(sentinel):
         }
     ]
     sentinel._acquire_cooldown = AsyncMock(return_value=True)
-    
+
     mock_auto_trade = MagicMock()
     mock_auto_trade.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
-    
+
     with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
         await sentinel._handle_position_exits(exit_triggers)
-        
+
         mock_auto_trade.evaluate_and_execute_trade.assert_called_once()
         call_kwargs = mock_auto_trade.evaluate_and_execute_trade.call_args.kwargs
         assert call_kwargs["ticker"] == "AAPL"
@@ -348,22 +348,22 @@ async def test_handle_position_exits_capital_rotation_executes_buy(sentinel):
         }
     ]
     sentinel._acquire_cooldown = AsyncMock(return_value=True)
-    
+
     mock_auto_trade = MagicMock()
     mock_auto_trade.evaluate_and_execute_trade = AsyncMock(return_value={"status": "success"})
-    
+
     with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
         await sentinel._handle_position_exits(exit_triggers)
-        
+
         assert mock_auto_trade.evaluate_and_execute_trade.call_count == 2
         calls = mock_auto_trade.evaluate_and_execute_trade.call_args_list
-        
+
         # First call: SELL INTC
         assert calls[0].kwargs["ticker"] == "INTC"
         assert calls[0].kwargs["action"] == "SELL"
         assert calls[0].kwargs["quantity"] == 20.0
         assert calls[0].kwargs["strategy_name"] == "capital_rotation"
-        
+
         # Second call: BUY TSM with proceeds ($600.0)
         assert calls[1].kwargs["ticker"] == "TSM"
         assert calls[1].kwargs["action"] == "BUY"
@@ -388,10 +388,10 @@ async def test_handle_position_exits_cooldown_dedup(sentinel):
         }
     ]
     sentinel._acquire_cooldown = AsyncMock(return_value=False)
-    
+
     mock_auto_trade = MagicMock()
     mock_auto_trade.evaluate_and_execute_trade = AsyncMock()
-    
+
     with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=mock_auto_trade):
         await sentinel._handle_position_exits(exit_triggers)
         mock_auto_trade.evaluate_and_execute_trade.assert_not_called()
@@ -847,3 +847,21 @@ async def test_benchmark_core_is_never_exited_by_stop_loss(sentinel, mock_depend
     sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
     triggers = await sentinel._check_position_exits()
     assert [t["ticker"] for t in triggers] == ["AAPL"]
+
+
+@pytest.mark.anyio
+async def test_hedge_etf_position_still_gets_a_whitelisted_stop_loss(sentinel, mock_dependencies):
+    """ADR-005 / DD-1031 D2: the SQQQ hedge is not special-cased out of the stop-loss, and that exit passes the frozen
+    gate. Whether the stops run in production depends on the enable_fixed_stops setting (a settings value, not code).
+    ADR-005 D2：SQQQ 避險部位沒有被排除在停損之外，且停損賣單能通過凍結閘門。"""
+    from src.config.mission import load_mission
+    mock_dependencies["settings"]._settings_map["enable_fixed_stops"] = True
+    sentinel._get_current_allocation = AsyncMock(return_value={"SQQQ": {
+        "shares": 10.0, "quantity": 10.0, "weight": 2.0, "market_value": 90.0,
+        "current_price": 9.0, "avg_price": 10.0}})
+    sentinel._check_capital_rotation_opportunities = AsyncMock(return_value=[])
+
+    triggers = await sentinel._check_position_exits()
+
+    assert [(t["ticker"], t["strategy_name"]) for t in triggers] == [("SQQQ", "stop_loss")]
+    assert triggers[0]["strategy_name"] in load_mission().frozen_exit_whitelist

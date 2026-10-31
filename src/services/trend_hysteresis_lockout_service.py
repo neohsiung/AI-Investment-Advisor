@@ -331,6 +331,7 @@ class TrendHysteresisLockoutService:
                 # Exemption: non-momentum strategies, cash deployments, dip buying, rebalance, and approval flows
                 is_deadband_exempt = (
                     not strat
+                    or strat == "emergency_hedge"  # ADR-005: this BUY was unnamed (exempt) before it was named
                     or any(
                         k in strat
                         for k in (

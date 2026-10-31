@@ -85,6 +85,15 @@ async def test_deadband_blocks_buy_noise():
     assert "Schmitt Trigger Deadband" in block_reason
 
 @pytest.mark.asyncio
+async def test_emergency_hedge_buy_is_exempt_from_the_deadband_like_an_unnamed_buy():
+    """ADR-005: naming the SQQQ hedge BUY must not make it subject to the deadband it was exempt from when unnamed."""
+    service = TrendHysteresisLockoutService(user_id="test_user")
+    for strategy in (None, "emergency_hedge"):
+        allowed, block_reason, _ = await service.evaluate_trade_action(
+            ticker="NVDA", action="BUY", strategy_name=strategy, current_price=132.5, confidence_score=6.0)
+        assert allowed and block_reason is None, strategy
+
+@pytest.mark.asyncio
 async def test_format_trend_report():
     service = TrendHysteresisLockoutService(user_id="test_user")
     metric = await service.evaluate_ticker_trend("NVDA", current_price=135.0, confidence_score=8.5)

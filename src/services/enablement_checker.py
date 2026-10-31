@@ -46,7 +46,10 @@ SIM_RUNS = 2000                 # zero-effect paths / 零效應模擬路徑數
 SIM_DAYS = 252                  # one trading year per path / 每條路徑一個交易年
 SIM_SIGMA = 0.02
 SIM_SEED = 20261019             # fixed, written into the evidence / 固定種子，寫入證據
-DRILL_BUY_STRATEGY = "batch_cash_deployment"      # a non-safety strategy / 非安全策略
+# A real BUY producer and a real non-exit SELL producer, neither on the frozen whitelist.
+# 真實的買單與非出場賣單產生端，都不在凍結白名單內。
+DRILL_BUY_STRATEGY = "cash_deployment"
+DRILL_SELL_STRATEGY = "rebalance_diversification"
 DRILL_SAFE_STRATEGY = "stop_loss"
 CRITERIA = ("adr", "dry_run_90d", "zero_effect_sim", "drill", "8_digests", "no_freeze_30d")
 OK, NOT_OK, NOT_MEASURABLE = "ok", "not_ok", "not_measurable"
@@ -106,7 +109,9 @@ def _c_sim(engine: Any, now: datetime) -> Result:
 def _c_drill(engine: Any, now: datetime) -> Result:
     with sessionmaker(bind=engine)() as s:
         payloads = [(r.payload_json or {}) for r in s.query(CharterEvent).filter(CharterEvent.kind == "drill")]
-    passed = sum(1 for p in payloads if p.get("ok") is True)
+    # A drill recorded before ADR-005 only proved BUYs were refused; it must also show a non-exit SELL was refused.
+    # ADR-005 之前的演練只證明買單被擋，必須同時證明非出場賣單被擋才算。
+    passed = sum(1 for p in payloads if p.get("ok") is True and p.get("nonexit_sell_refused") is True)
     return (OK if passed else NOT_OK), {"drills": len(payloads), "passed": passed}
 
 
@@ -194,8 +199,10 @@ def drill(engine: Any, now: datetime, emit: Optional[Emit] = None) -> Dict[str, 
     that is already frozen / human_stop is left untouched and the drill is recorded as failed. The freeze records the prior
     mode as ``resume_mode``, so if the process dies before ``finally`` runs, the next watchdog pass resumes to that mode
     instead of falling back to dry_run. / 凍結時一併記下原模式，程序中途死掉時，看門狗解除後回到原模式而非 dry_run。
-    停機演練：設 frozen，確認非安全買單被擋、stop_loss 賣單放行，finally 還原原狀態並記一筆 drill 事件。從不排程。"""
-    result: Dict[str, Any] = {"ok": False, "buy_refused": None, "stop_loss_allowed": None, "error": None}
+    停機演練：設 frozen，確認非白名單買單與非出場賣單被擋、stop_loss 賣單放行，finally 還原原狀態並記一筆 drill 事件。
+    從不排程。"""
+    result: Dict[str, Any] = {"ok": False, "buy_refused": None, "nonexit_sell_refused": None,
+                              "stop_loss_allowed": None, "error": None}
     try:
         prior = read_state(engine)
     except Exception as e:
@@ -216,14 +223,17 @@ def drill(engine: Any, now: datetime, emit: Optional[Emit] = None) -> Dict[str, 
         if not n:
             raise RuntimeError("could not set frozen (state changed concurrently)")
         buy_ok, _ = charter_state_service.order_allowed("BUY", DRILL_BUY_STRATEGY, now, engine)
+        nonexit_ok, _ = charter_state_service.order_allowed("SELL", DRILL_SELL_STRATEGY, now, engine)
         sell_ok, _ = charter_state_service.order_allowed("SELL", DRILL_SAFE_STRATEGY, now, engine)
-        result["buy_refused"], result["stop_loss_allowed"] = buy_ok is False, sell_ok is True
+        result["buy_refused"], result["nonexit_sell_refused"] = buy_ok is False, nonexit_ok is False
+        result["stop_loss_allowed"] = sell_ok is True
     except Exception as e:
         logger.warning("drill failed: %s", e)
         result["error"] = f"{type(e).__name__}: {e}"
     finally:
         _restore(engine, now, prior, result)
-    result["ok"] = result["buy_refused"] is True and result["stop_loss_allowed"] is True and result["error"] is None
+    result["ok"] = (result["buy_refused"] is True and result["nonexit_sell_refused"] is True
+                    and result["stop_loss_allowed"] is True and result["error"] is None)
     _emit(emit, "drill", result)
     return result
 

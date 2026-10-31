@@ -87,7 +87,8 @@ async def test_legacy_mode_keeps_sell_and_hedge():
     assert {c.kwargs["quantity"] for c in sells} == {10, 3}
     buy = [c for c in calls if c.kwargs["ticker"] == "SQQQ"]
     assert len(buy) == 1 and buy[0].kwargs["action"] == "BUY" and buy[0].kwargs["quantity"] == 50.0
-    assert "strategy_name" not in buy[0].kwargs
+    assert buy[0].kwargs["strategy_name"] == "emergency_hedge"       # ADR-005: on the frozen exit whitelist
+    assert all(c.kwargs["strategy_name"] == "emergency_exit" for c in sells)
     notify.assert_not_called()
 
 
@@ -118,11 +119,11 @@ async def test_notify_mode_never_logs_the_free_text_rationale():
     svc = _make("notify")
     auto = AsyncMock()
     svc._dispatch_notifications_direct = AsyncMock()
-    secret = "Bearer abcdefghijklmnop1234567890"
+    secret = "Bearer abcdefghijklmnop1234567890"  # pragma: allowlist secret (fake fixture)
     with patch("src.services.automated_trading_service.AutomatedTradingService", return_value=auto), \
          patch("src.services.sentinel_service.logger") as log:
         await svc._trigger_emergency_protocol("user123", f"VIX spike; Authorization: {secret}")
     logged = " ".join(str(c) for c in log.warning.call_args_list)
-    assert "abcdefghijklmnop1234567890" not in logged
+    assert "abcdefghijklmnop1234567890" not in logged  # pragma: allowlist secret (fake fixture)
     assert "VIX spike" not in logged        # free text is not logged at all (CodeQL does not treat redact_secrets as a sanitizer)
     assert "NO orders placed" in logged     # the fact of the emergency and the no-order outcome still are

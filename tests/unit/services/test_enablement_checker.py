@@ -15,6 +15,7 @@ from src.services import enablement_checker as ec
 
 pytestmark = pytest.mark.real_charter_gate                      # the drill exercises the real halt gate
 
+DRILL_PASSED = {"ok": True, "nonexit_sell_refused": True}
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=timezone.utc)        # a Monday
 TABLES = ("charter_state", "charter_events", "parameter_trials", "strategy_trials")
 ADAPTIVE = [p.key for p in load_registry().parameters if p.policy == "adaptive"]
@@ -48,7 +49,7 @@ def _saturdays(n):
 
 def _seed_ok(eng):
     _verdicts(eng, NOW - timedelta(days=91))
-    _add(eng, "drill", NOW - timedelta(days=3), payload={"ok": True})
+    _add(eng, "drill", NOW - timedelta(days=3), payload=DRILL_PASSED)
     for d in _saturdays(8):
         _add(eng, "digest", d)
 
@@ -162,13 +163,13 @@ def test_drill_must_have_passed(engine):
     _add(engine, "drill", NOW - timedelta(days=5), payload={"ok": False})
     _, m = _missing(engine)
     assert set(m) == {"drill"}
-    _add(engine, "drill", NOW - timedelta(days=4), payload={"ok": True})
+    _add(engine, "drill", NOW - timedelta(days=4), payload=DRILL_PASSED)
     assert _missing(engine)[0] is True
 
 
 def test_seven_digests_are_not_enough(engine):
     _verdicts(engine, NOW - timedelta(days=91))
-    _add(engine, "drill", NOW - timedelta(days=3), payload={"ok": True})
+    _add(engine, "drill", NOW - timedelta(days=3), payload=DRILL_PASSED)
     for d in _saturdays(7):
         _add(engine, "digest", d)
     _, m = _missing(engine)
@@ -177,7 +178,7 @@ def test_seven_digests_are_not_enough(engine):
 
 def test_digest_gap_breaks_the_run(engine):
     _verdicts(engine, NOW - timedelta(days=91))
-    _add(engine, "drill", NOW - timedelta(days=3), payload={"ok": True})
+    _add(engine, "drill", NOW - timedelta(days=3), payload=DRILL_PASSED)
     days = _saturdays(10)
     for d in days:
         if d != days[3]:
@@ -188,7 +189,7 @@ def test_digest_gap_breaks_the_run(engine):
 
 def test_two_digests_in_one_week_count_once(engine):
     _verdicts(engine, NOW - timedelta(days=91))
-    _add(engine, "drill", NOW - timedelta(days=3), payload={"ok": True})
+    _add(engine, "drill", NOW - timedelta(days=3), payload=DRILL_PASSED)
     for d in _saturdays(7):
         _add(engine, "digest", d)
     _add(engine, "digest", _saturdays(1)[0] + timedelta(hours=2))
@@ -275,7 +276,8 @@ def test_drill_passes_and_restores_state(engine):
     seen = []
     res = ec.drill(engine, NOW, lambda kind, key, payload: seen.append((kind, payload, _mode(engine))))
     assert res["ok"] is True
-    assert seen == [("drill", {"ok": True, "buy_refused": True, "stop_loss_allowed": True, "error": None},
+    assert seen == [("drill", {"ok": True, "buy_refused": True, "nonexit_sell_refused": True,
+                                  "stop_loss_allowed": True, "error": None},
                      ("tighten_only", False))]
     with sessionmaker(bind=engine)() as s:
         r = s.query(CharterState).one()
@@ -342,3 +344,20 @@ def test_crashed_drill_resumes_to_prior_mode_not_dry_run(engine, monkeypatch):
     assert _mode(engine) == ("frozen", False)
     assert css.apply_watchdog({"breaches": []}, NOW + timedelta(hours=1), engine) == "resume"
     assert _mode(engine) == ("apply", False)
+
+
+def test_drill_buy_strategy_is_a_real_producer_and_not_on_the_whitelist():
+    """The drill used a legacy name nobody sends; it must exercise a strategy a live order path really uses."""
+    from src.config.mission import load_mission
+    assert ec.DRILL_BUY_STRATEGY == "cash_deployment"
+    assert ec.DRILL_BUY_STRATEGY not in load_mission().frozen_exit_whitelist
+    assert ec.DRILL_SELL_STRATEGY not in load_mission().frozen_exit_whitelist
+
+
+def test_a_drill_recorded_before_adr_005_does_not_count(engine):
+    """The old drill only proved BUYs are refused; it says nothing about the sell side that ADR-005 now gates."""
+    _add(engine, "drill", NOW - timedelta(days=3), payload={"ok": True})
+    status, ev = ec._c_drill(engine, NOW)
+    assert status == ec.NOT_OK and ev == {"drills": 1, "passed": 0}
+    _add(engine, "drill", NOW - timedelta(days=2), payload=DRILL_PASSED)
+    assert ec._c_drill(engine, NOW)[0] == ec.OK

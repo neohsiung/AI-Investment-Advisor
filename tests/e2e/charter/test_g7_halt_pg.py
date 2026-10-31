@@ -72,9 +72,11 @@ async def test_k1_breach_freezes_then_nonsafety_buy_refused_and_stop_loss_exit_a
 
     now = frozen_clock.now()
     assert css.order_allowed("BUY", NONSAFETY, now, pg_engine)[0] is False
-    assert css.order_allowed("SELL", "stop_loss", now, pg_engine) == (True, "exempt: not a buy")      # exits keep working
-    assert css.order_allowed("SELL", NONSAFETY, now, pg_engine)[0] is True                           # never trap a position
-    assert css.order_allowed("BUY", "benchmark_parking", now, pg_engine)[0] is True                  # safety control
+    # exits keep working / 出場照常
+    assert css.order_allowed("SELL", "stop_loss", now, pg_engine) == (True, "exempt: frozen exit whitelist")
+    # ADR-005: a non-exit sell is frozen too, and parking may not buy / 非出場賣單也凍結，parking 不能買
+    assert css.order_allowed("SELL", NONSAFETY, now, pg_engine)[0] is False
+    assert css.order_allowed("BUY", "benchmark_parking", now, pg_engine)[0] is False
 
     with patch("src.services.charter_state_service.get_db_engine", return_value=pg_engine):
         res = await UnifiedRiskGatewayService(user_id=USER_ID).evaluate_trade_risk(
@@ -157,7 +159,8 @@ def test_unreadable_state_fails_closed(pg_engine, frozen_clock, caplog):
     with caplog.at_level(logging.WARNING):
         assert css.order_allowed("BUY", NONSAFETY, now, pg_engine)[0] is False
     assert any(r.levelno >= logging.WARNING for r in caplog.records)
-    assert css.order_allowed("SELL", NONSAFETY, now, pg_engine)[0] is True
+    ok, why = css.order_allowed("SELL", NONSAFETY, now, pg_engine)           # never trap a position (marked, ADR-005)
+    assert ok is True and css.UNREADABLE_SELL_MARK in why
     assert css.order_allowed("BUY", "stop_loss", now, pg_engine)[0] is True
     with pytest.raises(Exception):
         css.apply_watchdog(_watchdog("K1"), now, pg_engine)

@@ -2,16 +2,20 @@
 G7：章程停機。K1／K3／K4 違規只凍結「非安全的新買單」，絕不清倉。
 
 R3 money path, so it fails closed:
-  * the gate (``order_allowed`` / ``trading_allowed``) reads ``charter_state`` and an unreadable state blocks the BUY;
-  * SELL is never blocked, and safety-control strategies (StrategyRegistry.is_safety_control: stop_loss,
-    benchmark_parking, ...) keep working while frozen;
+  * the gate (``order_allowed`` / ``trading_allowed``) reads ``charter_state``; an unreadable state blocks the BUY;
+  * while frozen / human_stop only strategies on the mission.yaml ``frozen_exit_whitelist`` (ADR-005) may trade, BUY and
+    SELL alike; the shared StrategyRegistry.is_safety_control list is NOT the gate list (it also names buying
+    strategies);
+  * an unreadable state or whitelist never traps a position: a SELL is allowed and marked
+    ``charter_unreadable_sell_allowed`` (logged at error), a BUY stays blocked;
   * ``human_stop`` stays until a human releases it; the watchdog never clears it;
   * the three manual ``ai_trading_enabled = true`` writers do not touch this table, so they cannot lift a freeze.
 Known, accepted trade-off (ADR-003 operator decision): ``transactions`` has no strategy column, so K3 cannot separate
 safety exits from other sells and may freeze more often than necessary. Frozen never closes a position.
 Clock contract: every function takes ``now``; time columns are written explicitly; no SQL NOW().
-這是 R3 金錢路徑，故 fail-closed：狀態讀不到就擋買單；賣單與安全控制策略永遠放行；human_stop 只有人能解；
-三處手動 ai_trading_enabled=true 不動本表，因此無法解除凍結。K3 無法分離安全出場（transactions 無策略欄），
+這是 R3 金錢路徑，故 fail-closed：狀態讀不到就擋買單；凍結或人工停止時只有 mission.yaml 白名單（ADR-005）內的策略
+能下單，買賣皆然；狀態或白名單讀不到時賣單放行並標記 charter_unreadable_sell_allowed，不把人困在部位裡；
+human_stop 只有人能解；三處手動 ai_trading_enabled=true 不動本表，因此無法解除凍結。K3 無法分離安全出場（transactions 無策略欄），
 可能多凍結，已被操作者接受；凍結不清倉。
 """
 import logging
@@ -19,18 +23,25 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import yaml
 from sqlalchemy import func, update
 from sqlalchemy.orm import sessionmaker
 
+from src.config.mission import load_mission
 from src.data.charter_models import CharterState
 from src.data.database import get_db_engine
-from src.services.strategy_registry import StrategyRegistry
 
 logger = logging.getLogger(__name__)
 
 HALTING_KS = ("K1", "K3", "K4")
 BLOCKING_MODES = ("frozen", "human_stop")
 BUY_ACTIONS = ("BUY", "STRONG_BUY", "ADD", "ACCUMULATE")     # same set as UnifiedRiskGateway.is_buy / 與風控閘門一致
+# Not orders at all. Every OTHER action that is not a BUY is treated as a sell-like order: the executor used to turn
+# any unrecognised string into a SELL, and the trading-protections service also counts CLOSE / STRONG_SELL / LIQUIDATE
+# as sells, so an allow-list of sell names here would let an alias slip past a freeze.
+# 非訂單動作；其餘非買入者一律當賣單處理（執行器曾把任何無法辨識的字串當賣單，白名單式的賣出別名清單會漏）。
+NON_ORDER_ACTIONS = ("HOLD", "NEUTRAL")
+UNREADABLE_SELL_MARK = "charter_unreadable_sell_allowed"     # visible to the caller, see order_allowed
 
 # emit(kind, key, payload): writes the charter_events row and sends the realtime notice (charter_digest_service.
 # notify_event, bound by the task shell; injected here so this module stays import-light). / 由任務外殼綁定。
@@ -73,19 +84,53 @@ def trading_allowed(engine: Any, now: datetime) -> Tuple[bool, str]:
     return True, "ok"
 
 
+def frozen_exit_whitelist() -> frozenset:
+    """Strategies a frozen charter still lets through (mission.yaml ``frozen_exit_whitelist``, ADR-005), normalised.
+    Raises when the mission file cannot be read; the caller decides (the gate fails closed for BUY).
+    凍結時仍放行的策略（mission.yaml 白名單，已正規化）；讀不到就 raise。"""
+    return frozenset(str(n).strip().lower() for n in load_mission().frozen_exit_whitelist)
+
+
 def order_allowed(action: str, strategy_name: Optional[str], now: datetime, engine: Any = None) -> Tuple[bool, str]:
-    """Gate for one order: SELL and safety controls are exempt without reading the state; every other BUY-type
-    action needs ``trading_allowed``. / 單筆訂單閘門：賣單與安全控制免讀狀態直接放行，其他買入類動作需 trading_allowed。"""
-    if str(action).upper().strip() not in BUY_ACTIONS:
-        return True, "exempt: not a buy"
-    if StrategyRegistry.is_safety_control(strategy_name or ""):
-        return True, "exempt: safety control"
+    """Gate for one order (ADR-005). Only HOLD / NEUTRAL are exempt; any other non-BUY action counts as a sell.
+    A strategy on the ``frozen_exit_whitelist`` is exempt without reading the state; every other order needs
+    ``trading_allowed``.
+    Fail-closed asymmetry: an unreadable state or whitelist blocks a BUY but lets a SELL through, marked
+    ``charter_unreadable_sell_allowed`` and logged at error, because blocking a SELL could trap a position.
+    單筆訂單閘門：非買賣動作免檢；白名單策略免讀狀態；其餘需 trading_allowed。讀不到時買單擋、賣單放行並標記。"""
+    act = str(action).upper().strip().replace("-", "_").replace(" ", "_")
+    if act in NON_ORDER_ACTIONS:
+        return True, "exempt: not an order"
+    is_buy = act in BUY_ACTIONS or act == "INCREASE"
+    is_sell = not is_buy
+    name = (strategy_name or "").strip().lower()
+
+    def unreadable(what: str) -> Tuple[bool, str]:
+        if is_sell:
+            logger.error("charter gate: %s unreadable, allowing SELL %r (marked %s)",
+                         what, name or "(none)", UNREADABLE_SELL_MARK)
+            return True, f"{UNREADABLE_SELL_MARK}: {what} unreadable"
+        logger.warning("charter gate: %s unreadable, blocking BUY (fail closed)", what)
+        return False, f"charter {what} unreadable"
+
+    try:
+        whitelist = frozen_exit_whitelist()
+    except (OSError, ValueError, TypeError, AttributeError, yaml.YAMLError) as e:
+        logger.error("charter gate: frozen_exit_whitelist unreadable (%s: %s)", type(e).__name__, e)
+        return unreadable("whitelist")
+    if name in whitelist:
+        return True, "exempt: frozen exit whitelist"
     try:
         eng = engine or get_db_engine()
     except Exception as e:
-        logger.warning("charter gate: no database engine, blocking non-safety BUY (fail closed): %s", e)
-        return False, f"charter_state unreadable: {type(e).__name__}"
-    return trading_allowed(eng, now)
+        logger.warning("charter gate: no database engine (%s)", e)
+        return unreadable("state")
+    ok, why = trading_allowed(eng, now)
+    if ok:
+        return True, why
+    if why.startswith("charter_state unreadable"):
+        return unreadable("state")
+    return False, f"{why}; strategy {name or '(none)'} is not on the frozen exit whitelist"
 
 
 def _emit(emit: Optional[Emit], kind: str, payload: Dict[str, Any]) -> None:

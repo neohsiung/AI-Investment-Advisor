@@ -53,23 +53,59 @@ class Sink:
 
 
 # ── gate ─────────────────────────────────────────────────────────────────────
-def test_sell_always_allowed_when_frozen(engine):
+# DD-2026-1031 / ADR-005: while frozen, BUY and SELL both need a strategy on the mission.yaml exit whitelist.
+# 凍結期間買賣都只放行 mission.yaml 白名單內的策略。
+WHITELIST = ("stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
+             "emergency_hedge")
+NOT_EXITS = ("cash_deployment", "benchmark_parking", "capital_rotation", "rebalance_diversification",
+             "stagnation_pruning", "macro_volatility_hedge", "momentum", "", None)
+
+
+@pytest.mark.parametrize("action", ["HOLD", "NEUTRAL", "hold"])
+def test_non_order_actions_are_exempt_when_frozen(engine, action):
     _seed(engine, "frozen")
-    for action in ("SELL", "sell", "CLOSE"):
-        assert css.order_allowed(action, "momentum", NOW, engine) == (True, "exempt: not a buy")
+    assert css.order_allowed(action, "momentum", NOW, engine) == (True, "exempt: not an order")
 
 
-@pytest.mark.parametrize("strategy", ["stop_loss", "benchmark_parking"])
-def test_safety_control_buy_allowed_when_frozen(engine, strategy):
+@pytest.mark.parametrize("strategy", WHITELIST)
+@pytest.mark.parametrize("action", ["BUY", "SELL"])
+def test_whitelisted_exit_allowed_when_frozen(engine, strategy, action):
     _seed(engine, "frozen")
-    assert css.order_allowed("BUY", strategy, NOW, engine) == (True, "exempt: safety control")
+    assert css.order_allowed(action, strategy, NOW, engine) == (True, "exempt: frozen exit whitelist")
 
 
-@pytest.mark.parametrize("action", ["BUY", "STRONG_BUY", "ADD", "ACCUMULATE"])
-def test_nonsafety_buy_blocked_when_frozen(engine, action):
+@pytest.mark.parametrize("strategy", NOT_EXITS)
+@pytest.mark.parametrize("action", ["BUY", "STRONG_BUY", "ADD", "ACCUMULATE", "INCREASE", "SELL", "TRIM", "REDUCE",
+                                    "EXIT", "CLOSE", "STRONG_SELL", "LIQUIDATE", "close-out", "WATCH", "sell all", ""])
+def test_non_whitelisted_order_blocked_when_frozen(engine, strategy, action):
     _seed(engine, "frozen")
-    ok, why = css.order_allowed(action, "batch_cash_deployment", NOW, engine)
+    ok, why = css.order_allowed(action, strategy, NOW, engine)
     assert ok is False and "frozen" in why
+
+
+def test_strategy_name_is_normalised_before_matching(engine):
+    _seed(engine, "frozen")
+    assert css.order_allowed("SELL", "  Stop_Loss ", NOW, engine)[0] is True
+    assert css.order_allowed("sell", "REBALANCE_DIVERSIFICATION", NOW, engine)[0] is False
+
+
+@pytest.mark.parametrize("mode", ["dry_run", "apply", "tighten_only"])
+def test_unfrozen_state_allows_every_order(engine, mode):
+    _seed(engine, mode)
+    for action, strategy in (("BUY", "cash_deployment"), ("SELL", "rebalance_diversification"), ("SELL", None)):
+        assert css.order_allowed(action, strategy, NOW, engine) == (True, "ok")
+
+
+def test_human_stop_blocks_a_non_whitelisted_sell(engine):
+    _seed(engine, "apply", human_stop=True)
+    assert css.order_allowed("SELL", "rebalance_diversification", NOW, engine)[0] is False
+    assert css.order_allowed("SELL", "stop_loss", NOW, engine)[0] is True
+
+
+def test_is_safety_control_is_not_the_frozen_gate_list():
+    """The shared list keeps its meaning for risk_manager / automated_trading; only this gate uses the whitelist."""
+    from src.services.strategy_registry import StrategyRegistry
+    assert StrategyRegistry.is_safety_control("cash_deployment") is True
 
 
 def test_human_stop_flag_blocks_even_if_mode_looks_normal(engine):
@@ -86,7 +122,7 @@ def test_normal_modes_allow(engine):
 def test_unreadable_state_blocks_buy_with_warning(caplog):
     broken = create_engine("sqlite:///:memory:")           # no charter_state table
     with caplog.at_level(logging.WARNING):
-        ok, why = css.order_allowed("BUY", "batch_cash_deployment", NOW, broken)
+        ok, why = css.order_allowed("BUY", "cash_deployment", NOW, broken)
     assert ok is False and "unreadable" in why
     assert any(r.levelno >= logging.WARNING for r in caplog.records)
 
@@ -95,10 +131,29 @@ def test_missing_row_blocks_buy(engine):
     assert css.trading_allowed(engine, NOW)[0] is False
 
 
-def test_unreadable_state_never_blocks_sell_or_safety():
+def test_unreadable_state_lets_a_sell_through_but_marks_it(caplog):
+    """Q4: a halted state table must not trap a position; the sell is allowed, logged at error, and marked."""
     broken = create_engine("sqlite:///:memory:")
-    assert css.order_allowed("SELL", "momentum", NOW, broken)[0] is True
-    assert css.order_allowed("BUY", "stop_loss", NOW, broken)[0] is True
+    with caplog.at_level(logging.ERROR):
+        ok, why = css.order_allowed("SELL", "rebalance_diversification", NOW, broken)
+    assert ok is True and css.UNREADABLE_SELL_MARK in why
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
+    assert css.order_allowed("BUY", "stop_loss", NOW, broken)[0] is True      # whitelisted: no state read needed
+    assert css.order_allowed("BUY", "cash_deployment", NOW, broken)[0] is False
+
+
+def test_unreadable_whitelist_blocks_buy_and_marks_sell(engine, monkeypatch, caplog):
+    _seed(engine, "frozen")
+
+    def boom():
+        raise FileNotFoundError("mission.yaml gone")
+    monkeypatch.setattr(css, "frozen_exit_whitelist", boom)
+    with caplog.at_level(logging.ERROR):
+        buy_ok, buy_why = css.order_allowed("BUY", "stop_loss", NOW, engine)
+        sell_ok, sell_why = css.order_allowed("SELL", "stop_loss", NOW, engine)
+    assert buy_ok is False and "whitelist unreadable" in buy_why
+    assert sell_ok is True and css.UNREADABLE_SELL_MARK in sell_why
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
 
 
 # ── watchdog transitions ─────────────────────────────────────────────────────
@@ -236,3 +291,14 @@ def test_release_is_a_noop_on_a_watchdog_freeze(engine):
     css.apply_watchdog(_result("K1"), NOW, engine)
     css.human_release(engine, NOW)
     assert _row(engine)["mode"] == "frozen"
+
+
+@pytest.mark.parametrize("action", ["CLOSE", "STRONG_SELL", "LIQUIDATE", "WATCH", "sell all"])
+def test_sell_aliases_and_unknown_actions_are_gated_like_a_sell(engine, action):
+    """A sell alias must not read as 'not an order': the executor turns any non-BUY string into a SELL."""
+    _seed(engine, "frozen")
+    assert css.order_allowed(action, "rebalance_diversification", NOW, engine)[0] is False
+    assert css.order_allowed(action, "stop_loss", NOW, engine)[0] is True
+    broken = create_engine("sqlite:///:memory:")
+    ok, why = css.order_allowed(action, "rebalance_diversification", NOW, broken)
+    assert ok is True and css.UNREADABLE_SELL_MARK in why

@@ -1,6 +1,6 @@
 {
  "ruff_version": "0.11.7",
- "total": 7372,
+ "total": 7370,
  "counts": {
   ".agent/skills/ci-test/scripts/ci_test.py::BLE001": 2,
   ".agent/skills/ci-test/scripts/ci_test.py::E501": 2,
@@ -1768,7 +1768,7 @@
   "tests/e2e/charter/test_g6_engine_pg.py::E501": 3,
   "tests/e2e/charter/test_g6_engine_pg.py::F401": 1,
   "tests/e2e/charter/test_g7_halt_pg.py::B017": 1,
-  "tests/e2e/charter/test_g7_halt_pg.py::E501": 4,
+  "tests/e2e/charter/test_g7_halt_pg.py::E501": 2,
   "tests/e2e/charter/test_g8_digest_pg.py::E731": 1,
   "tests/e2e/charter/test_harness_selfcheck.py::E501": 1,
   "tests/e2e/test_bdd_e2e_scenarios.py::F401": 4,
