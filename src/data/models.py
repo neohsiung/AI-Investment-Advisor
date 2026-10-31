@@ -33,7 +33,7 @@ from src.data.base import Base  # noqa: E402  (shared Base; lets charter_models 
 
 class User(Base):
     __tablename__ = 'users'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String, unique=True, nullable=False)
     name = Column(String)
@@ -49,7 +49,7 @@ class SubscriptionPlan(Base):
     Defines available subscription plans (Free, Pro, Enterprise) and their quotas [Phase 16].
     """
     __tablename__ = 'subscription_plans'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String, unique=True, nullable=False) # e.g., 'Free', 'Pro', 'Enterprise'
     monthly_usd_limit = Column(Numeric(18, 2), default=0.0)
@@ -63,7 +63,7 @@ class UserIdentity(Base):
     Stores multiple identity providers (Email, LINE, Telegram, Phone) linked to a single UUID user.
     """
     __tablename__ = 'user_identities'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     provider = Column(String, nullable=False) # 'email', 'line', 'telegram', 'phone'
@@ -73,7 +73,7 @@ class UserIdentity(Base):
 
 class Setting(Base):
     __tablename__ = 'settings'
-    
+
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
     key = Column(String, primary_key=True)
     value = Column(JSON)
@@ -81,7 +81,7 @@ class Setting(Base):
 
 class EventLog(Base):
     __tablename__ = 'event_logs'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='SET NULL'))
     event_type = Column(String, nullable=False)
@@ -93,7 +93,7 @@ class EventLog(Base):
 
 class ChannelVerification(Base):
     __tablename__ = 'channel_verifications'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String)
     channel = Column(String)
@@ -106,7 +106,7 @@ class ChannelVerification(Base):
 
 class RiskKeyword(Base):
     __tablename__ = 'risk_keywords'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     keyword = Column(String, nullable=False)
     weight = Column(Numeric(18, 8), default=0.5)
@@ -132,7 +132,7 @@ class PromptCache(Base):
     Semantic Cache for LLM Prompts using pgvector [Phase 13].
     """
     __tablename__ = 'prompt_cache'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), index=True)
     prompt_hash = Column(String, index=True) # Exact match optimization
@@ -147,7 +147,7 @@ class LLMUsageLog(Base):
     Tracks LLM API usage and costs for financial audit and observability [Phase 14].
     """
     __tablename__ = 'llm_usage_logs'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='SET NULL'), index=True)
     agent_name = Column(String, index=True)
@@ -165,7 +165,7 @@ class ResponseFeedback(Base):
     Captures user feedback (👍/👎) for Reinforcement Learning from Human Feedback (RLHF) [Phase 18].
     """
     __tablename__ = 'response_feedback'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), index=True)
     prompt_hash = Column(String, index=True)
@@ -181,7 +181,7 @@ class UserCustomPrompt(Base):
     These override the default static prompt files.
     """
     __tablename__ = 'user_custom_prompts'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), index=True)
     agent_name = Column(String, index=True)
@@ -336,7 +336,7 @@ class Transaction(Base):
     `transactions` — Core ledger for all cash and asset movements.
     """
     __tablename__ = 'transactions'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     ticker = Column(String, nullable=False, index=True)
@@ -348,7 +348,11 @@ class Transaction(Base):
     amount = Column(Numeric(18, 8), nullable=False)
     currency = Column(String, default='USD')
     leverage = Column(Numeric(18, 8), default=1.0)
-    source_file = Column(String) # e.g., 'etoro_export.csv', 'manual', 'ETORO_SYNC'
+    # Observed values (select source_file, count(*) from transactions group by 1):
+    #   'etoro', 'eToro' (broker.get_name() of executed orders; the spelling differs), 'ETORO_SYNC' (history import),
+    #   'etoro_history', 'etoro_pos_<id>', 'MANUAL_CAPITAL', 'LEDGER_ANCHOR'.
+    # Matching is exact in some queries and a LOWER() prefix in others (known, not fixed here).
+    source_file = Column(String)
     entry_category = Column(String, default='trade') # trade, capital_flow, sync_adjustment
     raw_data = Column(_JSONB())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -387,7 +391,7 @@ class PositionLot(Base):
     `position_lots` — Tracks specific tax lots for O(1) avg_cost and PnL calculation.
     """
     __tablename__ = 'position_lots'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     ticker = Column(String, nullable=False)
@@ -419,7 +423,7 @@ class DailySnapshot(Base):
     `daily_snapshots` — Historical EOD account balances and performance metrics.
     """
     __tablename__ = 'daily_snapshots'
-    
+
     date = Column(Date, primary_key=True)
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
     account_id = Column(String, primary_key=True, default='')
@@ -437,7 +441,7 @@ class PortfolioSnapshot(Base):
     `portfolio_snapshots` — Redundant but used in some legacy views.
     """
     __tablename__ = 'portfolio_snapshots'
-    
+
     id = Column(Integer, primary_key=True)
     user_id = Column(String, index=True)
     account_value = Column(Numeric(18, 2))
@@ -451,7 +455,7 @@ class CashFlow(Base):
     `cash_flows` — Records of capital injections and withdrawals.
     """
     __tablename__ = 'cash_flows'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), index=True)
     date = Column(Date)
@@ -468,7 +472,7 @@ class MemoryEmbedding(Base):
     `memory_embeddings` — Long-term semantic memory for agents.
     """
     __tablename__ = 'memory_embeddings'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     content = Column(Text, nullable=False)
@@ -483,7 +487,7 @@ class CouncilMinute(Base):
     `council_minutes` — Records of Agent Council deliberations and consensus.
     """
     __tablename__ = 'council_minutes'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     session_id = Column(String, nullable=False, index=True)
@@ -504,7 +508,7 @@ class ReportJob(Base):
     `report_jobs` — Tracks the state of complex multi-stage report generation.
     """
     __tablename__ = 'report_jobs'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     report_type = Column(String, nullable=False)
@@ -529,7 +533,7 @@ class JobTelemetry(Base):
     `job_telemetry` — Fine-grained timing and token usage for report job stages.
     """
     __tablename__ = 'job_telemetry'
-    
+
     id = Column(Integer, primary_key=True)
     job_id = Column(String, ForeignKey('report_jobs.id', ondelete='CASCADE'), nullable=False, index=True)
     stage = Column(Integer)
@@ -552,7 +556,7 @@ class Report(Base):
     `reports` — Generated analysis reports (Daily, Weekly, Monthly).
     """
     __tablename__ = 'reports'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     report_type = Column(String, nullable=False) # daily, weekly, monthly, thematic
@@ -573,7 +577,7 @@ class Recommendation(Base):
     `recommendations` — Specific trade or action recommendations from agents.
     """
     __tablename__ = 'recommendations'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     date = Column(DateTime(timezone=True), server_default=func.now())
@@ -588,7 +592,7 @@ class CognitiveMemory(Base):
     `cognitive_memories` — Medium-term structured storage for agent insights.
     """
     __tablename__ = 'cognitive_memories'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     agent_name = Column(String, nullable=False)
@@ -608,7 +612,7 @@ class InvestmentSkill(Base):
     `investment_skills` — Learned investment techniques and conditions.
     """
     __tablename__ = 'investment_skills'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     name = Column(String, nullable=False)
@@ -634,7 +638,7 @@ class SkillLearningConfig(Base):
     `skill_learning_config` — Per-user configuration for skill learning.
     """
     __tablename__ = 'skill_learning_config'
-    
+
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
     merge_threshold = Column(Numeric(18, 8), default=0.70)
     max_token_budget = Column(Integer, default=2000)
@@ -651,7 +655,7 @@ class WebPushSubscription(Base):
     `web_push_subscriptions` — Browser push notification subscriptions.
     """
     __tablename__ = 'web_push_subscriptions'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
     subscription_json = Column(_JSONB(), nullable=False)
@@ -663,7 +667,7 @@ class AgentFeedback(Base):
     `agent_feedback` — Direct feedback on agent responses for reinforcement learning.
     """
     __tablename__ = 'agent_feedback'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     agent_name = Column(String, nullable=False)
     context_embedding = Column(Vector(1536))
@@ -678,7 +682,7 @@ class AgentReview(Base):
     `agent_reviews` — HR 360 reviews where agents review each other.
     """
     __tablename__ = 'agent_reviews'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     reviewer = Column(String, nullable=False)
     reviewee = Column(String, nullable=False)
@@ -692,7 +696,7 @@ class SchedulerLog(Base):
     `scheduler_logs` — Logs for background job execution.
     """
     __tablename__ = 'scheduler_logs'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     job_name = Column(String, nullable=False)
@@ -707,7 +711,7 @@ class SentinelThreshold(Base):
     defined here so Alembic correctly tracks the schema.
     """
     __tablename__ = 'sentinel_thresholds'
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     key = Column(String, unique=True, nullable=False)
     value = Column(Numeric(18, 8), nullable=False)

@@ -34,7 +34,7 @@
 
 - **ADR-002（2026-10-17）**：啟用基準停泊——閒置現金分批買入 SPY（槓桿 1、只買不賣、有區間與單筆上限），讓 `default_allocation: benchmark` 成為實際行為而非願景。依據：SPY 買賣價差約 0.004%、槓桿 1 的多單不是 CFD、支援零股、最小 $10；**未驗證**：每筆下單手續費、台灣稅務居民的股息預扣（估約每年 0.4% 拖累）。回滾：`benchmark_parking_enabled=false`。
 - **自動調整只能更保守**：任何自動發生的調整只能收緊；放寬一律是人核准的提案（設計見 自適應閘門與證據迴圈）。
-- **新棘輪**：演化模組寫設定的檢查現在也涵蓋 `settings_repo.set(` 與 `save_setting(`；`evaluate_and_execute_trade` 的呼叫點數量被凍結，只能減少（目前 8 個檔案共 17 處）。
+- **新棘輪**：演化模組寫設定的檢查現在也涵蓋 `settings_repo.set(` 與 `save_setting(`；`evaluate_and_execute_trade` 的呼叫點數量被凍結，只能減少（目前的數量：`.venv/bin/python -c "from tests.invariants.test_baselines import executor_call_sites as f; print(f())"`）。
 - 驗證：`.venv/bin/python -m pytest tests/invariants -q`；停泊計畫 `curl -s localhost:8088/api/v1/mission/parking-plan`。
 
 ## 🇺🇸 English

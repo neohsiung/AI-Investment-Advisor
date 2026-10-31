@@ -3,7 +3,7 @@ logger = setup_logger("AutomatedTradingService")
 
 import os
 import typing
-from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
+from typing import Dict, Tuple, Any, Optional, Callable, Dict, Tuple, Any, Optional, Callable
 from datetime import datetime, timezone
 import asyncio
 import httpx
@@ -157,6 +157,13 @@ class AutomatedTradingService:
         if not sym_upper or sym_upper in RESERVED_NON_EQUITY_SYMBOLS:
             logger.info(f"Skipping non-equity pseudo symbol '{ticker}' (liquidity/cash instruction, not trade order)")
             return {"status": "skipped", "reason": f"Non-equity pseudo symbol '{ticker}' is not an executable asset"}
+
+        # 0a. Action guard: only BUY / SELL can become an order. Anything else (ADD, HOLD, "", a typo) used to fall
+        # through to a SELL; it is rejected here, before any side effect. 下單動作只收 BUY／SELL，其餘拒絕，不再落成賣單。
+        action = str(action or "").strip().upper()
+        if action not in ("BUY", "SELL"):
+            logger.error("Rejected order for %s: unsupported action %r (only BUY/SELL can be executed)", ticker, action)
+            return {"status": "rejected", "reason": f"action_invalid: {action or '(empty)'}", "ticker": ticker}
 
         # v4.2.2: Ensure notification service is correctly configured for this user
         if not self.notification_service:
@@ -619,7 +626,7 @@ class AutomatedTradingService:
             min_threshold = 3.0
 
         # Macro stress hurdle adjustment: elevate BUY hurdle during systemic turmoil
-        if action.upper() in ("BUY", "STRONG_BUY"):
+        if action == "BUY":  # action is already normalised to BUY / SELL at the entry
             try:
                 from src.services.event_impact_service import EventImpactService
                 impact_svc = EventImpactService(user_id=user_id)
@@ -684,7 +691,7 @@ class AutomatedTradingService:
             return {"status": "skipped", "reason": f"Score {normalized_confidence:.1f} below minimum threshold {min_threshold:.1f}"}
 
         # Prepare Order object
-        order_action = OrderAction.BUY if action.upper() == "BUY" else OrderAction.SELL
+        order_action = OrderAction(action)
 
         # v6.0: Position Sizing Guard (現金水位與持倉比例守衛)
         # ─────────────────────────────────────────────────
@@ -1829,67 +1836,3 @@ class AutomatedTradingService:
             logger.info(f"Trade notification dispatched via direct NotificationService for {user_id}")
         except Exception as e:
             logger.error(f"Failed to dispatch trade notification: {e}")
-
-    async def process_council_decision(self, user_id: str, decision_text: str) -> List[Dict[str, Any]]:
-        """
-        Extract trade recommendations from Council decisions and execute them based on confidence.
-        從評議會決策中提取交易建議，並根據信心分數執行。
-        """
-        from src.agents.skills.skill_loader import SkillLoader
-        import json
-
-        logger.info(f"AutomatedTradingService: Extracting actions from Council decision for user {user_id}")
-        loader = SkillLoader(user_id=user_id)
-
-        # Skillified: Use extract_actions skill instead of dedicated agent
-        trades_json = await loader.run_skill("extract_actions", user_id=user_id, decision_text=decision_text)
-        trades = json.loads(trades_json)
-
-        if not trades:
-            logger.info("AutomatedTradingService: No actionable trades found in Council decision.")
-            return []
-
-        results = []
-        for trade in trades:
-            ticker = trade.get("ticker")
-            action = trade.get("action")
-            confidence = int(trade.get("confidence", 5))
-            reason = trade.get("reason", "Council Recommendation")
-
-            # v7.0: Support both legacy (quantity) and new (weight-based) formats
-            quantity = None
-            target_weight = None
-            current_weight = None
-            delta_weight = None
-            portfolio_value = None
-
-            # Try weight-based format first
-            if "target_weight" in trade and "delta_weight" in trade:
-                target_weight = float(trade.get("target_weight"))
-                current_weight = float(trade.get("current_weight", 0))
-                delta_weight = float(trade.get("delta_weight"))
-                portfolio_value = float(trade.get("portfolio_value", 0))
-                logger.info(f"AutomatedTradingService: Extracted weight-based trade -> {action} {ticker} (target_weight={target_weight}%, delta={delta_weight:+.2%}, Confidence: {confidence})")
-            else:
-                # Legacy format: use quantity
-                quantity = float(trade.get("quantity", 1.0))
-                logger.info(f"AutomatedTradingService: Extracted legacy trade -> {action} {quantity} {ticker} (Confidence: {confidence})")
-
-            if ticker and action:
-                res = await self.evaluate_and_execute_trade(
-                    user_id=user_id,
-                    ticker=ticker,
-                    action=action,
-                    quantity=quantity,
-                    confidence_score=confidence,
-                    rationale=reason,
-                    target_weight=target_weight,
-                    current_weight=current_weight,
-                    delta_weight=delta_weight,
-                    portfolio_value=portfolio_value
-                )
-                results.append(res)
-            else:
-                logger.warning(f"AutomatedTradingService: Missing required fields in extracted trade: {trade}")
-
-        return results

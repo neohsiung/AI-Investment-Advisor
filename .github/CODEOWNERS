@@ -9,11 +9,24 @@
 /src/services/batch_cash_deployment_service.py    @neohsiung
 /config/mission.yaml                              @neohsiung
 /src/config/mission.py                            @neohsiung
+/src/services/charter_state_service.py            @neohsiung
+/src/services/strategy_registry.py                @neohsiung
+/src/services/enablement_checker.py               @neohsiung
+/src/services/actionable_alert_service.py         @neohsiung
+/src/infrastructure/risk_manager.py               @neohsiung
+/src/domain/strategy_names.py                     @neohsiung
 # R2 — decisions, config, schema, deploy path
 /config/                                          @neohsiung
 /prompts/                                         @neohsiung
 /alembic/                                         @neohsiung
 /src/services/sentinel_service.py                 @neohsiung
+/src/services/friction_aware_tranche_sizing_service.py @neohsiung
+/src/services/trend_hysteresis_lockout_service.py @neohsiung
+/src/services/socket_manager.py                   @neohsiung
+/src/agents/action_extractor.py                   @neohsiung
+/src/services/workflow_service.py                 @neohsiung
+/src/services/order_reconciliation_service.py     @neohsiung
+/src/services/order_inflight_lock_service.py      @neohsiung
 /src/infrastructure/tasks.py                      @neohsiung
 /src/infrastructure/celery_app.py                 @neohsiung
 /start.sh                                         @neohsiung

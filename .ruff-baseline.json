@@ -1,6 +1,6 @@
 {
  "ruff_version": "0.11.7",
- "total": 7373,
+ "total": 7370,
  "counts": {
   ".agent/skills/ci-test/scripts/ci_test.py::BLE001": 2,
   ".agent/skills/ci-test/scripts/ci_test.py::E501": 2,
@@ -777,9 +777,9 @@
   "src/services/automated_trading_service.py::BLE001": 38,
   "src/services/automated_trading_service.py::C901": 3,
   "src/services/automated_trading_service.py::E402": 14,
-  "src/services/automated_trading_service.py::E501": 47,
+  "src/services/automated_trading_service.py::E501": 46,
   "src/services/automated_trading_service.py::F401": 5,
-  "src/services/automated_trading_service.py::F811": 6,
+  "src/services/automated_trading_service.py::F811": 5,
   "src/services/automated_trading_service.py::F841": 1,
   "src/services/automated_trading_service.py::PLR0912": 3,
   "src/services/automated_trading_service.py::PLR0913": 5,
@@ -1999,7 +1999,7 @@
   "tests/unit/services/test_analytics_service.py::E501": 1,
   "tests/unit/services/test_automated_trading_service.py::E501": 27,
   "tests/unit/services/test_automated_trading_service.py::E701": 4,
-  "tests/unit/services/test_automated_trading_service.py::F401": 3,
+  "tests/unit/services/test_automated_trading_service.py::F401": 2,
   "tests/unit/services/test_automated_trading_service.py::F841": 2,
   "tests/unit/services/test_autonomous_reporting_service.py::E501": 1,
   "tests/unit/services/test_autonomous_reporting_service.py::E701": 10,
