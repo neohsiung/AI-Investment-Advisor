@@ -29,7 +29,7 @@ def test_all_and_legacy_are_disjoint_and_universe_is_their_union_with_proposals(
 
 
 def test_registered_safety_set_is_the_fallback_set_minus_the_self_registered_hedge():
-    assert sn.SAFETY_CONTROLS - sn.SAFETY_REGISTERED == {sn.MACRO_VOLATILITY_HEDGE}
+    assert {sn.MACRO_VOLATILITY_HEDGE} == sn.SAFETY_CONTROLS - sn.SAFETY_REGISTERED
     assert len(sn.SAFETY_CONTROLS) == 12 and len(sn.SAFETY_REGISTERED) == 11
 
 
@@ -64,22 +64,26 @@ def test_the_old_open_keyword_matches_no_known_name_so_it_has_no_role():
 
 
 def test_roles_that_were_exact_tuples_are_reproduced_member_for_member():
-    assert sn.CHURN_COOLDOWN_EXEMPT == {"stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit",
-                                        "emergency_liquidation", "position_exit"}
-    assert sn.STOP_LOSS_FAMILY == {"stop_loss", "trailing_stop_loss", "trailing_stop"}
-    assert sn.INFERENCE_ROUTINE == {"rebalance", "batch_cash_deployment", "tactical_factor_rotation",
-                                    "automated_trading"}
-    assert sn.NO_DYNAMIC_SCALING == {"cash_deployment", "rebalance_diversification", "portfolio_rebalance",
-                                     "concentration_rebalance"}
-    assert sn.AUTO_EXEC_REBALANCE == sn.NO_DYNAMIC_SCALING | {"capital_rotation"}
-    assert sn.DAILY_LIMIT_REBALANCE == {"rebalance_diversification", "portfolio_rebalance",
-                                        "concentration_rebalance", "tactical_factor_rotation"}
-    assert sn.REPLACEMENT_PLAN_EXEMPT == {"stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit",
-                                          "macro_volatility_hedge"}
-    assert sn.SAFETY_CONTROLS == {"stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit",
-                                  "position_exit", "take_profit", "capital_rotation", "rebalance_diversification",
-                                  "cash_deployment", "stagnation_pruning", "macro_volatility_hedge",
-                                  "benchmark_parking"}
+    expected = {
+        "CHURN_COOLDOWN_EXEMPT": {"stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit",
+                                  "emergency_liquidation", "position_exit"},
+        "STOP_LOSS_FAMILY": {"stop_loss", "trailing_stop_loss", "trailing_stop"},
+        "INFERENCE_ROUTINE": {"rebalance", "batch_cash_deployment", "tactical_factor_rotation",
+                              "automated_trading"},
+        "NO_DYNAMIC_SCALING": {"cash_deployment", "rebalance_diversification", "portfolio_rebalance",
+                               "concentration_rebalance"},
+        "AUTO_EXEC_REBALANCE": {"cash_deployment", "rebalance_diversification", "portfolio_rebalance",
+                                "concentration_rebalance", "capital_rotation"},
+        "DAILY_LIMIT_REBALANCE": {"rebalance_diversification", "portfolio_rebalance", "concentration_rebalance",
+                                  "tactical_factor_rotation"},
+        "REPLACEMENT_PLAN_EXEMPT": {"stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit",
+                                    "macro_volatility_hedge"},
+        "SAFETY_CONTROLS": {"stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit",
+                            "take_profit", "capital_rotation", "rebalance_diversification", "cash_deployment",
+                            "stagnation_pruning", "macro_volatility_hedge", "benchmark_parking"},
+    }
+    for role_name, members in expected.items():
+        assert set(getattr(sn, role_name)) == members, role_name
 
 
 def test_roles_match_the_lists_still_in_the_services():

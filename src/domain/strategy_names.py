@@ -92,18 +92,20 @@ CHURN_COOLDOWN_EXEMPT: FrozenSet[str] = frozenset({
     STOP_LOSS, TRAILING_STOP_LOSS, TRAILING_STOP, EMERGENCY_EXIT, EMERGENCY_LIQUIDATION, POSITION_EXIT,
 })
 
-# automated_trading_service: the stop-loss family that auto-executes before any approval check. / 停損家族，先於審批自動執行。
+# automated_trading_service: the stop-loss family, auto-executed before approval. / 停損家族，先於審批自動執行。
 STOP_LOSS_FAMILY: FrozenSet[str] = frozenset({STOP_LOSS, TRAILING_STOP_LOSS, TRAILING_STOP})
 
 # automated_trading_service: orders treated as "routine" by the inference hurdle gate. / 推論門檻閘門的例行單。
-INFERENCE_ROUTINE: FrozenSet[str] = frozenset({REBALANCE, BATCH_CASH_DEPLOYMENT, TACTICAL_FACTOR_ROTATION, AUTOMATED_TRADING})
+INFERENCE_ROUTINE: FrozenSet[str] = frozenset({
+    REBALANCE, BATCH_CASH_DEPLOYMENT, TACTICAL_FACTOR_ROTATION, AUTOMATED_TRADING,
+})
 
 # automated_trading_service: BUYs whose size is not rescaled by the dynamic sizer. / 動態倉位縮放不處理的買單。
 NO_DYNAMIC_SCALING: FrozenSet[str] = frozenset({
     CASH_DEPLOYMENT, REBALANCE_DIVERSIFICATION, PORTFOLIO_REBALANCE, CONCENTRATION_REBALANCE,
 })
 
-# automated_trading_service: scheduled / model-authorised flows that are auto-approved. / 排程或模型授權、自動放行的流程。
+# automated_trading_service: scheduled / model-authorised flows, auto-approved. / 排程或模型授權、自動放行的流程。
 AUTO_EXEC_REBALANCE: FrozenSet[str] = frozenset({
     CASH_DEPLOYMENT, REBALANCE_DIVERSIFICATION, PORTFOLIO_REBALANCE, CONCENTRATION_REBALANCE, CAPITAL_ROTATION,
 })

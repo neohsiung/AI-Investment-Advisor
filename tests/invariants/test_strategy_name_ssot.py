@@ -1,5 +1,6 @@
 """Strategy-name ratchet: decision code must not grow new hand-copied name lists, substring tests on names, or
-producers that send a name nobody defined. / 策略名棘輪：決策程式不得新增手抄名單、對名稱做子字串比對，或送出沒人定義的名稱。
+producers that send a name nobody defined.
+策略名棘輪：決策程式不得新增手抄名單、對名稱做子字串比對，或送出沒人定義的名稱。
 
 Four AST measurements over `src/` and `services/` (nothing is imported). The definition lives in
 `src/domain/strategy_names.py`; this file only keeps copies from coming back.
@@ -66,12 +67,38 @@ def _is_keyword_scan(node: ast.AST) -> bool:
 
 
 def _is_substring_test(node: ast.AST) -> bool:
-    """`"stop_loss" in strat` — a literal strategy name tested against a non-literal (substring / membership by hand)."""
+    """`"stop_loss" in strat` — a literal strategy name tested against a non-literal (hand-made membership)."""
     if not isinstance(node, ast.Compare) or not any(isinstance(o, (ast.In, ast.NotIn)) for o in node.ops):
         return False
     left = _str(node.left)
     right = node.comparators[0]
     return left in NAMES and not isinstance(right, (ast.Tuple, ast.List, ast.Set, ast.Dict))
+
+
+def _sent_strategy_values(n: ast.AST) -> list[ast.AST]:
+    """The expressions an order call (or a ``{"strategy_name": ...}`` dict) passes as the strategy name."""
+    sent: list[ast.AST] = []
+    if isinstance(n, ast.Call) and getattr(n.func, "attr", getattr(n.func, "id", "")) in ORDER_CALLS:
+        sent += [k.value for k in n.keywords if k.arg == "strategy_name"]
+    if isinstance(n, ast.Dict):
+        sent += [v for k, v in zip(n.keys, n.values, strict=True) if _str(k) == "strategy_name"]
+    return sent
+
+
+def _measure_file(tree: ast.AST, rel: str) -> tuple[dict[str, int], list[str]]:
+    counts = dict.fromkeys(KEYS, 0)
+    undefined: list[str] = []
+    for n in ast.walk(tree):
+        counts["literal_name_lists"] += _is_name_list(n)
+        counts["substring_tests"] += _is_keyword_scan(n) or _is_substring_test(n)
+        for v in _sent_strategy_values(n):
+            literal = _str(v)
+            if literal is not None:
+                if literal not in PRODUCIBLE:
+                    undefined.append(f"{rel}:{getattr(v, 'lineno', '?')} {literal!r}")
+            elif not (isinstance(v, ast.Constant) and v.value is None):
+                counts["dynamic_strategy_names"] += 1
+    return counts, undefined
 
 
 def measure() -> dict:
@@ -83,23 +110,8 @@ def measure() -> dict:
             tree = ast.parse(p.read_text(encoding="utf-8"))
         except SyntaxError:
             continue
-        counts = dict.fromkeys(KEYS, 0)
-        for n in ast.walk(tree):
-            if _is_name_list(n):
-                counts["literal_name_lists"] += 1
-            if _is_keyword_scan(n) or _is_substring_test(n):
-                counts["substring_tests"] += 1
-            sent: list[ast.AST] = []
-            if isinstance(n, ast.Call) and getattr(n.func, "attr", getattr(n.func, "id", "")) in ORDER_CALLS:
-                sent += [k.value for k in n.keywords if k.arg == "strategy_name"]
-            if isinstance(n, ast.Dict):
-                sent += [v for k, v in zip(n.keys, n.values) if _str(k) == "strategy_name"]
-            for v in sent:
-                if _str(v) is not None:
-                    if _str(v) not in PRODUCIBLE:
-                        undefined.append(f"{rel}:{getattr(v, 'lineno', '?')} {_str(v)!r}")
-                elif not (isinstance(v, ast.Constant) and v.value is None):
-                    counts["dynamic_strategy_names"] += 1
+        counts, bad = _measure_file(tree, rel)
+        undefined += bad
         for k in KEYS:
             if counts[k]:
                 out[k][rel] = counts[k]
