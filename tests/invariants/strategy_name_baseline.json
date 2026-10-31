@@ -1,0 +1,37 @@
+{
+  "literal_name_lists": {
+    "src/infrastructure/risk_manager.py": 1,
+    "src/services/automated_trading_service.py": 7,
+    "src/services/autonomous_reporting_service.py": 1,
+    "src/services/friction_aware_tranche_sizing_service.py": 1,
+    "src/services/hard_token_budget_guard_service.py": 1,
+    "src/services/inference_hurdle_gate_service.py": 1,
+    "src/services/proposal_shadow_service.py": 2,
+    "src/services/strategy_registry.py": 2,
+    "src/services/trend_hysteresis_lockout_service.py": 1,
+    "src/services/unified_risk_gateway_service.py": 1
+  },
+  "substring_tests": {
+    "src/agents/action_extractor.py": 1,
+    "src/services/adaptive_council_meta_learning_service.py": 1,
+    "src/services/autonomous_reporting_service.py": 8,
+    "src/services/cognitive_blindspot_service.py": 1,
+    "src/services/conversation_router.py": 5,
+    "src/services/friction_aware_tranche_sizing_service.py": 2,
+    "src/services/sentinel_service.py": 5,
+    "src/services/trend_hysteresis_lockout_service.py": 2,
+    "src/services/unified_risk_gateway_service.py": 1,
+    "src/services/workflow_service.py": 1
+  },
+  "dynamic_strategy_names": {
+    "src/repositories/backtest_repository.py": 1,
+    "src/repositories/shadow_ledger_repository.py": 1,
+    "src/services/automated_trading_service.py": 2,
+    "src/services/confidence_rebalance_service.py": 1,
+    "src/services/etoro_service.py": 1,
+    "src/services/order_inflight_lock_service.py": 1,
+    "src/services/proposal_shadow_service.py": 1,
+    "src/services/sentinel_service.py": 4,
+    "src/services/tactical_factor_rotation_service.py": 3
+  }
+}
