@@ -1,4 +1,4 @@
-# 由 dev-standard v0.7.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.7.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """風險級：依改動路徑算出「至少是哪一級」，並解析 PR 第一行宣告。純函式，不碰網路。
 
 規則（STANDARD.md 風險級合併表）：
@@ -18,7 +18,8 @@ BUILTIN_R2 = [".dev-standard/*", ".github/*", ".claude/*", ".githooks/*", ".auto
               "AGENTS.md", "CLAUDE.md", "*/AGENTS.md", "*/CLAUDE.md"]
 # 通用的禁區：憑證不由 PR 動。repo 自己的另寫在 risk.json 的 forbidden（regex）。
 BUILTIN_FORBIDDEN = [r"(^|/)\.env$", r"(^|/)\.env\.(?!example$|sample$|template$)",
-                     r"(^|/)(credentials|secrets?)[^/]*\.(json|ya?ml|txt)$"]
+                     # .github/ 底下是 CI 設定不是金鑰檔（secret-scan.yml 曾被誤判）
+                     r"^(?!\.github/)(.*/)?(credentials|secrets?)[^/]*\.(json|ya?ml|txt)$"]
 # 檢查工具本身：PR 改到它，就不能用 PR 自己的程式替自己評級或放行 ⇒ 一律視為 R3、要人合併。
 # classifier 腳本的路徑另外從 risk.json 的 classifier argv 取。
 RISK_FILE = ".dev-standard/risk.json"
