@@ -121,3 +121,30 @@ def test_k1_breach_note_names_top_spenders():
     svc._trial_stats = lambda: (0, 0)
     k1 = {r["id"]: r for r in svc.evaluate(date(2026, 10, 17))["criteria"]}["K1"]
     assert k1["status"] == "breach" and "top spend CIO 60%" in k1["note"]
+
+
+SECRET = "/app/src/internal/path.py line 42 password=hunter2"
+
+
+def test_unexpected_error_text_is_not_returned_to_the_caller():
+    """An unexpected exception must not put its text into a row the API returns (CodeQL py/stack-trace-exposure)."""
+    s = _svc()
+
+    def boom(since):
+        raise RuntimeError(SECRET)
+    s._trades = boom
+    s._trial_stats = boom
+    res = s.evaluate(today=date(2026, 10, 16))
+    notes = " | ".join(c["note"] for c in res["criteria"])
+    assert "hunter2" not in notes and "/app/src" not in notes
+    c = _by_id(res)
+    assert c["K3"]["status"] == "not_measurable" and "see server log" in c["K3"]["note"]
+    assert c["K7"]["status"] == "not_measurable" and "see server log" in c["K7"]["note"]
+
+
+def test_known_reason_is_still_shown():
+    """The authored reasons stay visible: the digest and the operator need to know why a K cannot be measured."""
+    s = _svc(nav=None)
+    s._latest_snapshot = lambda: None
+    c = _by_id(s.evaluate())
+    assert c["K1"]["note"] == "NAV unavailable" and c["K3"]["note"] == "NAV unavailable"
