@@ -1,37 +1,25 @@
-# Code owners — every R2/R3 path needs a review from the owner (see AGENTS.md "Mission & Non-Negotiable Invariants").
-# 這些路徑的變更必須由 owner 審核（R2＝決策/設定，R3＝動錢）。
-# R3 — money-moving
+# Code owners — only R3 (money-moving) paths. GitHub enforces an owner review for a PR that touches these.
+# Everything else is merged by risk tier through .dev-standard/bin/pr_checks (R0/R1 checks pass; R2 needs REVIEW: PASS <sha>).
+# Keep this list identical to `r3_globs` in .dev-standard/risk.json; the acceptance check compares the two.
+# 只列 R3（動錢）路徑；其餘由 pr_checks 依風險級合併。須與 .dev-standard/risk.json 的 r3_globs 一致。
 /src/services/automated_trading_service.py        @neohsiung
 /src/services/unified_risk_gateway_service.py     @neohsiung
 /src/services/capital_policy.py                   @neohsiung
 /src/services/etoro_service.py                    @neohsiung
 /src/services/confidence_rebalance_service.py     @neohsiung
 /src/services/batch_cash_deployment_service.py    @neohsiung
-/config/mission.yaml                              @neohsiung
-/src/config/mission.py                            @neohsiung
 /src/services/charter_state_service.py            @neohsiung
 /src/services/strategy_registry.py                @neohsiung
 /src/services/enablement_checker.py               @neohsiung
 /src/services/actionable_alert_service.py         @neohsiung
 /src/infrastructure/risk_manager.py               @neohsiung
 /src/domain/strategy_names.py                     @neohsiung
-# R2 — decisions, config, schema, deploy path
-/config/                                          @neohsiung
-/prompts/                                         @neohsiung
-/alembic/                                         @neohsiung
-/src/services/sentinel_service.py                 @neohsiung
-/src/services/friction_aware_tranche_sizing_service.py @neohsiung
-/src/services/trend_hysteresis_lockout_service.py @neohsiung
-/src/services/socket_manager.py                   @neohsiung
-/src/agents/action_extractor.py                   @neohsiung
-/src/services/workflow_service.py                 @neohsiung
-/src/services/order_reconciliation_service.py     @neohsiung
-/src/services/order_inflight_lock_service.py      @neohsiung
-/src/infrastructure/tasks.py                      @neohsiung
-/src/infrastructure/celery_app.py                 @neohsiung
+/src/config/mission.py                            @neohsiung
+/config/mission.yaml                              @neohsiung
+/config/parameter_registry.yaml                   @neohsiung
 /start.sh                                         @neohsiung
 /scripts/predeploy_gate.sh                        @neohsiung
 /docker-compose*.yml                              @neohsiung
-/tests/invariants/                                @neohsiung
-/AGENTS.md                                        @neohsiung
-/.github/                                         @neohsiung
+/secrets/                                         @neohsiung
+*.env                                             @neohsiung
+/env.production                                   @neohsiung
