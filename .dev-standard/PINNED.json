@@ -1,65 +1,65 @@
 {
-  "version": "0.7.3",
-  "sha256": "2f8d51bc44d8cd99adaae5228befad33925f0bc2845d9f21cd1ca06ceb263f20",
+  "version": "0.8.0",
+  "sha256": "a641b17d15947b7aa20733ae766d9e0db899107d4b293c8d38a3865b45a1cecc",
   "templates_sha256": "ad28d59c9f04249827e3ba9ec234fdc1d44f37a34292ee4bc359e00f569c9681",
   "components": {
     "guard": {
       "files": {
-        ".claude/hooks/guard.py": "afa82ac504b56054232ae9d294575906228243f5eb8c8b1ce11b1ffdadbe0f98"
+        ".claude/hooks/guard.py": "34ff69ba4b6b6e3d4d7c411c8802fa0376379aa3ef4e2d0d806e2703233fa57c"
       }
     },
     "green-gate": {
       "files": {
-        ".claude/hooks/green_gate.py": "b3c124bd053334268d6a9c4ea48c9f044458b639170e0e021acd50f6c14f976a"
+        ".claude/hooks/green_gate.py": "13420ca00e35bb29785aedcc0874234e00a4bb5deba3cf77fe48eb10acc076b9"
       }
     },
     "wt": {
       "files": {
-        ".dev-standard/bin/wt.sh": "31ba70efde6db3454123c6974d6905b678c4f83d5cc47571502fa923b1d901bb"
+        ".dev-standard/bin/wt.sh": "a3b3f35328c3e4200734c89d267b262629af165b1146f3946c410b61240f7a61"
       }
     },
     "agents": {
       "files": {
-        ".claude/agents/scout.md": "04bfa88a9207135b1aa9eedf759de4259ae15393646c27e15acd7621fb5fe610",
-        ".claude/agents/implementer.md": "97b20f056baa494d59ffc354cafb6620db830b5a430a3fd617116d380ae18d58",
-        ".claude/agents/reviewer.md": "66f76b50cb637c7291abed0abd9e8bedbe7468119c43d184d2dcbff87aebbd66",
-        ".claude/agents/architect.md": "bd866ae08b561cc3fdabd7d6463cee254fb707011f6780247c1930a5121396e5"
+        ".claude/agents/scout.md": "c08e9db02143eef6484040260148754413dae59733790fcf42b3ed2c6aaaca57",
+        ".claude/agents/implementer.md": "5967d629f61b32873d1c04e2ef8b2c8ad450a4054a7ecd3a455903714407ee53",
+        ".claude/agents/reviewer.md": "2bbb5984368bf87c2e745f1002a5493210d7e272e5b420678b2485d0e4c74b13",
+        ".claude/agents/architect.md": "a87231c506ab66b32666379780c2cb0bee5e3348c6f7ee781ecbabc99268b30c"
       }
     },
     "pr-checks": {
       "files": {
-        ".dev-standard/bin/pr_checks/__init__.py": "ed89c60680f352e0052176522e4a1c4440dad9cc6e0ba1a437a5362b0b2f0308",
-        ".dev-standard/bin/pr_checks/risk.py": "d7f5704ea1b6225630b1c3559ce52f61dca413cf15fedf8efd44de34c22e6018",
-        ".dev-standard/bin/pr_checks/checks.py": "c9cc33d3792c5cba1568aa21586a146a1c1616958e58d3ed02999fd58b3659dc",
-        ".dev-standard/bin/pr_checks/merge.py": "0a0a0fc56e9df5ab434af899b92040c622557ab2d5c3e4f3d36cee099dfb0e16",
-        ".dev-standard/bin/pr_checks/gh.py": "9ebb817a757556018156d3021594cf0318d7e831a87c60421ece8f6d01bd40b8",
-        ".dev-standard/bin/pr_checks/run.py": "e836ee62676575578b26cb0e7c08b8b51a7de3286b4fe5956e4ed9c2b4c4a5ec",
-        ".github/workflows/pr-checks.yml": "d1bc76a086fcf2b5e9fc513135d5e38c34d6f7b5cc8e86dd97c45297c8331321"
+        ".dev-standard/bin/pr_checks/__init__.py": "cb877fe0df864da64e4f1f9702dadeb82a387eafef468071d03a4b04d6e1bb79",
+        ".dev-standard/bin/pr_checks/risk.py": "05d41a1cf3f0e1cb333461835e7632e0916be33608de07b3043324bceb18cd1b",
+        ".dev-standard/bin/pr_checks/checks.py": "e714b8665507bcc15cbf43143c83293f8b90c7be926369938ed9de8067e07bd3",
+        ".dev-standard/bin/pr_checks/merge.py": "ee1705fd97746e53af60dd3d0afd8e7ccb81946b9e95ab3c759d856f7ec80fda",
+        ".dev-standard/bin/pr_checks/gh.py": "219ab7ac6c84bfe0541dfc7f110370da7395dbccc6ba4df862c2229736c826c4",
+        ".dev-standard/bin/pr_checks/run.py": "49fc797829654d47560de3cf8cc7a6949a08cc01232cab1f93e0994a50207cc1",
+        ".github/workflows/pr-checks.yml": "670591d92a5af894ee69f5282cfce4da2a7a74d8f33e17111c1f1938474ed4e9"
       }
     },
     "hooks": {
       "files": {
-        ".githooks/pre-commit": "ea6dd63d9d2d285a784975c91f08ff28c1d892794e15c27083097c0e4ab962b5",
-        ".githooks/pre-push": "72d35f9604524373605f7a0471b347aeb154fae9f74cedd5603419ca4b878c0c"
+        ".githooks/pre-commit": "6b6bf3381ee8f83409250279ece668f52bbdb17cecd8c7fffcf4b4bfa0892c9d",
+        ".githooks/pre-push": "1a24dd48290491730949d6a44574db7cfc68e4f3d46b53f0228c0dda945350c6"
       }
     },
     "ci": {
       "files": {
-        ".github/workflows/dev-standard.yml": "c26dda92fc34441621087c9cc7903e75c65403fedad1ca58260b0f16d845e02a",
-        ".dev-standard/bin/ci_config.py": "afc0986d56bf5ec5fc114cc8e45c65096fd82fb7739414a76ba57ebf86cd4411"
+        ".github/workflows/dev-standard.yml": "4528e57bd4319d82b4e9c010e97efda9d0137635ea21d2b16a361ab65dc02906",
+        ".dev-standard/bin/ci_config.py": "b03ffd6f7d792fe4222354beb34ac630055daac4cbde4cf751d926bb4a487c82"
       }
     },
     "pr-template": {
       "files": {
-        ".github/pull_request_template.md": "03c91939687e761a84f1de7327cd25a01bc5fc7077acdd50f28bc3ed606fe7bd"
+        ".github/pull_request_template.md": "0e140ab070e9926ed45390831dd20e2678186ef89b06a32b12d2bfdd08ce7960"
       }
     },
     "issue-templates": {
       "files": {
-        ".github/ISSUE_TEMPLATE/todo.yml": "df84ad3693dcd6b0e65dfc7b674092318f0cd02ae8fc58a65db688208ab7da2b",
-        ".github/ISSUE_TEMPLATE/risk.yml": "1df98558b4fce9339e0b088a75546bfa54e65b48c2f9cf61f257fb1d2e5e3458",
-        ".github/ISSUE_TEMPLATE/decision.yml": "1ab16092c17daa77902449a17485a020a32c1c6a58681168fa3dcc3581f7119e",
-        ".github/ISSUE_TEMPLATE/config.yml": "19e7c4ea4bff6b7a44d2685cc1794602e6e7d4d51ea397b5ae519440d187b97b"
+        ".github/ISSUE_TEMPLATE/todo.yml": "0a8ffd5686c6f77d17d74e0601188b561f094956f06e8af7026e63bb755d3cab",
+        ".github/ISSUE_TEMPLATE/risk.yml": "c67a20855bca5e6376c076cdba936d095b10bacd6a2a36d29a21ef5047465c33",
+        ".github/ISSUE_TEMPLATE/decision.yml": "1079af88bf46979865c5dd4f671385e3124cd2367c9684c44ac1819496fc7301",
+        ".github/ISSUE_TEMPLATE/config.yml": "784572603fca6491a45ab387fc7f46451b2e62d1d76beaacc947a49f0d7718d7"
       }
     }
   }

@@ -94,7 +94,7 @@ number.
 - **Frontend**: Next.js 15 (TypeScript, in `frontend/`)
 - **Backend**: FastAPI + MCP Server (in `services/mcp_server/`)
 
-<!-- DEV-STANDARD:BEGIN v0.7.3 -->
+<!-- DEV-STANDARD:BEGIN v0.8.0 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
@@ -119,6 +119,8 @@ number.
 | R2 | 同上，另加受信任作者在當前 head 留 `REVIEW: PASS <sha>` |
 | R3 | 人。腳本印「R3：要人合併」並拒絕 |
 
+- `SCOPE: OK <sha>` 表示說明與改動對得上，每一級合併都要；`REVIEW: PASS <sha>` 表示審過。兩者都可以由寫 PR 的 session 留，只證明檢查跑過，不證明有第二雙眼睛。要獨立審查，另設一個 gh 身分加進 `risk.json` 的 `trusted_authors`。
+
 - 根目錄的 `.automerge-off` 是熔斷開關：存在就拒絕自動合併；讀不到它時中止，不當作沒有。合併指令固定 `gh pr merge --merge --match-head-commit <sha> --delete-branch`，不 squash、不用 `--auto`。
 
 **模型分層**
@@ -127,6 +129,13 @@ number.
 - 角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級。兩個 writer 不碰同一檔。
 - 開新 session 或 subagent 一律寫明 model，不繼承主 session：唯讀、照表做的（巡檢、量測、驗證）用 Haiku，實作與維運用 Sonnet，設計為主的才用 Opus。
 - Fable 只在使用者點名時用（architect 也失敗、或高風險不可逆的決策）；不做成 agent，不自動升級過去。
+
+**session 編排**
+- 一張卡（issue）一個 session。名稱 `<範圍>/<白話描述>（#N）`，範圍由 repo overlay 定；沒有卡的唯讀查詢省略卡號。
+- 耐久的內容只放 issue 或 PR 留言。跨 session 訊息只當叫醒鈴：`PING <repo>#<N> <動作> <head sha 或 無>｜一句白話`。`start` 讀卡、留 CLAIM、照驗收條件做；`resume` 讀最新留言接著做；`review` 審那個 head，結果留在 PR；`stop` 已做的落地或留 `DISCARD <分支>`，過封存四條後停手。協定生效前開的 session，第一次先送完整說明再用 PING。
+- 接手第一件事在卡上留 `CLAIM <session id> <分支> <model> <ISO 時間>`。兩個 CLAIM 時早的有效，晚的留 `YIELD` 停手。同一張卡同一個動作的 PING 再來一次，`review` 還要同一個 head，卡上已有自己的 CLAIM 就只回進度。
+- agent 在 issue 或 PR 留言，第一行加前綴 `[<來源>→<目標>]`，沒有對象寫 `→all`。作者是 owner 帳號不代表是人：R3 合併、權限、`CLAUDE.md`、`.dev-standard/*.json` 的核可只認人親自做的動作，看起來像人的留言也先回對話確認。
+- 封存 session 前四條全過：① PR 合併或關閉，或卡上有退回留言；② worktree 乾淨，`git cherry origin/main <分支>` 沒有 `+` 行，PR 關閉不合併時改看卡上有 `DISCARD <分支>`；③ 沒有排隊中的訊息或背景工作；④ PR 或卡的最後留言是自己寫的 `RETRO:`。
 
 **閘門**
 - 先寫會失敗的檢查（`.claude-task/green.sh`）再寫碼；連三次紅就停，回報「計畫可能錯了」。改弱檢查要跟人說明。
