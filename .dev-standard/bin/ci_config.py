@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.8.0 產生，請勿手改；要改請改 dev-standard 的 components/ci，再跑 sync.py update
+# 由 dev-standard v0.7.3 產生，請勿手改；要改請改 dev-standard 的 components/ci，再跑 sync.py update
 """讀 .dev-standard/ci.json，決定共同 CI 的 tests 與 lint 怎麼跑，寫進 $GITHUB_OUTPUT。
 
   python3 .dev-standard/bin/ci_config.py --output "$GITHUB_OUTPUT"
