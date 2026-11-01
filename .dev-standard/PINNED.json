@@ -1,39 +1,39 @@
 {
-  "version": "0.7.0",
+  "version": "0.7.1",
   "sha256": "2f8d51bc44d8cd99adaae5228befad33925f0bc2845d9f21cd1ca06ceb263f20",
   "components": {
     "guard": {
       "files": {
-        ".claude/hooks/guard.py": "6dd4c0ddd024a04aec6ed5c908fb7f48a48be44e64b624cf1d1b4487a99dd656"
+        ".claude/hooks/guard.py": "81f16fa3aac88b5dae677d540722d1f4b9e7987792d274cbb8f8f2787e516fb4"
       }
     },
     "green-gate": {
       "files": {
-        ".claude/hooks/green_gate.py": "b51adef3c919f8affc44dbcf8d8efdfacf08dbc6510ec8166ba6ed98f191af80"
+        ".claude/hooks/green_gate.py": "21bee87da0ea525676b65bdf91a6fc4177aaf952d96a405b522e3865b9735ae9"
       }
     },
     "wt": {
       "files": {
-        ".dev-standard/bin/wt.sh": "990b1ec364c7b195b00fb2128d0a7d17955b563772720bb9784d988b0b142774"
+        ".dev-standard/bin/wt.sh": "99ccb6d78e550ce065c0e9448935c46f945267bd38f54e543fccd1622fabb7c0"
       }
     },
     "agents": {
       "files": {
-        ".claude/agents/scout.md": "3b999d793593d7590c63a88cdcebb733e9b983293016bac1e8ebd7622b5e0e02",
-        ".claude/agents/implementer.md": "2b2b6c82b2c21b1cf171d57bb198fcd68e8ae8b46eaf6cf5c910b08a432ebee9",
-        ".claude/agents/reviewer.md": "a05d69f7e767ba69980d74af1c5e50fb638f30cff9e4be9a632d86d62f8b58a6",
-        ".claude/agents/architect.md": "3f28196ef49439849744ab538661738f202352487196b809a88dc1222b831d5e"
+        ".claude/agents/scout.md": "b7767248ce1ecd7d96406b88ed04f5fe8366eb264d7781d9b041a1bd04418bdc",
+        ".claude/agents/implementer.md": "e92961077107dd24b69b3bf55d88179474c5d93ae74077aa9da518ef15523755",
+        ".claude/agents/reviewer.md": "a23b0fe957db6e1d15a8773df4a0320853b2d8b948c3455ba7bd0be32055532c",
+        ".claude/agents/architect.md": "e372bafea70992781981409601cbf173c873944e0d61f4795d44ac8fd1b80b4a"
       }
     },
     "pr-checks": {
       "files": {
-        ".dev-standard/bin/pr_checks/__init__.py": "0d61ec315a70908ccc099fed5c75050bf54fb0c65fd96748ad417b69b5efdfe2",
-        ".dev-standard/bin/pr_checks/risk.py": "bc06253f12544fc31be05291f2de1fd3d665551b290e78f974b29ed87cf61763",
-        ".dev-standard/bin/pr_checks/checks.py": "939ecf782d2429fed56260fedf4a6a13c1fc0aeff62d246f31688bcead90c1db",
-        ".dev-standard/bin/pr_checks/merge.py": "9404cc0de583740d03ec493c6b517b344a303468426d561e98c253d5327c65dd",
-        ".dev-standard/bin/pr_checks/gh.py": "d2f5ceca2aa885217269ff42c81d8935e2a13fd44420c989fa64c589708b481c",
-        ".dev-standard/bin/pr_checks/run.py": "cc63bf048f5cb36a18b9e147a6f85ed1ce1844ef51383953a1671c5e26fa407c",
-        ".github/workflows/pr-checks.yml": "c2866e50a9327cf19217a181082cf7ea6d6b2f9df72d9ea64808e4919637c909"
+        ".dev-standard/bin/pr_checks/__init__.py": "309f8e57821fe1ea15a99f66971c9a04d6b460975260b57de04a12f8ea081395",
+        ".dev-standard/bin/pr_checks/risk.py": "c1b1c49db75d113f73149bd2e5955371a3cc4d0d9824a05a9490267666c0b15a",
+        ".dev-standard/bin/pr_checks/checks.py": "e79b44c79e0610016d01e74f90bb0723f59e96b488138861c2db591ac06ae5e7",
+        ".dev-standard/bin/pr_checks/merge.py": "3d3cb6628eec848d94356e6aa1eb09380c882468a86837e8ed177e0718416623",
+        ".dev-standard/bin/pr_checks/gh.py": "0f94e02bc3257ed47743e238b154a80b512dfde7a64e288f580014e2ac651379",
+        ".dev-standard/bin/pr_checks/run.py": "c5bf3e7adfcc208f74fb775f985970a13fd79a1b7b6386af0bcd4ff54f54604d",
+        ".github/workflows/pr-checks.yml": "0d0b4f687536d2c5f189f9b1a1d747d8dd0c9f9422141f78152f78939ddd9333"
       }
     }
   }

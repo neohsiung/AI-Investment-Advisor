@@ -192,7 +192,8 @@ def render_pr_template(text: str, pr: dict) -> str:
     lines = text.split("\n")
     if pr.get("risk_hint"):
         hint = f"<!-- {pr['risk_hint']} -->"
-        lines[0] = re.sub(r"<!--.*-->", lambda _m: hint, lines[0]) if "<!--" in lines[0] else f"{lines[0]}   {hint}"
+        a, b = lines[0].find("<!--"), lines[0].rfind("-->")   # 用字串找註解，不用 regex（CodeQL py/bad-tag-filter）
+        lines[0] = lines[0][:a] + hint + lines[0][b + 3:] if 0 <= a < b else f"{lines[0]}   {hint}"
 
     def heading(title):
         return next((i for i, ln in enumerate(lines) if ln == f"## {title}"), None)
