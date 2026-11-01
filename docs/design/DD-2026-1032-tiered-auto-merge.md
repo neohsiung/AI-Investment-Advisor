@@ -30,9 +30,9 @@ PR 作者與 code owner 是同一個 GitHub 帳號，GitHub 不讓人核可自�
 
 | 事實 | 指令 |
 |---|---|
-| ruleset 要求 PR、code owner 審查、討論串解決、CodeQL 高風險警示擋合併；必要核可數 0；`update` 規則限制只有繞過名單的身分能更新 `main` | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq '.rules[]\|{type,parameters}'` |
+| ruleset 要求 PR、code owner 審查、討論串解決、CodeQL 高風險警示擋合併；必要核可數 0；2026-11-01 起移除 `update` 規則，原因見第 5 列 | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq '.rules[]\|{type,parameters}'` |
 | 管理者角色與兩個 Integration 永遠可繞過 | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq .bypass_actors` |
-| GitHub 的 auto-merge 無法完成合併，本設計不使用。#286 實測檢查全過仍回「Cannot update this protected ref」，因為 `update` 規則只放行繞過名單的身分 | `gh api repos/neohsiung/AI-Investment-Advisor --jq .allow_auto_merge`，並看 PR 頁面的 Merge status |
+| 不使用 GitHub 的 auto-merge。`update` 規則擋下所有非繞過身分的合併：#286 回「Cannot update this protected ref」，#295 的 `--merge` 回「base branch policy prohibits the merge」。使用者於 2026-11-01 移除該規則，直接 push、force push、刪除仍由 `pull_request`、`non_fast_forward`、`deletion` 擋 | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq '[.rules[].type]'` 不含 `update` |
 | CODEOWNERS 只列 R3 路徑，owner 是 `@neohsiung` | `grep -v '^#' .github/CODEOWNERS \| grep -c .` |
 | R3、R2 路徑樣式的單一來源是 `risk.json`；CODEOWNERS 的 R3 清單必須與它的 `r3_globs` 一致 | `python3 -c "import json;print(len(json.load(open('.dev-standard/risk.json'))['r3_globs']))"` |
 | 熔斷開關在 | `ls .automerge-off` |
@@ -112,22 +112,22 @@ flowchart TD
 | 2 | ruleset 必要核可數改 0，保留 code owner 審查，由使用者在 GitHub 設定頁改 | 已完成 | 第 2 節的 ruleset 指令 |
 | 3 | CODEOWNERS 收斂為只列 R3，#284 | 已合併 | 第 2 節的 CODEOWNERS 指令 |
 | 4 | 對下一個真的 PR 跑 `run.py <PR>`，確認印出熔斷開關的拒絕，[#279](https://github.com/neohsiung/AI-Investment-Advisor/issues/279) | 已完成：#286 上印出熔斷開關的拒絕 | 該指令的輸出 |
-| 5 | 實測 R1 PR 能被 `--merge` 合進去，R3 路徑的 PR 被 GitHub 擋下，並確認使用者帳號在繞過名單，[#280](https://github.com/neohsiung/AI-Investment-Advisor/issues/280) | 待做 | 兩個 PR 的結果加 `bypass_actors` 指令 |
+| 5 | 實測 R1 PR 能被 `--merge` 合進去，R3 路徑的 PR 被 GitHub 擋下，並確認使用者帳號在繞過名單，[#280](https://github.com/neohsiung/AI-Investment-Advisor/issues/280) | R0／R1 半邊已完成，#295 由 `run.py --merge` 合併；R3 被 GitHub 擋下的半邊待做 | `gh pr view 295 --json mergedBy` |
 | 6 | 另開 PR 拿掉 `.automerge-off`，屬 R3，由使用者合併。順序改在步驟 5 之前：`run.py --merge` 讀的是 base 分支上的開關，開關在就一律拒絕，R1 實測合併做不出來 | 已合併，#291 | `ls .automerge-off` 應失敗 |
 
-開關拿掉後沒有程式層的急停，第一個 R1 實測 PR 要有人盯著。行為不如預期就立刻補回空的 `.automerge-off`，這是 R3 PR。
+開關拿掉後沒有程式層的急停。行為不如預期就補回空的 `.automerge-off`，這是 R3 PR。
 
 ## 6 風險與限制
 
 - **`REVIEW: PASS` 不是第二雙眼睛。** agent 與 owner 共用同一個 GitHub 身分，`trusted_authors` 為空，等於 repo owner。標記證明的是 `reviewer` agent 在當前 head 審過。R2 的獨立性來自 `reviewer` 是另一個 agent 與上下文，不來自身分。
 - **路徑清單完整度就是安全邊界。** 新增的動錢檔沒列進 `r3_globs`，會被當成 R1 自動合併。計畫中的 `tests/invariants/test_codeowners_covers_money_paths.py` 是補這個洞的測試，建議在步驟 6 之前完成。
 - **R1 不是零風險。** R1 含一般程式與測試，看錯的代價小但不為零。合併後留言的 retro 五行用來量這個代價。
+- **移除 `update` 後，GitHub 端的 R3 防線只剩 CODEOWNERS。** 所以檢查工具、`risk.json`、CODEOWNERS 與開關自己也列入 R3 清單，兩份清單由單元測試鎖住一致。
 - **權限範圍等於使用者本人。** 合併由 agent 在使用者的機器上用使用者的 `gh` 身分執行，沒有機器人身分。熔斷開關與 R3 拒絕是程式層的限制，不是權限層的。
 
 ## 7 未驗證
 
-1. `run.py --merge` 能不能更新 `main`。#286 由使用者手動按 Merge 成功，但 `run.py --merge` 用的是 `gh` 權杖，是否同樣被放行尚未實測。屬步驟 5。#293 由使用者手動合併，所以仍未實測。
-2. R3 路徑的 PR 被 GitHub 擋下，是 CODEOWNERS 加 `require_code_owner_review` 的預期行為，尚未用真實 PR 實測。屬步驟 5。
+1. R3 路徑的 PR 被 GitHub 擋下，是 CODEOWNERS 加 `require_code_owner_review` 的預期行為，尚未用真實 PR 實測。屬步驟 5。
 
 ## 8 回滾
 

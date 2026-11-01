@@ -23,3 +23,8 @@
 /secrets/                                         @neohsiung
 *.env                                             @neohsiung
 /env.production                                   @neohsiung
+/.dev-standard/bin/pr_checks/                     @neohsiung
+/.dev-standard/risk.json                          @neohsiung
+/.github/CODEOWNERS                               @neohsiung
+/.github/workflows/pr-checks.yml                  @neohsiung
+/.automerge-off                                   @neohsiung
