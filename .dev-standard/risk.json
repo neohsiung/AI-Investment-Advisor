@@ -22,7 +22,12 @@
     "docker-compose*.yml",
     "secrets/*",
     "*.env",
-    "env.production"
+    "env.production",
+    ".dev-standard/bin/pr_checks/*",
+    ".dev-standard/risk.json",
+    ".github/CODEOWNERS",
+    ".github/workflows/pr-checks.yml",
+    ".automerge-off"
   ],
   "_r2_globs": "設定、門檻、prompt、schema、migration、被其他 repo 複製出去的檔。",
   "r2_globs": [
