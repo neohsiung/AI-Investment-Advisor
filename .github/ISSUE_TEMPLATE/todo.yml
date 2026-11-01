@@ -1,0 +1,44 @@
+# 由 dev-standard v0.7.2 產生，請勿手改；要改請改 dev-standard 的 components/issue-templates，再跑 sync.py update
+name: 待辦
+description: 一件具體要做的事
+labels: ["kind:debt"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        待辦的唯一記錄是 GitHub Issues，不另外散在文件的清單裡。**不要貼憑證、API key、帳戶資料或個資**——私有 repo 也一樣。
+        開完後請補標籤：`prio:`（P0 今天會壞或造成損失、P1 本週、P2 本月、P3 有空）、`kind:`、至少一個 `area:`，需要人拍板時加 `needs:user`。
+  - type: textarea
+    id: context
+    attributes:
+      label: 背景與證據
+      description: 怎麼發現的、量到什麼（數字要可重查：指令／檔案／DD／issue 編號）。不確定就寫 unknown，不要編。
+    validations: {required: true}
+  - type: textarea
+    id: done
+    attributes:
+      label: 完成定義（可驗證的條件）
+      description: 一條一行；每條要能用指令、測試或查詢判定，不是「看起來好」。
+    validations: {required: true}
+  - type: textarea
+    id: next
+    attributes:
+      label: 下一步
+      description: 下一個具體動作（誰做什麼）。
+    validations: {required: true}
+  - type: dropdown
+    id: owner
+    attributes:
+      label: 誰決定／誰動手
+      options:
+        - 使用者決定、使用者動手
+        - 使用者決定、agent 動手
+        - agent 決定並動手
+        - 未定
+    validations: {required: true}
+  - type: input
+    id: due
+    attributes:
+      label: 期限或觸發條件
+      description: 日期，或「等到 X 發生」。沒有就寫「無期限」。
+    validations: {required: true}

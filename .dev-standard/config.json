@@ -14,6 +14,8 @@
         "agents",
         "pr-checks",
         "hooks",
-        "ci"
+        "ci",
+        "pr-template",
+        "issue-templates"
     ]
 }

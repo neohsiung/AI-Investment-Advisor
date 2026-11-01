@@ -1,0 +1,34 @@
+{
+  "pr": {
+    "risk_hint": "R0 docs ｜ R1 非決策的程式／UI／測試 ｜ R2 決策、設定、schema、prompt、migration、路由 ｜ R3 動錢（券商、風控閘道、資金政策、mission.yaml），agent 不動手只提案；路徑見 .github/CODEOWNERS",
+    "sections": [
+      {
+        "title": "對 `config/mission.yaml` 哪個指標有何預期影響？如何量測？ / Mission impact",
+        "hint": "R2／R3 必填；「無可量測影響」只適用 R0／R1",
+        "after": "驗證"
+      },
+      {
+        "title": "文件統整 / Docs synthesis",
+        "hint": "列出新增或更新的 docs/ 頁面；若無需更新，寫「無需更新」與理由",
+        "after": "對 `config/mission.yaml` 哪個指標有何預期影響？如何量測？ / Mission impact"
+      }
+    ],
+    "checklist": [
+      "描述以繁體中文為主，頂部附 2–4 行 English summary；指令、路徑、識別名稱、錯誤訊息保持英文",
+      "`pytest tests/invariants tests/unit/config tests/unit/deploy` 通過",
+      "`scripts/ci_local.sh` 通過（Alembic upgrade+check、Bandit、文件連結；新增資料表時必跑）",
+      "未新增寫死分數、未新增繞過 executor 的下單呼叫、未新增 `exec`",
+      "若修改 mission.yaml：已新增 ADR 條目"
+    ]
+  },
+  "issues": {
+    "blank_issues_enabled": false,
+    "contact_links": [
+      {
+        "name": "Security report / 資安問題",
+        "url": "https://github.com/neohsiung/AI-Investment-Advisor/blob/main/SECURITY.md",
+        "about": "Do not open a public issue. Email support@litov.app as described in SECURITY.md. / 請勿開公開 issue，依 SECURITY.md 寄信到 support@litov.app。"
+      }
+    ]
+  }
+}

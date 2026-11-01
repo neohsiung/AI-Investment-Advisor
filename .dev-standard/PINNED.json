@@ -1,6 +1,7 @@
 {
   "version": "0.7.2",
   "sha256": "2f8d51bc44d8cd99adaae5228befad33925f0bc2845d9f21cd1ca06ceb263f20",
+  "templates_sha256": "ad28d59c9f04249827e3ba9ec234fdc1d44f37a34292ee4bc359e00f569c9681",
   "components": {
     "guard": {
       "files": {
@@ -46,6 +47,19 @@
       "files": {
         ".github/workflows/dev-standard.yml": "839846126bd148bce646299c0e46e46e434bc8449ab789ca9ed68723774bc167",
         ".dev-standard/bin/ci_config.py": "e6807a1ebd33d38789a7d294b7f0cc6f6851818a0ce384cab1a12888fa47c976"
+      }
+    },
+    "pr-template": {
+      "files": {
+        ".github/pull_request_template.md": "aa8be12b74ae649b6d0799e2a9b82e046bcf5fa53e5ea2e8c2f9df344c1e48c9"
+      }
+    },
+    "issue-templates": {
+      "files": {
+        ".github/ISSUE_TEMPLATE/todo.yml": "da1ad22ee11ee65fbf57168b390714229fa4cb29f29f306f44ae80b3bdfbc779",
+        ".github/ISSUE_TEMPLATE/risk.yml": "893ab6745c31d52ab9184e2c0dc6c3500fe21e2038704b6a3a506c7e11610cd3",
+        ".github/ISSUE_TEMPLATE/decision.yml": "417a1c529cf2318c2df243e56c518cbbfd527e65ceef5856076856fc61a91056",
+        ".github/ISSUE_TEMPLATE/config.yml": "45c6c6a5a55a4bc54caa37038b5a939dcf09d1d614d14d7eec5c399a5c21e410"
       }
     }
   }
