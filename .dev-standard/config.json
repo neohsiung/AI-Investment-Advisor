@@ -12,6 +12,7 @@
         "green-gate",
         "wt",
         "agents",
-        "pr-checks"
+        "pr-checks",
+        "hooks"
     ]
 }

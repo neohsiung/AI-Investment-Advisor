@@ -1,31 +1,115 @@
-#!/usr/bin/env bash
-# Hermes lane hard gate: agents may commit and open PRs, never push to a
-# protected branch. Installed into every repo/worktree a lane touches.
+#!/bin/sh
+# 由 dev-standard v0.7.1 產生，請勿手改；要改請改 dev-standard 的 components/hooks，再跑 sync.py update
+# pre-push.sh — 擋三件事：推保護分支、推 PR 已合併的分支、repo 自己的檢查（pre-push.d）
+# 來由：litov#25→#34（2026-10-25）、dev-standard §1；hermes 的逾時／只查 origin／排除 fork、investment-advisor 的保護分支與
+#   pre-push.d（neohsiung/dev-standard#18）。
 #
-# Versioned copy (dev-standard §1). Install with scripts/install_git_hooks.sh, which copies it into the
-# shared .git/hooks/. core.hooksPath is deliberately NOT used: it would disable the pre-commit framework hook
-# in .git/hooks/pre-commit (secret scanners).
-# 版控正本。用 scripts/install_git_hooks.sh 複製到共用的 .git/hooks/；不設 core.hooksPath，否則 pre-commit 掃描會失效。
+# 安裝：sync.py update 會放到 .githooks/pre-push；sync.py wire 設 core.hooksPath = .githooks
 #
-# Bypassing this hook (--no-verify) is itself a protocol violation: the lane
-# skills forbid it and the runner reinstalls this file on every claim.
-set -euo pipefail
+# ① 保護分支：main、master、release/* 不准推，也不准刪（任何 remote 都擋）。guard 只管 agent，人自己推時要靠這裡。
+#    刻意要推（例：救援）：DEV_ALLOW_PUSH_PROTECTED=1 git push …，會印出提醒。只有人能用；agent 被擋了不要自己加。
+# ② PR 已合併的分支不准再推：合併後再推的 commit 不會進 main，也沒有任何訊號。要補東西就從 main 開新分支、開新 PR。
+#    只對 origin 查；推到其他 remote 印警告略過（不拿錯的 repo 去查）。fork 開的同名分支（isCrossRepository）不算。
+#    gh 不在、查詢失敗或逾時（DEV_GH_TIMEOUT 秒，預設 10）：印警告放行，不靜默（離線時不該卡住所有 push）。
+#    刻意要重用分支名：DEV_ALLOW_PUSH_MERGED=1 git push …，會印出提醒。只有人能用。
+# ③ pre-push.d：.githooks/pre-push.d/ 底下每個「有執行權限、檔名只含小寫英數與 -」的檔，直接執行（照它的 shebang），
+#    拿到同樣的參數與 stdin。
+#    任何一個回非 0 就擋下並沿用它的結束碼。①② 已經擋下時不跑（不必再等耗時的檢查）。
+#
+# 測試用：DEV_GH 可指定 gh 的路徑。
 
-PROTECTED_RE='^(main|master|release/.*)$'
+GH="${DEV_GH:-gh}"
+TMO="${DEV_GH_TIMEOUT:-10}"
+case "$TMO" in
+  ''|*[!0-9]*|0|00*) echo "⚠️  pre-push：DEV_GH_TIMEOUT=${TMO} 不是正整數秒，改用 10" >&2; TMO=10 ;;
+esac
+remote_name="$1"
+ZERO=0000000000000000000000000000000000000000
+status=0
 
-# stdin: <local ref> <local sha> <remote ref> <remote sha>
-while read -r _local_ref _local_sha remote_ref _remote_sha; do
-    [ -z "${remote_ref:-}" ] && continue
-    branch="${remote_ref#refs/heads/}"
-    if [[ "$branch" =~ $PROTECTED_RE ]]; then
-        echo "pre-push: BLOCKED — pushing to protected branch '$branch' is not allowed." >&2
-        echo "pre-push: agents may push feature branches and open PRs; merging is a human action." >&2
-        exit 1
+# 暫存檔都放同一個目錄，結束或被中斷時一起清掉。stdin 只能讀一次：先存起來，內建檢查與 pre-push.d 讀同一份
+tmp=$(mktemp -d) || { echo "❌ pre-push：mktemp 失敗，無法檢查，擋下" >&2; exit 1; }
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 130' INT TERM
+refs="$tmp/refs"; out="$tmp/out"; err="$tmp/err"
+cat > "$refs"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/*) branch="${remote_ref#refs/heads/}" ;;
+    *) continue ;;
+  esac
+
+  # ① 保護分支（推與刪都擋）
+  case "$branch" in
+    main|master|release/*)
+      if [ "${DEV_ALLOW_PUSH_PROTECTED:-}" = "1" ]; then
+        echo "⚠️  pre-push：${branch} 是保護分支，因 DEV_ALLOW_PUSH_PROTECTED=1 放行" >&2
+      else
+        echo "❌ pre-push：${branch} 是保護分支，不直接推或刪。改走分支與 PR：.dev-standard/bin/wt.sh new <type>/<描述>" >&2
+        echo "   （救援時由人執行 DEV_ALLOW_PUSH_PROTECTED=1 git push …；agent 被擋了不要自己加）" >&2
+        status=1
+      fi
+      continue ;;
+  esac
+
+  [ "$local_sha" = "$ZERO" ] && continue          # 刪除一般分支不擋
+
+  # ② PR 已合併
+  if [ -n "$remote_name" ] && [ "$remote_name" != "origin" ]; then
+    echo "⚠️  pre-push：推到 ${remote_name}（不是 origin），沒檢查 ${branch} 的 PR 是否已合併" >&2
+    continue
+  fi
+  if ! command -v "$GH" >/dev/null 2>&1; then
+    echo "⚠️  pre-push：找不到 gh，沒檢查 ${branch} 的 PR 是否已合併" >&2
+    continue
+  fi
+  : > "$out"; : > "$err"; reason=""
+  "$GH" pr list --head "$branch" --state merged --json number,isCrossRepository \
+    --jq '.[] | select(.isCrossRepository | not) | .number' >"$out" 2>"$err" &
+  pid=$!
+  ( sleep "$TMO"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  watcher=$!
+  wait "$pid" 2>/dev/null                        # 被看門狗殺掉時，bash 的 job 通知不印出來
+  rc=$?
+  if kill "$watcher" 2>/dev/null; then wait "$watcher" 2>/dev/null; else reason="逾時 ${TMO} 秒"; fi
+  merged=$(cat "$out")
+  [ -z "${reason:-}" ] && reason=$(head -n 1 "$err")
+  if [ $rc -ne 0 ]; then
+    echo "⚠️  pre-push：gh 查詢失敗（rc=${rc}${reason:+，${reason}}），沒檢查 ${branch} 的 PR 是否已合併" >&2
+    continue
+  fi
+  if [ -n "$merged" ]; then
+    nums=$(echo "$merged" | tr '\n' ' ')
+    if [ "${DEV_ALLOW_PUSH_MERGED:-}" = "1" ]; then
+      echo "⚠️  pre-push：${branch} 已有合併的 PR（#${nums}），因 DEV_ALLOW_PUSH_MERGED=1 放行；這些 commit 要另開 PR 才會進 main" >&2
+      continue
     fi
-done
+    echo "❌ pre-push：${branch} 的 PR 已合併（#${nums}）。再推上去的 commit 不會進 main。" >&2
+    echo "   → 從 main 開新分支（換一個分支名）：.dev-standard/bin/wt.sh new <type>/<描述>，把要補的 commit cherry-pick 過去再開 PR" >&2
+    status=1
+  fi
+done < "$refs"
 
-if [ -f "./scripts/pre_push_check.sh" ]; then
-    ./scripts/pre_push_check.sh
+[ $status -ne 0 ] && exit $status
+
+# ③ repo 自己的檢查
+HOOKD="$(dirname "$0")/pre-push.d"
+if [ -d "$HOOKD" ]; then
+  for h in "$HOOKD"/*; do
+    [ -f "$h" ] || continue
+    hn=$(basename "$h")
+    if [ ! -x "$h" ] || ! printf '%s' "$hn" | grep -Eq '^[a-z0-9-]+$'; then
+      printf 'pre-push：略過 pre-push.d/%s（要有執行權限，且檔名只含小寫英數與 -）\n' "$hn" >&2
+      continue
+    fi
+    "$h" "$@" < "$refs"                          # 直接執行：照它自己的 shebang（bash、python 都行）
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      printf '❌ pre-push：pre-push.d/%s 擋下這次 push（回傳 %s）\n' "$hn" "$rc" >&2
+      exit "$rc"
+    fi
+  done
 fi
 
 exit 0

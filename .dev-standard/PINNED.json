@@ -35,6 +35,12 @@
         ".dev-standard/bin/pr_checks/run.py": "c5bf3e7adfcc208f74fb775f985970a13fd79a1b7b6386af0bcd4ff54f54604d",
         ".github/workflows/pr-checks.yml": "0d0b4f687536d2c5f189f9b1a1d747d8dd0c9f9422141f78152f78939ddd9333"
       }
+    },
+    "hooks": {
+      "files": {
+        ".githooks/pre-commit": "38a84d903e14610ee6a39df8b0b0531bd6d1bf16d39062e1a1a50ce2ef0618dc",
+        ".githooks/pre-push": "3f675325f73d0d4fb8c8103ffa78401354fb7774798049849a2658af70f8fc75"
+      }
     }
   }
 }

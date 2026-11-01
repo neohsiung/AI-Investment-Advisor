@@ -168,8 +168,8 @@ The block above is the shared dev-standard; below is what differs here.
 - **DD**：改 `config/mission.yaml` 或 R3 行為的決策記在 `mission.yaml` 的 ADR log；其他門檻、規則、契約的變更照 dev-standard §5。
 - **Commit 格式**：一律繁中，第一行 `type(scope): 繁中摘要`，細節照 `.agent/rules/git-commit-format.md`。
 - **Worktree**：主 checkout 是正式環境的 bind mount（detached 在 `origin/main`），不在那裡切分支或寫檔；一律開 worktree。
-- **pre-push 保護分支 hook**：正本在 `.githooks/pre-push`，用 `scripts/install_git_hooks.sh` 安裝到共用的 `.git/hooks/`。
-  不設 `core.hooksPath`：那會讓 pre-commit framework 裝在 `.git/hooks/pre-commit` 的掃描失效。
+- **Git hooks**：由 dev-standard 的 hooks 元件提供（`.githooks/pre-push` 擋 main、master、release/*，`.githooks/pre-commit` 串接 `.pre-commit-config.yaml` 的掃描）。
+  本 repo 自己的 pre-push 檢查掛在 `.githooks/pre-push.d/project-checks`，內容是呼叫 `scripts/pre_push_check.sh`。`core.hooksPath` 由 `sync.py wire` 設定。
 - **Lint**：ruff 只擋新增違規。舊違規存成計數 baseline（`.ruff-baseline.json`），不在原始碼加 `noqa`（R3 檔不因 lint 被改）。
   檢查：`python3 scripts/ruff_baseline.py check`；修掉舊違規後跑 `python3 scripts/ruff_baseline.py update` 收緊 baseline。
 
