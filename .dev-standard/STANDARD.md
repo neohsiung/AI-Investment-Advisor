@@ -77,14 +77,14 @@
 
 | 規則 | 為什麼（來由） | 怎麼檢查 |
 |---|---|---|
-| 不在 main commit、不 push main | hermes：`~/.hermes` 是正式環境的 bind mount，在上面切分支讓 cron 正在跑的腳本消失（2026-10-08）。litov：main 定義為「已審」 | guard hook（`templates/hooks/guard.py`）擋 `git commit` on main 與 `git push … main`；investment 的 pre-push hook 目前只在本機 `.git/hooks`，導入時進版控 |
+| 不在 main commit、不 push main | hermes：`~/.hermes` 是正式環境的 bind mount，在上面切分支讓 cron 正在跑的腳本消失（2026-10-08）。litov：main 定義為「已審」 | guard 元件擋 agent 在 main 上 `git commit` 與 `git push … main`；hooks 元件的 `pre-push` 在 git 層擋推或刪 main、master、release/*，人自己推也擋（`DEV_ALLOW_PUSH_PROTECTED=1` 刻意放行並印提醒） |
 | 一個任務一個分支；會寫檔的 session 或 agent 各用自己的 worktree，唯讀的不開；兩個 writer 不碰同一檔 | hermes 同上事件：兩個 session 的改動混在同一棵樹。litov 與全域設定：唯讀的開 worktree 是浪費，兩個 writer 同檔會互相覆蓋且沒有訊號 | `.dev-standard/bin/wt.sh new`（wt 元件）；`tools/prune.py` 列出殘留；派工時寫明每個 writer 的檔案範圍 |
 | 一個 PR 一個連貫範圍；以「合併後系統自洽」為單位，上限是一次 review 讀得完 | decision-stack 寫入程序：只加工具不改契約等於沒生效；審不完的 diff 等於沒被審 | reviewer 問「拿掉這個 PR 的任一半，另一半還成立嗎」 |
 | 疊起來的 PR 每一個都合進 main | litov #2 疊在 #1 上，#1 先合進 main，#2 合進沒人看的 base 分支，main 沒拿到內容 | 合併前看 base 是不是 main |
 | 合併依風險級，一律 merge commit、不 squash | hermes：squash 會讓部署端的 `pull --ff-only` 與原子 commit 失效。litov 的私有免費 repo 沒有分支保護，`--auto` 等於立刻合，所以只用 `--match-head-commit` 鎖住檢查時的 head。2026-10-31 使用者決定：自動合併升成通用規則、預設開啟（`docs/design/DD-2026-1031-merge-by-risk.md`） | `tests/test_pr_checks.py`：R3 路徑判 R3 且拒絕合併、`.automerge-off` 拒絕、R2 缺 reviewer 拒絕、合併指令不含 `--squash`／`--auto` |
 | main 與共用分支不 force push；自己的 feature 分支整理歷史，例如 rebase、拿掉試做後又刪掉的 commit，用 `--force-with-lease=<分支>:<遠端舊 SHA>`，推完讀回遠端 SHA 確認等於本機 | 某 Rails 專案 2026-10：8 條 PR 送審前整理歷史，不 force 就推不上去。不寫舊 SHA 的 `--force` 會蓋掉別人在同一分支的推送，而且沒有訊號 | guard 擋 push 到 main（`templates/hooks/guard.py`）；`pre-push` 以「遠端 SHA 不是本機 SHA 的祖先」判 non-fast-forward，對 main 與共用分支擋、對 feature 分支要求帶 lease，這一段範本尚未實作；推完 `git ls-remote origin <分支>` 的 SHA 等於 `git rev-parse HEAD` |
 | 只做 `git mv` 的 commit 單獨放；有這種 commit 的 PR 合併時不 squash | 某 Rails 專案 2026-10：搬檔與後面加的內容合成一個 commit，內容一多，相似度掉到 50% 以下，git 認不出是搬檔，`git log --follow` 與 `git blame` 追不回搬檔前的歷史。單獨放時 git 判 rename 100%，reviewer 可略過逐行 | `git show -M100% --name-status <commit>` 是 `R100`，且 `--numstat` 0 增 0 刪 |
-| PR 合併後不再往同一分支推；要補從 main 開新分支 | litov#25 合併後又推了三個檔，沒進 main，半天後才被另一個 session 發現，另開 #34 補；錶面 repo 發生過同樣的事。每條分支的檢查只看分支，看不到「它已經合併了」 | `templates/hooks/pre-push.sh`：分支已有合併的 PR 就擋；gh 不在時印警告不靜默 |
+| PR 合併後不再往同一分支推；要補從 main 開新分支 | litov#25 合併後又推了三個檔，沒進 main，半天後才被另一個 session 發現，另開 #34 補；錶面 repo 發生過同樣的事。每條分支的檢查只看分支，看不到「它已經合併了」 | hooks 元件的 `pre-push`：分支已有合併的 PR 就擋（只查 origin、排除 fork 同名分支）；gh 不在、失敗或逾時印警告不靜默 |
 | PR 第一行風險級、`Refs #N`、`DERIVED:` | hermes PR 模板與 investment 的風險分級；`DERIVED:` 把每個 PR 變成一條記下來的規則 | PR 模板；reviewer 確認三項都在 |
 
 ## 2. 風險級 R0–R3

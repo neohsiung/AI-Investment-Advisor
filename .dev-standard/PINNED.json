@@ -1,39 +1,39 @@
 {
-  "version": "0.6.2",
-  "sha256": "4d9940314e3609c5d6432ccd335800343e111ac13db1fbe5143f2e2e0d42233f",
+  "version": "0.7.0",
+  "sha256": "2f8d51bc44d8cd99adaae5228befad33925f0bc2845d9f21cd1ca06ceb263f20",
   "components": {
     "guard": {
       "files": {
-        ".claude/hooks/guard.py": "996d983a4a791d481e0b60308058be161eb59d17474b9c1abf26b59f379cac65"
+        ".claude/hooks/guard.py": "6dd4c0ddd024a04aec6ed5c908fb7f48a48be44e64b624cf1d1b4487a99dd656"
       }
     },
     "green-gate": {
       "files": {
-        ".claude/hooks/green_gate.py": "c3eaa35720d20e5c530f660e55f89d29bf96e91d08afed3052e2fd11780eece7"
+        ".claude/hooks/green_gate.py": "b51adef3c919f8affc44dbcf8d8efdfacf08dbc6510ec8166ba6ed98f191af80"
       }
     },
     "wt": {
       "files": {
-        ".dev-standard/bin/wt.sh": "899301df61ee9f9873a3da18f6b1cd1b383c42ea23785e063200890934373880"
+        ".dev-standard/bin/wt.sh": "990b1ec364c7b195b00fb2128d0a7d17955b563772720bb9784d988b0b142774"
       }
     },
     "agents": {
       "files": {
-        ".claude/agents/scout.md": "ba06080c4ee8efad2237789895ce96362ff1aed4dbc1a4abe0ffce45ddbb65d2",
-        ".claude/agents/implementer.md": "fea182d65e294da6357bd35b3a8bdce5e634e5d73d56994c69a20a7b2b0c520c",
-        ".claude/agents/reviewer.md": "7cfc9c09867964e898ce8c4951e2e5ca8fd649ef9f2e0aa02453d7fe3bd11f47",
-        ".claude/agents/architect.md": "05456bc340169a7a55367ee0fa547ba21aaba8848b552b4aadac6d05de3f38bc"
+        ".claude/agents/scout.md": "3b999d793593d7590c63a88cdcebb733e9b983293016bac1e8ebd7622b5e0e02",
+        ".claude/agents/implementer.md": "2b2b6c82b2c21b1cf171d57bb198fcd68e8ae8b46eaf6cf5c910b08a432ebee9",
+        ".claude/agents/reviewer.md": "a05d69f7e767ba69980d74af1c5e50fb638f30cff9e4be9a632d86d62f8b58a6",
+        ".claude/agents/architect.md": "3f28196ef49439849744ab538661738f202352487196b809a88dc1222b831d5e"
       }
     },
     "pr-checks": {
       "files": {
-        ".dev-standard/bin/pr_checks/__init__.py": "4898823619d0639823240c16d08a43b6c94186ae697b88664657dcad1ea29de1",
-        ".dev-standard/bin/pr_checks/risk.py": "0d107d6d6ec606009c045c429fa0e6cea9d13be4f55464f6219fa460d11b3a5a",
-        ".dev-standard/bin/pr_checks/checks.py": "197d007fea059b4526c0239be15cb98b6f07d57f8f2687e1e8876d44ec344c6e",
-        ".dev-standard/bin/pr_checks/merge.py": "ff073c032801325a789f241aa792320817b0f66bab2bba0515652801a0116f89",
-        ".dev-standard/bin/pr_checks/gh.py": "ca9ef217be72f02a4aede5c975b97eae4c055b3de70c27aca4f046aa860f29bd",
-        ".dev-standard/bin/pr_checks/run.py": "e7dbe533b40fe33dab6b9351a53e1cc3868cbfe18fd13e354672a167599a1aef",
-        ".github/workflows/pr-checks.yml": "497d15ba4113c51b125db5bc79c21f68809dd788703e9a7ce26606ac9d65a16b"
+        ".dev-standard/bin/pr_checks/__init__.py": "0d61ec315a70908ccc099fed5c75050bf54fb0c65fd96748ad417b69b5efdfe2",
+        ".dev-standard/bin/pr_checks/risk.py": "bc06253f12544fc31be05291f2de1fd3d665551b290e78f974b29ed87cf61763",
+        ".dev-standard/bin/pr_checks/checks.py": "939ecf782d2429fed56260fedf4a6a13c1fc0aeff62d246f31688bcead90c1db",
+        ".dev-standard/bin/pr_checks/merge.py": "9404cc0de583740d03ec493c6b517b344a303468426d561e98c253d5327c65dd",
+        ".dev-standard/bin/pr_checks/gh.py": "d2f5ceca2aa885217269ff42c81d8935e2a13fd44420c989fa64c589708b481c",
+        ".dev-standard/bin/pr_checks/run.py": "cc63bf048f5cb36a18b9e147a6f85ed1ce1844ef51383953a1671c5e26fa407c",
+        ".github/workflows/pr-checks.yml": "c2866e50a9327cf19217a181082cf7ea6d6b2f9df72d9ea64808e4919637c909"
       }
     }
   }

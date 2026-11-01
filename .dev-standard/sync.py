@@ -116,7 +116,128 @@ def add_header(text: str, dst: str, name: str, version: str) -> str:
     return text
 
 
-def plan_components(src: Path, names: list, version: str) -> tuple:
+TEMPLATES_REL = ".dev-standard/templates.json"
+_PR_KEYS, _SECTION_KEYS, _ISSUE_KEYS = {"risk_hint", "sections", "checklist"}, {"title", "hint", "after"}, \
+    {"blank_issues_enabled", "contact_links"}
+
+
+def _line(v, what: str, required: bool = True) -> str:
+    """範本裡的一行字：要是單行字串，不能含 -->（會提早結束 HTML 註解）。"""
+    if not isinstance(v, str) or (required and not v.strip()):
+        raise SystemExit(f"templates.json 的 {what} 要是非空字串")
+    if any(ch in v for ch in "\n\r\x0b\x0c\x85\u2028\u2029"):   # 含 YAML 視為換行的 Unicode 字元
+        raise SystemExit(f"templates.json 的 {what} 要是單行")
+    if "-->" in v:
+        raise SystemExit(f"templates.json 的 {what} 不能含 -->")
+    return v
+
+
+def _known(d, allowed: set, what: str) -> dict:
+    if not isinstance(d, dict):
+        raise SystemExit(f"templates.json 的 {what} 要是物件")
+    bad = sorted(set(d) - allowed)
+    if bad:
+        raise SystemExit(f"templates.json 的 {what}有不認得的欄位：{', '.join(bad)}（只接受 {', '.join(sorted(allowed))}）")
+    return d
+
+
+def load_templates(repo: Path) -> dict:
+    """repo 對 pr-template、issue-templates 的差異。檔案可以不存在；寫錯一律中止，不退回預設、不寫半套。"""
+    p = repo / TEMPLATES_REL
+    if not p.exists():
+        return {}
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise SystemExit(f"{TEMPLATES_REL} 不是合法 JSON：{e}")
+    except OSError as e:
+        raise SystemExit(f"{TEMPLATES_REL} 讀不到：{e}")
+    if not isinstance(data, dict):
+        raise SystemExit(f"{TEMPLATES_REL} 最外層要是物件")
+    bad = sorted(set(data) - {"pr", "issues"})
+    if bad:
+        raise SystemExit(f"templates.json 有不認得的欄位：{', '.join(bad)}（只接受 pr、issues）")
+    pr = _known(data.get("pr", {}), _PR_KEYS, "pr ")
+    if "risk_hint" in pr:
+        _line(pr["risk_hint"], "pr.risk_hint")
+    secs = pr.get("sections", [])
+    if not isinstance(secs, list):
+        raise SystemExit("templates.json 的 pr.sections 要是清單")
+    for i, sec in enumerate(secs, 1):
+        _known(sec, _SECTION_KEYS, f"pr.sections 第 {i} 個")
+        _line(sec.get("title"), f"pr.sections 第 {i} 個的 title")
+        for k in ("hint", "after"):
+            if k in sec:
+                _line(sec[k], f"pr.sections 第 {i} 個的 {k}")
+    items = pr.get("checklist", [])
+    if not isinstance(items, list):
+        raise SystemExit("templates.json 的 pr.checklist 要是字串清單")
+    for i, it in enumerate(items, 1):
+        _line(it, f"pr.checklist 第 {i} 項")
+    iss = _known(data.get("issues", {}), _ISSUE_KEYS, "issues ")
+    if "blank_issues_enabled" in iss and not isinstance(iss["blank_issues_enabled"], bool):
+        raise SystemExit("templates.json 的 issues.blank_issues_enabled 要是 true 或 false")
+    links = iss.get("contact_links", [])
+    if not isinstance(links, list):
+        raise SystemExit("templates.json 的 issues.contact_links 要是清單")
+    for i, ln in enumerate(links, 1):
+        if not isinstance(ln, dict) or set(ln) != {"name", "url", "about"}:
+            raise SystemExit(f"templates.json 的 issues.contact_links 第 {i} 個要剛好有 name、url、about")
+        for k in ("name", "url", "about"):
+            _line(ln[k], f"issues.contact_links 第 {i} 個的 {k}")
+    return data
+
+
+def render_pr_template(text: str, pr: dict) -> str:
+    lines = text.split("\n")
+    if pr.get("risk_hint"):
+        hint = f"<!-- {pr['risk_hint']} -->"
+        lines[0] = re.sub(r"<!--.*-->", lambda _m: hint, lines[0]) if "<!--" in lines[0] else f"{lines[0]}   {hint}"
+
+    def heading(title):
+        return next((i for i, ln in enumerate(lines) if ln == f"## {title}"), None)
+
+    for sec in pr.get("sections", []):
+        anchor = sec.get("after")
+        if anchor:
+            h = heading(anchor)
+            if h is None:
+                raise SystemExit(f"templates.json：PR 範本找不到段落「{anchor}」（pr.sections 的 after）")
+            at = next((i for i in range(h + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+        else:
+            at = heading("檢查清單")
+        block = [f"## {sec['title']}"] + ([f"<!-- {sec['hint']} -->"] if sec.get("hint") else []) + [""]
+        lines[at:at] = block
+    if pr.get("checklist"):
+        h = heading("檢查清單")
+        last = max(i for i in range(h, len(lines)) if lines[i].startswith("- [ ]") and
+                   all(not lines[j].startswith("## ") for j in range(h + 1, i + 1)))
+        lines[last + 1:last + 1] = [f"- [ ] {it}" for it in pr["checklist"]]
+    return "\n".join(lines)
+
+
+def render_issue_config(text: str, iss: dict) -> str:
+    if not iss:
+        return text
+    out = [f"blank_issues_enabled: {'true' if iss.get('blank_issues_enabled', True) else 'false'}"]
+    links = iss.get("contact_links", [])
+    if not links:
+        out.append("contact_links: []")
+    else:
+        out.append("contact_links:")
+        for ln in links:   # json 字串（全 ASCII 跳脫）就是合法的 YAML 雙引號字串，含冒號、#、非 ASCII 都安全
+            out += [f"  - name: {json.dumps(ln['name'], ensure_ascii=True)}",
+                    f"    url: {json.dumps(ln['url'], ensure_ascii=True)}",
+                    f"    about: {json.dumps(ln['about'], ensure_ascii=True)}"]
+    return "\n".join(out) + "\n"
+
+
+# (元件, 來源檔) → 套用 templates.json 的函式
+RENDERERS = {("pr-template", "pull_request_template.md"): lambda t, f: render_pr_template(t, f.get("pr", {})),
+             ("issue-templates", "config.yml"): lambda t, f: render_issue_config(t, f.get("issues", {}))}
+
+
+def plan_components(src: Path, names: list, version: str, fields: dict = None) -> tuple:
     """先把所有元件讀完驗完，回傳 (檔案清單, 設定檔清單)；任何一個有問題就整個失敗，不留半套。"""
     if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
         raise SystemExit("config.json 的 components 必須是字串清單")
@@ -133,7 +254,10 @@ def plan_components(src: Path, names: list, version: str) -> tuple:
             seen[dst] = name
             raw = sp.read_bytes()
             try:
-                body = add_header(raw.decode("utf-8"), dst, name, version).encode("utf-8")
+                text = raw.decode("utf-8")
+                if (name, fsrc) in RENDERERS:
+                    text = RENDERERS[(name, fsrc)](text, fields or {})
+                body = add_header(text, dst, name, version).encode("utf-8")
             except UnicodeDecodeError:
                 body = raw                                     # 二進位檔不寫檔頭
             files.append((name, dst, body, int(str(f.get("mode", "644")), 8)))
@@ -283,7 +407,8 @@ def cmd_update(repo: Path, src: Path, adopt: bool = False) -> int:
     vd = repo / VENDOR_DIR
     old_pin = pinned(repo)
     # 先驗證所有元件再動手：未知元件、壞 manifest 不會留下寫一半的狀態
-    files, configs = plan_components(src, load_config(repo).get("components", []), version)
+    fields = load_templates(repo)
+    files, configs = plan_components(src, load_config(repo).get("components", []), version, fields)
     for info in old_pin.get("components", {}).values():       # 舊 pin 的路徑不可信：先驗，免得刪到 repo 外面
         for dst in info.get("files", {}):
             _safe_rel(dst, "PINNED 的檔案路徑")
@@ -303,6 +428,8 @@ def cmd_update(repo: Path, src: Path, adopt: bool = False) -> int:
     (vd / "STANDARD.md").write_text(std, encoding="utf-8")
     shutil.copyfile(src / "tools" / "sync.py", vd / "sync.py")
     pin = {"version": version, "sha256": _sha(std)}
+    if (repo / TEMPLATES_REL).exists():              # check 用它抓「改了 templates.json 卻沒重跑 update」
+        pin["templates_sha256"] = _sha_bytes((repo / TEMPLATES_REL).read_bytes())
     comp_pins = write_components(repo, files, configs, old_pin)
     if comp_pins:
         pin["components"] = comp_pins
@@ -311,6 +438,11 @@ def cmd_update(repo: Path, src: Path, adopt: bool = False) -> int:
         (vd / "config.json").write_text(json.dumps(DEFAULT_CONFIG, indent=2) + "\n", encoding="utf-8")
     print(f"釘版本：{old or '（無）'} → {version}")
     rc = cmd_render(repo)
+    ignored = ignore_errors(repo, pin)
+    for e in ignored:
+        print("錯誤：" + e, file=sys.stderr)
+    if ignored:
+        rc = 1
     if any(n in SETTINGS_WIRES or n == "hooks" for n in installed(repo)):
         print("提醒：hooks／guard／green-gate 要掛上才會生效，跑 python3 .dev-standard/sync.py wire"
               "（--dry-run 先看會改什麼）；sync.py check 會檢查有沒有掛")
@@ -336,6 +468,71 @@ def check_components(repo: Path, pin: dict) -> list:
             elif _sha_bytes(p.read_bytes()) != sha:
                 errors.append(f"元件檔被手改：{dst}（元件 {n}）。要改請改 dev-standard 的 components/{n}，再 update")
     return errors
+
+
+ALLOW_PREFIX = "      "  # 放行行的縮排；測試靠它把提示原樣貼回 .gitignore
+
+
+def must_track(repo: Path, pin: dict) -> list:
+    """要進版控的 dev-standard 檔：.dev-standard/ 底下的檔（PINNED、config、各元件設定），加上 PINNED 釘的元件檔。"""
+    rels = {p.relative_to(repo).as_posix() for p in (repo / VENDOR_DIR).glob("*") if p.is_file()}
+    for info in pin.get("components", {}).values():
+        rels.update(info.get("files", {}))
+    return sorted(rels)
+
+
+def gitignored(repo: Path, rels: list):
+    """回 [(路徑, 擋它的規則)]。不是 git repo、或 git 跑不起來，回 None（呼叫端要講出來，不可當成沒問題）。
+    已追蹤的檔不算：git check-ignore 預設不報它們，它們照樣會進版控。"""
+    if not rels:
+        return []
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "check-ignore", "-v", "-z", "--stdin"],
+                           input="\0".join(rels) + "\0", capture_output=True, text=True)
+    except OSError:
+        return None
+    if r.returncode not in (0, 1):
+        return None
+    f = r.stdout.split("\0")
+    out = []
+    for i in range(0, len(f) - 3, 4):          # 每筆四欄：來源、行號、規則、路徑
+        src, line, pat, path = f[i:i + 4]
+        if not pat.startswith("!"):            # -v 也會列出命中放行規則的路徑，那些沒被排除
+            out.append((path, f"{src}:{line} `{pat}`"))
+    return out
+
+
+def allow_lines(repo: Path, paths: list) -> list:
+    """貼到 .gitignore 最後就能放行 paths 的幾行。
+    被排除的祖先目錄才放行，並立刻把那層其他東西重新忽略：那些東西原本就被忽略（git 不進被排除的目錄），
+    重新忽略不會擋到任何原本進得了版控的檔。沒被排除的目錄不碰，免得把同層的檔誤擋。"""
+    dirs = sorted({"/".join(p.split("/")[:k]) for p in paths for k in range(1, len(p.split("/")))},
+                  key=lambda d: (d.count("/"), d))
+    ignored_dirs = {d.rstrip("/") for d, _ in (gitignored(repo, [d + "/" for d in dirs]) or [])}
+    out, emitted = [], set()
+    for d in dirs:
+        parent = d.rsplit("/", 1)[0] if "/" in d else None
+        if d in ignored_dirs or parent in emitted:      # 父層剛被重新忽略，這層也要放行
+            out += [f"!/{d}/", f"/{d}/*"]
+            emitted.add(d)
+    return out + [f"!/{p}" for p in sorted(paths)]
+
+
+def ignore_errors(repo: Path, pin: dict) -> list:
+    """被 .gitignore 排除的 dev-standard 檔。它們只存在這個工作目錄，其他 worktree、新 clone、CI 都拿不到。"""
+    hits = gitignored(repo, must_track(repo, pin))
+    if hits is None:
+        print("提醒：無法檢查 .gitignore（這裡不是 git repo，或 git 跑不起來）；元件檔有沒有被排除沒有驗")
+        return []
+    if not hits:
+        return []
+    allow = allow_lines(repo, [p for p, _ in hits])
+    lines = [f"{p}（被 {rule} 排除）" for p, rule in hits]
+    return ["以下 dev-standard 檔被 .gitignore 排除，不會進版控（其他 worktree、新 clone、CI 都拿不到）：\n    "
+            + "\n    ".join(lines)
+            + "\n  修法：把下面幾行加到 .gitignore 最後（白名單式的 `*`、整個目錄的 `.claude/` 都適用），"
+            "再跑 git check-ignore -v <路徑> 確認沒有輸出：\n"
+            + "\n".join(f"{ALLOW_PREFIX}{a}" for a in allow)]
 
 
 HOOKS_PATH = ".githooks"
@@ -519,6 +716,10 @@ def cmd_check(repo: Path, local: bool = True) -> int:
         for h in dup:   # 提醒不擋：是不是漂移由人判斷
             print(f"提醒：overlay 有跟正本同名的段落「{h}」，可能是漂移或該回填")
     errors += check_components(repo, pin)
+    tp = repo / TEMPLATES_REL
+    if pin and (_sha_bytes(tp.read_bytes()) if tp.is_file() else None) != pin.get("templates_sha256"):
+        errors.append(f"{TEMPLATES_REL} 跟上次 update 時不同，範本還是舊的：跑 sync.py update --from <dev-standard>")
+    errors += ignore_errors(repo, pin)
     errors += wiring_gaps(repo, local)
     if errors:
         print("dev-standard 檢查失敗：\n- " + "\n- ".join(errors))
