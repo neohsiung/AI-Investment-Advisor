@@ -1,6 +1,6 @@
 # DD-2026-1032 分級自動合併：沿用 dev-standard 的 pr_checks，依風險級決定誰合併
 
-> 一句話：PR 的合併依風險級分流。R0、R1 在七項檢查與 CI 全過後由腳本合併；R2 另加 `REVIEW: PASS <sha>`；R3 只有人能合併。熔斷開關 `.automerge-off` 在實測通過前維持開著。
+> 一句話：PR 的合併依風險級分流。R0、R1 在七項檢查與 CI 全過後由腳本合併；R2 另加 `REVIEW: PASS <sha>`；R3 只有人能合併。熔斷開關 `.automerge-off` 已拿掉，用第一個真的 R1 PR 實測，失敗就補回。
 
 **狀態**：已採用，分階段啟用中。導入（#278）與 CODEOWNERS 收斂（#284）已合併，熔斷開關仍開著，進度見第 5 節。
 **風險級**：R0。描述的變更已由 #278、#284 實施，兩者碰到 R3 路徑，由人核可並合併。
@@ -9,7 +9,7 @@
 1. 自動合併沿用 dev-standard 的 `pr_checks`，不自建流程。
 2. ruleset 的必要核可數改為 0，保留 code owner 審查。
 3. CODEOWNERS 只列 R3 路徑。
-4. 熔斷開關先開，實測通過後才拿掉。
+4. 熔斷開關先開；2026-11-01 改為先拿掉、用第一個 R1 PR 實測，失敗就補回，原因見第 5 節。
 
 ## 1 為什麼改成沿用 pr_checks
 
@@ -90,9 +90,8 @@ flowchart TD
 ### 3.4 本 repo 的差異
 
 - 主 checkout 是正式環境。`run.py` 非離線模式要求本機 HEAD 等於 base 最新 commit，所以在 worktree 執行，不在正式 checkout 切分支。
-- hooks 元件暫不採用。它會設定 `core.hooksPath`，使 `.git/hooks/pre-commit` 的 detect-secrets 與 gitleaks 失效。等 dev-standard 0.7.0 支援 `.githooks/pre-push.d/` 再採用，見 [#281](https://github.com/neohsiung/AI-Investment-Advisor/issues/281)。
+- hooks 元件已採用，見 [#281](https://github.com/neohsiung/AI-Investment-Advisor/issues/281)。
 - ci 元件等 dev-standard#19，見 [#282](https://github.com/neohsiung/AI-Investment-Advisor/issues/282)。
-- `.claude/` 以白名單進版控：`settings.json`、`hooks/`、`agents/`。
 
 ## 4 威脅與對策
 
@@ -114,16 +113,15 @@ flowchart TD
 | 3 | CODEOWNERS 收斂為只列 R3，#284 | 已合併 | 第 2 節的 CODEOWNERS 指令 |
 | 4 | 對下一個真的 PR 跑 `run.py <PR>`，確認印出熔斷開關的拒絕，[#279](https://github.com/neohsiung/AI-Investment-Advisor/issues/279) | 等下一個 PR | 該指令的輸出 |
 | 5 | 實測 R1 PR 能被 `--merge` 合進去，R3 路徑的 PR 被 GitHub 擋下，並確認使用者帳號在繞過名單，[#280](https://github.com/neohsiung/AI-Investment-Advisor/issues/280) | 待做 | 兩個 PR 的結果加 `bypass_actors` 指令 |
-| 6 | 另開 PR 拿掉 `.automerge-off`，屬 R3，由使用者合併 | 步驟 4、5 通過後 | `ls .automerge-off` 應失敗 |
+| 6 | 另開 PR 拿掉 `.automerge-off`，屬 R3，由使用者合併。順序改在步驟 5 之前：`run.py --merge` 讀的是 base 分支上的開關，開關在就一律拒絕，R1 實測合併做不出來 | 已提出 | `ls .automerge-off` 應失敗 |
 
-步驟 2 完成後、步驟 3 合併前有一段空窗：必要核可數已是 0，而 CODEOWNERS 仍列著 R2 路徑。#284 合併後空窗已結束。熔斷開關保留到步驟 5 之後，因為實測前不知道真實 PR 上的擋法是否如預期。
+步驟 2 完成後、步驟 3 合併前有一段空窗：必要核可數已是 0，而 CODEOWNERS 仍列著 R2 路徑。#284 合併後空窗已結束。開關拿掉後沒有程式層的急停，第一個 R1 實測 PR 要有人盯著。行為不如預期就立刻補回空的 `.automerge-off`，這是 R3 PR。
 
 ## 6 風險與限制
 
 - **`REVIEW: PASS` 不是第二雙眼睛。** agent 與 owner 共用同一個 GitHub 身分，`trusted_authors` 為空，等於 repo owner。標記證明的是 `reviewer` agent 在當前 head 審過。R2 的獨立性來自 `reviewer` 是另一個 agent 與上下文，不來自身分。
 - **路徑清單完整度就是安全邊界。** 新增的動錢檔沒列進 `r3_globs`，會被當成 R1 自動合併。計畫中的 `tests/invariants/test_codeowners_covers_money_paths.py` 是補這個洞的測試，建議在步驟 6 之前完成。
 - **R1 不是零風險。** R1 含一般程式與測試，看錯的代價小但不為零。合併後留言的 retro 五行用來量這個代價。
-- **合併後才失敗的情形只能事後補救。**
 - **權限範圍等於使用者本人。** 合併由 agent 在使用者的機器上用使用者的 `gh` 身分執行，沒有機器人身分。熔斷開關與 R3 拒絕是程式層的限制，不是權限層的。
 
 ## 7 未驗證
@@ -134,7 +132,7 @@ flowchart TD
 
 ## 8 回滾
 
-- 暫停自動合併：確保根目錄有 `.automerge-off`，空檔即可。
+- 暫停自動合併：根目錄放空的 `.automerge-off`。
 - 還原必要核可數：使用者在 GitHub 設定頁改回 1。
 - 移除 pr-checks 元件：從 `.dev-standard/config.json` 的 `components` 拿掉 `pr-checks`，跑 `python3 .dev-standard/sync.py update`。
 
