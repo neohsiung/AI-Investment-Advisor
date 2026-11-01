@@ -60,8 +60,9 @@ Litov 依職能切團隊（growth、product、engineering…），因為它有�
 | `advisor.quality` | 測試與不變量守衛 | 不為了讓綠燈而改弱檢查；改 `tests/invariants/` 要跟人說明 | `tests/` | R1；`tests/invariants/` 是 R2 |
 | `advisor.docs` | 使用者文件與設計決策紀錄 | 不寫會漂移的數字；不改使命區塊 | `docs/`、`READMEs/`、`README.md`、`CHANGELOG.md` | R0 |
 | `ops.method` | 開發辦法、規則、hook、模板 | 不改 CODEOWNERS 與 `risk.json` 的 R3 清單來讓自己的 PR 過關 | `AGENTS.md`、`.dev-standard/`、`.agent/`、`.github/`，不含 CODEOWNERS、`.githooks/`、`.claude/`、`.pre-commit-config.yaml` | R2 |
-| `ops.tooling` | 維運腳本、依賴、lint baseline | 不跑會接管正式環境的腳本；不碰 `start.sh`、`predeploy_gate.sh`、compose | `scripts/`、`deployment/`、`infra/`、`k8s/`、`pyproject.toml`、`uv.lock`、`.ruff-baseline.json` | R1；`scripts/*gate*.sh` 是 R2 |
+| `ops.tooling` | 維運腳本、依賴、lint baseline | 不跑會接管正式環境的腳本；不碰 `start.sh`、`predeploy_gate.sh`、compose | `scripts/`、`deployment/`、`infra/`、`pyproject.toml`、`uv.lock`、`.ruff-baseline.json` | R1；`scripts/*gate*.sh` 是 R2 |
 | `ops.watch` | 唯讀：查 DB、API、CI、排程、相依弱點，結果寫成 issue 留言 | 不寫 repo 檔、不重啟服務、不改設定 | 無，只開卡與留言 | 不適用 |
+| 未歸組路徑 | 上列沒涵蓋的路徑，例如 `src/utils/`、`src/tools/`、`src/plugins/`、`.githooks/`、`.claude/`、根目錄的 shim 檔與 `install.sh` | 開卡由創辦人指派，指派前不動手 | 無 | 依 `risk.json` 算 |
 | `founder` | `r3_globs` 全部；正式環境的實際設定；核可與合併 R3 | 無 | `.github/CODEOWNERS`、`.dev-standard/risk.json` 列的 R3 路徑、`secrets/`、`*.env` | R3 |
 
 規則：
