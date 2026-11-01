@@ -2,7 +2,7 @@
 
 > 一句話：PR 的合併依風險級分流。R0、R1 在七項檢查與 CI 全過後由腳本合併；R2 另加 `REVIEW: PASS <sha>`；R3 只有人能合併。熔斷開關 `.automerge-off` 已拿掉，用第一個真的 R1 PR 實測，失敗就補回。
 
-**狀態**：已採用，分階段啟用中。導入（#278）與 CODEOWNERS 收斂（#284）已合併，熔斷開關仍開著，進度見第 5 節。
+**狀態**：已採用，分階段啟用中。導入（#278）、CODEOWNERS 收斂（#284）、拿掉熔斷開關（#291）已合併；`--merge` 與 R3 擋下兩項實測尚未完成，進度見第 5 節。
 **風險級**：R0。描述的變更已由 #278、#284 實施，兩者碰到 R3 路徑，由人核可並合併。
 **取代**：本文件 2026-10-31 的版本（#276）。那版設計自建 GitHub Actions 流程，使用者在同日決定沿用 `pr_checks`，所以不採用，保留在歷史：`git log --follow -p docs/design/DD-2026-1032-tiered-auto-merge.md`。
 **已記錄的決定**，使用者於 2026-10-31 至 11-01：
@@ -91,7 +91,7 @@ flowchart TD
 
 - 主 checkout 是正式環境。`run.py` 非離線模式要求本機 HEAD 等於 base 最新 commit，所以在 worktree 執行，不在正式 checkout 切分支。
 - hooks 元件已採用，見 [#281](https://github.com/neohsiung/AI-Investment-Advisor/issues/281)。
-- ci 元件等 dev-standard#19，見 [#282](https://github.com/neohsiung/AI-Investment-Advisor/issues/282)。
+- ci、pr-template、issue-templates 元件已採用，見 [#282](https://github.com/neohsiung/AI-Investment-Advisor/issues/282)。
 
 ## 4 威脅與對策
 
@@ -111,11 +111,11 @@ flowchart TD
 | 1 | 導入 dev-standard 0.6.2，熔斷開關先開，#278 | 已合併 | `ls .automerge-off .dev-standard/bin/pr_checks/run.py` |
 | 2 | ruleset 必要核可數改 0，保留 code owner 審查，由使用者在 GitHub 設定頁改 | 已完成 | 第 2 節的 ruleset 指令 |
 | 3 | CODEOWNERS 收斂為只列 R3，#284 | 已合併 | 第 2 節的 CODEOWNERS 指令 |
-| 4 | 對下一個真的 PR 跑 `run.py <PR>`，確認印出熔斷開關的拒絕，[#279](https://github.com/neohsiung/AI-Investment-Advisor/issues/279) | 等下一個 PR | 該指令的輸出 |
+| 4 | 對下一個真的 PR 跑 `run.py <PR>`，確認印出熔斷開關的拒絕，[#279](https://github.com/neohsiung/AI-Investment-Advisor/issues/279) | 已完成：#286 上印出熔斷開關的拒絕 | 該指令的輸出 |
 | 5 | 實測 R1 PR 能被 `--merge` 合進去，R3 路徑的 PR 被 GitHub 擋下，並確認使用者帳號在繞過名單，[#280](https://github.com/neohsiung/AI-Investment-Advisor/issues/280) | 待做 | 兩個 PR 的結果加 `bypass_actors` 指令 |
-| 6 | 另開 PR 拿掉 `.automerge-off`，屬 R3，由使用者合併。順序改在步驟 5 之前：`run.py --merge` 讀的是 base 分支上的開關，開關在就一律拒絕，R1 實測合併做不出來 | 已提出 | `ls .automerge-off` 應失敗 |
+| 6 | 另開 PR 拿掉 `.automerge-off`，屬 R3，由使用者合併。順序改在步驟 5 之前：`run.py --merge` 讀的是 base 分支上的開關，開關在就一律拒絕，R1 實測合併做不出來 | 已合併，#291 | `ls .automerge-off` 應失敗 |
 
-步驟 2 完成後、步驟 3 合併前有一段空窗：必要核可數已是 0，而 CODEOWNERS 仍列著 R2 路徑。#284 合併後空窗已結束。開關拿掉後沒有程式層的急停，第一個 R1 實測 PR 要有人盯著。行為不如預期就立刻補回空的 `.automerge-off`，這是 R3 PR。
+開關拿掉後沒有程式層的急停，第一個 R1 實測 PR 要有人盯著。行為不如預期就立刻補回空的 `.automerge-off`，這是 R3 PR。
 
 ## 6 風險與限制
 
@@ -126,9 +126,8 @@ flowchart TD
 
 ## 7 未驗證
 
-1. `run.py --merge` 能不能更新 `main`。#286 由使用者手動按 Merge 成功，但 `run.py --merge` 用的是 `gh` 權杖，是否同樣被放行尚未實測。屬步驟 5。
+1. `run.py --merge` 能不能更新 `main`。#286 由使用者手動按 Merge 成功，但 `run.py --merge` 用的是 `gh` 權杖，是否同樣被放行尚未實測。屬步驟 5。#293 由使用者手動合併，所以仍未實測。
 2. R3 路徑的 PR 被 GitHub 擋下，是 CODEOWNERS 加 `require_code_owner_review` 的預期行為，尚未用真實 PR 實測。屬步驟 5。
-3. 熔斷開關的拒絕訊息在真實 PR 上的樣子。屬步驟 4。
 
 ## 8 回滾
 
