@@ -73,3 +73,5 @@ fi
 
 audit "result=PASS"
 echo "✅ predeploy gate passed"
+
+# test: R3 path touched only to observe CODEOWNERS blocking; PR will be closed unmerged (#280)
