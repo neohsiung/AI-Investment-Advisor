@@ -4,6 +4,7 @@
 
 **狀態**：R0 草稿，2026-11-01，合併由人。本文只提案；唯一會生效的規則寫在 `AGENTS.md`〈session 編排〉（R2）。
 **範圍**：只改文件。不碰交易、下單、設定值、門檻、金鑰、排程、程式邏輯。
+**範圍收斂**：通用規則已由 dev-standard#42 收編，本文只寫本 repo 的差異與現有 session 盤點。
 **來源**：創辦人 2026-11-01 指示：本 repo 與 hermes-investment-agent 照 Litov 的方式管理 session。Litov 的正本是 `litov/docs/dd-session-orchestration-v1.md`、`dd-team-groups-v1.md`、`framework/groups.json`，第一輪實戰發現見 `litov/docs/ops-dispatch-round1-2026-11-01.md`。
 **Refs**：[#297](https://github.com/neohsiung/AI-Investment-Advisor/issues/297)
 
@@ -45,7 +46,7 @@ E1 到 E4 與 Litov 的 E4、E6、F4 同形；E5、E6、E8 是本 repo 比 Litov
 
 Litov 依職能切團隊（growth、product、engineering…），因為它有多個產品與多種職能。本 repo 是單一產品、單一程式庫，職能切不出邊界；真正的邊界是**風險級**：誰能合併。所以組依「寫哪些路徑」切，並讓每組的寫入範圍不跨 R 級邊界，一個組要碰 R3 就不是 agent 組。
 
-三層不變：團隊 → 組 → 卡。團隊只有兩個：`advisor` 管產品程式與文件，`ops` 管流程與維運，另外加上 `founder`。
+本 repo 是單一產品，沒有團隊層，組只用來歸類 session 與看寫入範圍。組名前綴 `advisor` 管產品程式與文件，`ops` 管流程與維運，另外有 `founder`。
 
 ### 2.2 組表
 
@@ -77,7 +78,7 @@ Litov 依職能切團隊（growth、product、engineering…），因為它有�
 
 | 面向 | Litov | 本 repo | 理由 |
 |---|---|---|---|
-| 團隊 | growth、product、eng、design、brand、ops | `advisor`、`ops`、`founder` | E9：單一產品，沒有職能邊界；風險級才是邊界 |
+| 團隊層 | growth、product、eng、design、brand、ops | 無團隊層，只有組 | E9：單一產品，沒有職能邊界；風險級才是邊界 |
 | 專案欄 | 多產品，每張卡要選 | 固定 `advisor` | 只有一個專案，保留欄位是為了與 Litov、hermes 的命名一致，方便 `ccusage` 與 grep |
 | 組表檔 | `framework/groups.json` 加 `tests/test_groups.py` | 這輪不建，§6 提案 | 沒有測試守的組表只是第二份會漂移的文件 |
 | 租約檔 | `~/.claude/litov-leases/` 管瀏覽器與 outbox | 不採用 | E9：沒有被忽略的共用 outbox；瀏覽器分頁是否各 session 獨立，Litov 自己也標未證實。本 repo 的共用資源是正式環境，由 R3 規則與創辦人管，不靠租約 |
@@ -90,21 +91,7 @@ Litov 依職能切團隊（growth、product、engineering…），因為它有�
 
 ## 4. 運作方式
 
-```mermaid
-flowchart LR
-    Card[issue 卡<br/>標題含組與範圍] --> Claim[CLAIM 留言<br/>session id、分支、model]
-    Claim --> Work[自己的 worktree<br/>wt.sh new]
-    Work --> PR[PR：R 級、Refs、DERIVED]
-    PR --> Merge{風險級}
-    Merge -->|R0 R1| Auto[腳本合併]
-    Merge -->|R2| Rev[REVIEW: PASS<br/>創辦人留]
-    Merge -->|R3| Founder[創辦人合併]
-    Auto --> Done{完成四條}
-    Rev --> Done
-    Founder --> Done
-    Done -->|全過| Arch[封存 session]
-    Done -->|缺一條| Note[卡上留言缺哪條]
-```
+通用部分不在此重寫：一卡一 session、命名、`CLAIM`、`PING`、完成四條、留言前綴與核可標記規則，正本是 [neohsiung/dev-standard#42](https://github.com/neohsiung/dev-standard/issues/42)，合併後見 STANDARD 對應節；實戰版本見 Litov 的 `docs/dd-session-orchestration-v1.md`。本 repo 的合併依風險級：R0、R1 由腳本，R2 加創辦人的 `REVIEW: PASS`，R3 只有創辦人。
 
 ## 5. 現有 session 盤點與建議歸組
 

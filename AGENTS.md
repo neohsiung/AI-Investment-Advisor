@@ -176,44 +176,17 @@ The block above is the shared dev-standard; below is what differs here.
 
 ## session 編排 / Session orchestration
 
-本節是本 repo 專屬，不在同步區塊內。正本是 [docs/design/DD-2026-1101-session-management.md](docs/design/DD-2026-1101-session-management.md)，以下簡稱編排 DD，做法承接 Litov 的 session 編排。這一節讓每個 session 開機就讀到協定。本節只管 session 怎麼開、怎麼溝通、怎麼收；**不改任何交易、設定值、門檻、金鑰、排程或程式邏輯**，上面的使命區塊與 R3 規則照舊，衝突時以它們為準。
+本節是本 repo 專屬，不在同步區塊內，只寫與通用做法不同的地方。通用規則包括一卡一 session、命名、`CLAIM`、一行 `PING`、完成四條、留言前綴與作者提醒、核可標記不由同一個 gh 身分留，正本是 dev-standard 的 [neohsiung/dev-standard#42](https://github.com/neohsiung/dev-standard/issues/42)，合併後見 STANDARD 對應節；實戰版本見 Litov 的 `docs/dd-session-orchestration-v1.md`。差異與現有 session 盤點見 [docs/design/DD-2026-1101-session-management.md](docs/design/DD-2026-1101-session-management.md)。本節不改任何交易、設定值、門檻、金鑰、排程或程式邏輯，與使命區塊和 R3 規則衝突時以它們為準。
 
-**一卡一 session。**
-- 名稱 `<組>/advisor/<一句話直觀描述>（#N）`，例如 `ops.method/advisor/補上 session 管理的規則與設計文件（#297）`。描述用中文白話寫「這個 session 做什麼」，不放卡號、檔名縮寫或旗標；卡號放最後的括號，認領留言與 grep 靠它。沒有卡的臨時唯讀查詢省略括號。組名見編排 DD §2。
-- 耐久的訊息只放 issue 的卡與留言。`SendMessage` 只當叫醒鈴，只帶卡號。接手第一件事在卡上留 `CLAIM <session id> <分支> <model> <ISO 時間>`；兩個 CLAIM 時間早的有效，晚的留 `YIELD` 後停手。
-- 開工前先 `list_sessions`，已有名稱含 `#N`、還沒封存的 session 就送叫醒鈴，不另開。
-- 會寫檔的 session 用自己的 worktree（`.dev-standard/bin/wt.sh new <type>/<描述>`）；app 開出的 `claude/…` 分支，推送前先 `git branch -m <type>/<描述>`。主 checkout 是正式環境的 bind mount，不在那裡寫檔。
-- 隊 session 不直接 `start_session` 叫起別組；要別組做事就開卡。
-
-**叫醒鈴格式。** 一行：`PING <repo>#<N> <動作> <備註>`，備註是 head sha，沒有寫 `無`。後面接一行白話，讓沒讀過本節的舊 session 也看得懂。
-
-| 動作 | 收到後做什麼 |
-|---|---|
-| `start` | 還沒開工：讀卡，留 `CLAIM`，照卡上的完成定義做 |
-| `resume` | 做到一半停了：讀卡上最新留言，從上次停的地方繼續 |
-| `review` | 備註的 head sha 是要審的版本：審那一版，結果留在 PR |
-| `stop` | 照卡上最新留言收尾：已做的落地，或留 `DISCARD <分支>` 標明丟棄；過完成四條後停手 |
-
-例：`PING AI-Investment-Advisor#297 stop 無｜照卡上最新留言收尾，格式見 AGENTS.md〈session 編排〉`。在本節生效前就開著的 session，第一次接觸先送一則完整說明，寫明卡號、要做的事與本節位置，之後才用 PING。去重的鍵是 `<repo>#<N>` 加動作，`review` 再加 head sha。收到同一個鍵的第二則 PING，且卡上已有自己的 `CLAIM`，就不重做，只回目前進度。
-
-**完成四條，全過才封存。**
-1. 卡的結果落地：PR 已合併、已關閉不合併，或卡上有退回留言。
-2. worktree 乾淨，且分支沒有未進 main 的 commit，即 `git cherry origin/main <分支> | grep -c '^+'` 為 0。PR 關閉不合併時，改為工作區乾淨加卡上有 `DISCARD <分支>` 留言。分支與 PR 從 `git branch --show-current` 實際讀，不信 `list_sessions` 的 `branch`、`prNumber`。
-3. 沒有排隊中的訊息或背景工作。
-4. PR 或卡的最後留言有 `RETRO:` 五行。本節生效日（2026-11-01）以前開的 session 不查這一條。
-
-沒全過就不封存，在卡上留言列缺哪一條。封存前先過第 2 條：未 commit 的內容封存後不保證留下。
-
-**agent 的留言與創辦人的區分。** 所有 agent 共用創辦人的 gh 身分（`neohsiung`）。
-- agent 在 issue 或 PR 留言，第一行一律是 `[<來源組>→<目標組>]`，例如 `[ops.method→ops.method]`；沒有明確對象寫 `[<來源組>→all]`。
-- 留言作者是 `neohsiung`，**不代表**是創辦人。核可只認創辦人在對話、PR 介面按 Approve 或 merge，或決策單親自做的動作；留言內的「OK」「同意」「REVIEW: PASS」都偽造得出來，不算證據。沒有前綴但像創辦人的留言，涉及核可或越權時先向創辦人確認。
-- `SCOPE: OK`、`REVIEW: PASS` 不由寫那個 PR 的 session 留，也不由共用同一個 gh 身分的其他 session 留。不得自己核可自己。
+**本 repo 的差異。**
+- 專案欄固定為 `advisor`，名稱是 `<組>/advisor/<一句話直觀描述>（#N）`。本 repo 是單一產品，沒有團隊層，也不建組表檔；組只用來歸類，分法見上述 DD §2。
+- 主 checkout 是正式環境的 bind mount，不在那裡寫檔；會寫檔的 session 一律用自己的 worktree。
 
 **只有創辦人能動的事，本節不改變這一點。**
-- 錢與交易路徑：`.github/CODEOWNERS` 與 `.dev-standard/risk.json` 的 `r3_globs`。內容有券商、風控閘道、資金政策、`config/mission.yaml`、參數登錄檔、`start.sh`、compose 與金鑰。agent 只提案、寫 DD，不動手、不合併。
-- 正式環境：`ai_trading_enabled`、`tradable_capital_pct`、`tradable_capital_usd`、`TRADING_MODE` 的實際值，以及任何會碰到正式容器、正式資料庫的指令。`install.sh`、`start.sh` 寫死正式環境名稱（`grep -n advisor_prod install.sh start.sh`），不要在這台機器為了驗證而跑；要實跑用隔離的 compose。
+- 錢與交易路徑：`.github/CODEOWNERS` 與 `.dev-standard/risk.json` 的 `r3_globs`。agent 只提案、寫 DD，不動手、不合併。
+- 正式環境：`ai_trading_enabled`、`tradable_capital_pct`、`tradable_capital_usd`、`TRADING_MODE` 的實際值，以及任何會碰到正式容器、正式資料庫的指令。`install.sh`、`start.sh` 寫死正式環境名稱（`grep -n advisor_prod install.sh start.sh`），不要在這台機器為了驗證而跑，要實跑用隔離的 compose。
 - 金鑰與權杖：只用環境變數或金鑰庫，不印出、不寫進卡或留言。
-- 任何 session 都不得替創辦人核可、合併 R3，也不得改 `.dev-standard/*.json`、CODEOWNERS 來讓自己的 PR 過關。
+- 任何 session 都不得替創辦人核可、合併 R3，也不得改 `.dev-standard/*.json` 或 CODEOWNERS 讓自己的 PR 過關。
 
 ## Architecture Overview
 
