@@ -1,5 +1,5 @@
 #!/bin/sh
-# 由 dev-standard v0.7.1 產生，請勿手改；要改請改 dev-standard 的 components/hooks，再跑 sync.py update
+# 由 dev-standard v0.7.2 產生，請勿手改；要改請改 dev-standard 的 components/hooks，再跑 sync.py update
 # pre-commit.sh — 憑證外洩與誤入版控的防護（來由：hermes .githooks/pre-commit，2026-09-13；dev-standard §6）
 #
 # 安裝：cp 到 repo 的 .githooks/pre-commit，git config core.hooksPath .githooks

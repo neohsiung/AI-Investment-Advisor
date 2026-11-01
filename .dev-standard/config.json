@@ -13,6 +13,7 @@
         "wt",
         "agents",
         "pr-checks",
-        "hooks"
+        "hooks",
+        "ci"
     ]
 }

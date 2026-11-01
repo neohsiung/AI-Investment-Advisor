@@ -1,45 +1,51 @@
 {
-  "version": "0.7.1",
+  "version": "0.7.2",
   "sha256": "2f8d51bc44d8cd99adaae5228befad33925f0bc2845d9f21cd1ca06ceb263f20",
   "components": {
     "guard": {
       "files": {
-        ".claude/hooks/guard.py": "81f16fa3aac88b5dae677d540722d1f4b9e7987792d274cbb8f8f2787e516fb4"
+        ".claude/hooks/guard.py": "c21c892fc4e409d01d403eaf00286f763bc9ff7d6db7f3d0e061c0404c425ec9"
       }
     },
     "green-gate": {
       "files": {
-        ".claude/hooks/green_gate.py": "21bee87da0ea525676b65bdf91a6fc4177aaf952d96a405b522e3865b9735ae9"
+        ".claude/hooks/green_gate.py": "56715cff1ce5dffec7a50686bc7ea4a8c1e108c14640f3094aff41c8ca5bc88a"
       }
     },
     "wt": {
       "files": {
-        ".dev-standard/bin/wt.sh": "99ccb6d78e550ce065c0e9448935c46f945267bd38f54e543fccd1622fabb7c0"
+        ".dev-standard/bin/wt.sh": "635cd8500dfa8755a77595d0ecb7bb59a92f50ccd2ee6d042587b757a7e4e75d"
       }
     },
     "agents": {
       "files": {
-        ".claude/agents/scout.md": "b7767248ce1ecd7d96406b88ed04f5fe8366eb264d7781d9b041a1bd04418bdc",
-        ".claude/agents/implementer.md": "e92961077107dd24b69b3bf55d88179474c5d93ae74077aa9da518ef15523755",
-        ".claude/agents/reviewer.md": "a23b0fe957db6e1d15a8773df4a0320853b2d8b948c3455ba7bd0be32055532c",
-        ".claude/agents/architect.md": "e372bafea70992781981409601cbf173c873944e0d61f4795d44ac8fd1b80b4a"
+        ".claude/agents/scout.md": "4ce829423e19df83c4bb3a41d7a3d70393bd4981cbed3cb2dae83f61df4f1415",
+        ".claude/agents/implementer.md": "15c0338dbafcca993e224cb2ef645bab3cc436cd235e6a00a20bd2163ece2521",
+        ".claude/agents/reviewer.md": "b5d8ae6778175237dc62ab1cfa5286b1a117257e3bdf8a0cd92d89812b12fcd3",
+        ".claude/agents/architect.md": "161c0dd695ca8baea0588fffb61bfc1956ebbcafcdf03c4bcab612f40c9f908a"
       }
     },
     "pr-checks": {
       "files": {
-        ".dev-standard/bin/pr_checks/__init__.py": "309f8e57821fe1ea15a99f66971c9a04d6b460975260b57de04a12f8ea081395",
-        ".dev-standard/bin/pr_checks/risk.py": "c1b1c49db75d113f73149bd2e5955371a3cc4d0d9824a05a9490267666c0b15a",
-        ".dev-standard/bin/pr_checks/checks.py": "e79b44c79e0610016d01e74f90bb0723f59e96b488138861c2db591ac06ae5e7",
-        ".dev-standard/bin/pr_checks/merge.py": "3d3cb6628eec848d94356e6aa1eb09380c882468a86837e8ed177e0718416623",
-        ".dev-standard/bin/pr_checks/gh.py": "0f94e02bc3257ed47743e238b154a80b512dfde7a64e288f580014e2ac651379",
-        ".dev-standard/bin/pr_checks/run.py": "c5bf3e7adfcc208f74fb775f985970a13fd79a1b7b6386af0bcd4ff54f54604d",
-        ".github/workflows/pr-checks.yml": "0d0b4f687536d2c5f189f9b1a1d747d8dd0c9f9422141f78152f78939ddd9333"
+        ".dev-standard/bin/pr_checks/__init__.py": "161c914a68bb75aab70fc75f6144268448a44b55018a342b479ce47377220176",
+        ".dev-standard/bin/pr_checks/risk.py": "0815815efa25a50ad0b0634504e21d0ac03714c37c754d30658234a48abb1e4e",
+        ".dev-standard/bin/pr_checks/checks.py": "83ff321a7573b22ee3ccb0aedf15ddbb0cdaeb8ed3dd01e024ea07c4fe264e90",
+        ".dev-standard/bin/pr_checks/merge.py": "c3abb93f9697ce15553c3c477fca79a3684706f099508fff94a0686cc2122dfa",
+        ".dev-standard/bin/pr_checks/gh.py": "ce608277e5be7ce8b134ff5d7dddc4ad66913e65230efce8bf913c2090ccfa3e",
+        ".dev-standard/bin/pr_checks/run.py": "c1b5b495e08a8a0c904057713f0a13433c5467ae0293d4de260584b4ce5ae0a0",
+        ".github/workflows/pr-checks.yml": "5bc7e00cb06dcabfd772c36c3ac5ef9313aa488c7122245c06b5425e758b7437"
       }
     },
     "hooks": {
       "files": {
-        ".githooks/pre-commit": "38a84d903e14610ee6a39df8b0b0531bd6d1bf16d39062e1a1a50ce2ef0618dc",
-        ".githooks/pre-push": "3f675325f73d0d4fb8c8103ffa78401354fb7774798049849a2658af70f8fc75"
+        ".githooks/pre-commit": "b2fd937227148a9dab0bc51aaf632b2a65b661625e0f1aa9cb3bf9357de922c4",
+        ".githooks/pre-push": "c235af41f6b717310e0ea4679c21c14d91937d663c19c1bcb4d1b7c69264596c"
+      }
+    },
+    "ci": {
+      "files": {
+        ".github/workflows/dev-standard.yml": "839846126bd148bce646299c0e46e46e434bc8449ab789ca9ed68723774bc167",
+        ".dev-standard/bin/ci_config.py": "e6807a1ebd33d38789a7d294b7f0cc6f6851818a0ce384cab1a12888fa47c976"
       }
     }
   }
