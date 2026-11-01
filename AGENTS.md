@@ -174,6 +174,20 @@ The block above is the shared dev-standard; below is what differs here.
   檢查：`python3 scripts/ruff_baseline.py check`；修掉舊違規後跑 `python3 scripts/ruff_baseline.py update` 收緊 baseline。
 
 
+## session 編排 / Session orchestration
+
+本節是本 repo 專屬，不在同步區塊內，只寫與通用做法不同的地方。通用規則包括一卡一 session、命名、`CLAIM`、一行 `PING`、完成四條、留言前綴與作者提醒、核可標記不由同一個 gh 身分留，正本是 dev-standard 的 [neohsiung/dev-standard#42](https://github.com/neohsiung/dev-standard/issues/42)，合併後見 STANDARD 對應節；實戰版本見 Litov 的 `docs/dd-session-orchestration-v1.md`。差異與現有 session 盤點見 [docs/design/DD-2026-1101-session-management.md](docs/design/DD-2026-1101-session-management.md)。本節不改任何交易、設定值、門檻、金鑰、排程或程式邏輯，與使命區塊和 R3 規則衝突時以它們為準。
+
+**本 repo 的差異。**
+- 專案欄固定為 `advisor`，名稱是 `<組>/advisor/<一句話直觀描述>（#N）`。本 repo 是單一產品，沒有團隊層，也不建組表檔；組只用來歸類，分法見上述 DD §2。
+- 主 checkout 是正式環境的 bind mount，不在那裡寫檔；會寫檔的 session 一律用自己的 worktree。
+
+**只有創辦人能動的事，本節不改變這一點。**
+- 錢與交易路徑：`.github/CODEOWNERS` 與 `.dev-standard/risk.json` 的 `r3_globs`。agent 只提案、寫 DD，不動手、不合併。
+- 正式環境：`ai_trading_enabled`、`tradable_capital_pct`、`tradable_capital_usd`、`TRADING_MODE` 的實際值，以及任何會碰到正式容器、正式資料庫的指令。`install.sh`、`start.sh` 寫死正式環境名稱（`grep -n advisor_prod install.sh start.sh`），不要在這台機器為了驗證而跑，要實跑用隔離的 compose。
+- 金鑰與權杖：只用環境變數或金鑰庫，不印出、不寫進卡或留言。
+- 任何 session 都不得替創辦人核可、合併 R3，也不得改 `.dev-standard/*.json` 或 CODEOWNERS 讓自己的 PR 過關。
+
 ## Architecture Overview
 
 ```
