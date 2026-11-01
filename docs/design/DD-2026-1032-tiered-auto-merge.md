@@ -32,7 +32,7 @@ PR 作者與 code owner 是同一個 GitHub 帳號，GitHub 不讓人核可自�
 |---|---|
 | ruleset 要求 PR、code owner 審查、討論串解決、CodeQL 高風險警示擋合併；必要核可數 0；`update` 規則限制只有繞過名單的身分能更新 `main` | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq '.rules[]\|{type,parameters}'` |
 | 管理者角色與兩個 Integration 永遠可繞過 | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq .bypass_actors` |
-| GitHub 的 auto-merge 是關的，本設計不使用 | `gh api repos/neohsiung/AI-Investment-Advisor --jq .allow_auto_merge` |
+| GitHub 的 auto-merge 無法完成合併，本設計不使用。#286 實測檢查全過仍回「Cannot update this protected ref」，因為 `update` 規則只放行繞過名單的身分 | `gh api repos/neohsiung/AI-Investment-Advisor --jq .allow_auto_merge`，並看 PR 頁面的 Merge status |
 | CODEOWNERS 只列 R3 路徑，owner 是 `@neohsiung` | `grep -v '^#' .github/CODEOWNERS \| grep -c .` |
 | R3、R2 路徑樣式的單一來源是 `risk.json`；CODEOWNERS 的 R3 清單必須與它的 `r3_globs` 一致 | `python3 -c "import json;print(len(json.load(open('.dev-standard/risk.json'))['r3_globs']))"` |
 | 熔斷開關在 | `ls .automerge-off` |
@@ -85,7 +85,7 @@ flowchart TD
   G --> T[合併後留言 retro 五行]
 ```
 
-合併固定是 merge commit，不 squash，不用 `--auto`，不用 `--admin`。
+合併固定是 merge commit，不 squash，不用 `--auto`，不用 `--admin`。GitHub 的 auto-merge 在這個 repo 不可用，見第 2 節。
 
 ### 3.4 本 repo 的差異
 
@@ -116,7 +116,7 @@ flowchart TD
 | 5 | 實測 R1 PR 能被 `--merge` 合進去，R3 路徑的 PR 被 GitHub 擋下，並確認使用者帳號在繞過名單，[#280](https://github.com/neohsiung/AI-Investment-Advisor/issues/280) | 待做 | 兩個 PR 的結果加 `bypass_actors` 指令 |
 | 6 | 另開 PR 拿掉 `.automerge-off`，屬 R3，由使用者合併 | 步驟 4、5 通過後 | `ls .automerge-off` 應失敗 |
 
-步驟 2 完成後、步驟 3 合併前有一段空窗：必要核可數已是 0，而 CODEOWNERS 仍列著 R2 路徑。#284 合併後空窗已結束。熔斷開關保留到步驟 5 之後，原因是實測前不知道真實 PR 上的擋法是否如預期。
+步驟 2 完成後、步驟 3 合併前有一段空窗：必要核可數已是 0，而 CODEOWNERS 仍列著 R2 路徑。#284 合併後空窗已結束。熔斷開關保留到步驟 5 之後，因為實測前不知道真實 PR 上的擋法是否如預期。
 
 ## 6 風險與限制
 
@@ -128,7 +128,7 @@ flowchart TD
 
 ## 7 未驗證
 
-1. 使用者帳號是否在 ruleset `update` 規則的繞過名單內，這決定 `run.py --merge` 能不能更新 `main`。重跑第 2 節的 `bypass_actors` 指令。屬步驟 5。
+1. `run.py --merge` 能不能更新 `main`。#286 由使用者手動按 Merge 成功，但 `run.py --merge` 用的是 `gh` 權杖，是否同樣被放行尚未實測。屬步驟 5。
 2. R3 路徑的 PR 被 GitHub 擋下，是 CODEOWNERS 加 `require_code_owner_review` 的預期行為，尚未用真實 PR 實測。屬步驟 5。
 3. 熔斷開關的拒絕訊息在真實 PR 上的樣子。屬步驟 4。
 
