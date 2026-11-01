@@ -1,4 +1,4 @@
-# 由 dev-standard v0.7.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.7.3 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """風險級：依改動路徑算出「至少是哪一級」，並解析 PR 第一行宣告。純函式，不碰網路。
 
 規則（STANDARD.md 風險級合併表）：
@@ -134,14 +134,21 @@ def classify(paths, cfg: dict, classifier_level=None) -> tuple:
 _FORMS = [
     re.compile(r"^\s*(?P<risk>R[0-3])(?![0-9A-Za-z])"),                                          # R2、R2：說明
     re.compile(r"^\s*[ABC]\s*\(\s*(?P<risk>R[0-3])\s*\)"),                                        # B (R2)
-    re.compile(r"^\s*風險級\s*[／/]\s*車道\s*[:：]\s*(?P<risk>R[0-3])\s*[／/]\s*[ABC](?![A-Za-z])"),  # 範本
+    re.compile(r"^\s*風險級\s*[／/]\s*車道\s*[:：]\s*(?P<risk>R[0-3])\s*[／/]\s*[ABC](?![A-Za-z])"),  # litov 舊範本
+    re.compile(r"^\s*風險級\s*[:：]\s*(?P<risk>R[0-3])(?![0-9A-Za-z])"),                           # 共用範本
 ]
 
 
+def _is_comment_line(line: str) -> bool:
+    """整行都是 HTML 註解（範本的產生註解）。GitHub 不顯示，判第一行時跳過。"""
+    t = line.strip()
+    return t.startswith("<!--") and t.endswith("-->") and t.find("-->") == len(t) - 3
+
+
 def declared_level(body: str):
-    """PR 第一個非空行要是 R0–R3（或 `B (R2)` 這種寫法）；否則回 None。"""
+    """PR 第一個非空、非整行註解的行要是 R0–R3（或 `B (R2)`、`風險級：R2`）；否則回 None。"""
     for line in body.lstrip("﻿").splitlines():
-        if line.strip():
+        if line.strip() and not _is_comment_line(line):
             for rx in _FORMS:
                 m = rx.match(line)
                 if m:
