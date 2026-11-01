@@ -1,0 +1,18 @@
+{
+  "protected_paths": [
+    "^secrets/",
+    "^\\.env$",
+    "^env\\.production$",
+    "^workspace/[^/]+/STATE\\.md$"
+  ],
+  "blocked_commands": [
+    {
+      "pattern": "\\./start\\.sh\\s+(up|upgrade|restore|down)\\b",
+      "why": "正式環境部署／還原／停機：請使用者確認後自己執行"
+    },
+    {
+      "pattern": "docker (compose )?(stop|restart|kill|rm|down)\\b.*advisor_prod",
+      "why": "停／重啟正式容器"
+    }
+  ]
+}

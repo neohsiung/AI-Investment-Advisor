@@ -81,7 +81,10 @@ repomix-output.xml
 n8n_workflow_template.json
 
 # ── Agent Tool Configs (local-only) ────────────────────────────────
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/agents/
 .agent/workflows/vibe-mobile.md
 # Added by code-review-graph
 .code-review-graph/
