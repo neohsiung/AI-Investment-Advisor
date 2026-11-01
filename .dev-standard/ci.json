@@ -1,0 +1,7 @@
+{
+  "tests": false,
+  "lint": {
+    "install": "python3 -m pip install \"ruff==$(python3 -c 'import json;print(json.load(open(\".ruff-baseline.json\"))[\"ruff_version\"])')\"",
+    "run": "python3 scripts/ruff_baseline.py check"
+  }
+}

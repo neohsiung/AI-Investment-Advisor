@@ -1,0 +1,136 @@
+# 由 dev-standard v0.7.1 產生，請勿手改；要改請改 dev-standard 的 components/ci，再跑 sync.py update
+# dev-standard 共同 CI（來由：investment-advisor ci-cd.yml、secret-scan.yml；dev-standard §6、§9）
+# 放到 .github/workflows/dev-standard.yml。這個檔各 repo 都一樣、不要改；tests 與 lint 的差異寫在 .dev-standard/ci.json
+# （可關掉、可換指令，格式見 .dev-standard/bin/ci_config.py）。rules、secrets、junk 不看 ci.json，一律會跑。
+name: dev-standard
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# 最小權限：只讀內容與 PR（investment secret-scan 的做法）
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  rules:
+    name: 規則檔沒漂移
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # --no-local：core.hooksPath 是本機狀態，新 clone 一定沒設；settings.json 的掛載（已進版控）仍會檢查
+      - run: python3 .dev-standard/sync.py check --no-local
+
+  secrets:
+    name: 金鑰掃描（gitleaks）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  junk:
+    name: 沒有追蹤殘留檔
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 備份、暫存、個人設定不在版控
+        run: |
+          bad=$(git ls-files | grep -E '(\.bak($|[-.])|\.pre-[a-z0-9-]+$|(^|/)_?tmp_|settings\.local\.json$)' || true)
+          if [ -n "$bad" ]; then echo "這些檔不該被追蹤："; echo "$bad"; exit 1; fi
+
+  # tests 與 lint 怎麼跑由 .dev-standard/ci.json 決定；沒有這個檔就照預設（跟以前一樣）。設定寫錯這個 job 會紅。
+  config:
+    name: 讀 .dev-standard/ci.json
+    runs-on: ubuntu-latest
+    outputs:
+      tests_mode: ${{ steps.c.outputs.tests_mode }}
+      tests_install: ${{ steps.c.outputs.tests_install }}
+      tests_run: ${{ steps.c.outputs.tests_run }}
+      lint_mode: ${{ steps.c.outputs.lint_mode }}
+      lint_install: ${{ steps.c.outputs.lint_install }}
+      lint_run: ${{ steps.c.outputs.lint_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: c
+        run: python3 .dev-standard/bin/ci_config.py --output "$GITHUB_OUTPUT"
+
+  # 關掉時 job 照樣出現並印「略過」，不會默默消失。自訂指令一律經 env 傳入，不直接展開進 run（避免指令注入）。
+  lint:
+    name: lint（只擋新增違規）
+    needs: config
+    # config 失敗時下游 job 預設是 skipped，而 skipped 在 GitHub 算通過：ci.json 打錯會默默少跑。
+    # 所以照樣執行（只在整個 run 被取消時不跑），第一步遇到 config 不成功就紅。
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.config.result != 'success'
+        run: |
+          echo "lint 沒跑：讀 .dev-standard/ci.json 失敗，看「讀 .dev-standard/ci.json」那個 job 的錯誤"
+          exit 1
+      - if: needs.config.outputs.lint_mode == 'off'
+        run: echo "lint 略過：.dev-standard/ci.json 設成 false，這個 repo 在自己的 workflow 跑 lint"
+      - if: needs.config.outputs.lint_mode != 'off'
+        uses: actions/checkout@v4
+      # 預設：有 pyproject.toml 或 ruff.toml 才跑 ruff。job 層級的 if 不支援 hashFiles，所以在 step 判斷
+      - id: detect
+        env:
+          MODE: ${{ needs.config.outputs.lint_mode }}
+        run: |
+          if [ "$MODE" = default ] && { [ -f pyproject.toml ] || [ -f ruff.toml ]; }; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "has=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.detect.outputs.has == 'true'
+        uses: astral-sh/ruff-action@v3
+      - if: needs.config.outputs.lint_mode == 'custom' && needs.config.outputs.lint_install != ''
+        name: 安裝（ci.json 的 lint.install）
+        env:
+          CMD: ${{ needs.config.outputs.lint_install }}
+        run: bash -euo pipefail -c "$CMD"
+      - if: needs.config.outputs.lint_mode == 'custom'
+        name: lint（ci.json 的 lint.run）
+        env:
+          CMD: ${{ needs.config.outputs.lint_run }}
+        run: bash -euo pipefail -c "$CMD"
+
+  tests:
+    name: 測試
+    needs: config
+    # config 失敗時下游 job 預設是 skipped，而 skipped 在 GitHub 算通過：ci.json 打錯會默默少跑。
+    # 所以照樣執行（只在整個 run 被取消時不跑），第一步遇到 config 不成功就紅。
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.config.result != 'success'
+        run: |
+          echo "tests 沒跑：讀 .dev-standard/ci.json 失敗，看「讀 .dev-standard/ci.json」那個 job 的錯誤"
+          exit 1
+      - if: needs.config.outputs.tests_mode == 'off'
+        run: echo "tests 略過：.dev-standard/ci.json 設成 false，這個 repo 在自己的 workflow 跑測試"
+      - if: needs.config.outputs.tests_mode != 'off'
+        uses: actions/checkout@v4
+      # 預設：有 tests/*.py 才跑 pytest
+      - id: detect
+        env:
+          MODE: ${{ needs.config.outputs.tests_mode }}
+        run: |
+          if [ "$MODE" = default ] && [ -n "$(find tests -name '*.py' -print -quit 2>/dev/null)" ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "has=false" >> "$GITHUB_OUTPUT"; fi
+      # custom 不預裝 uv：要什麼工具由 tests.install 自己裝（非 Python 的 repo 不必多一步）
+      - if: steps.detect.outputs.has == 'true'
+        uses: astral-sh/setup-uv@v5
+      - if: steps.detect.outputs.has == 'true'
+        run: uv run --with pytest --with pyyaml pytest -q
+      - if: needs.config.outputs.tests_mode == 'custom' && needs.config.outputs.tests_install != ''
+        name: 安裝（ci.json 的 tests.install）
+        env:
+          CMD: ${{ needs.config.outputs.tests_install }}
+        run: bash -euo pipefail -c "$CMD"
+      - if: needs.config.outputs.tests_mode == 'custom'
+        name: 測試（ci.json 的 tests.run）
+        env:
+          CMD: ${{ needs.config.outputs.tests_run }}
+        run: bash -euo pipefail -c "$CMD"

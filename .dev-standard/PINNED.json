@@ -41,6 +41,12 @@
         ".githooks/pre-commit": "38a84d903e14610ee6a39df8b0b0531bd6d1bf16d39062e1a1a50ce2ef0618dc",
         ".githooks/pre-push": "3f675325f73d0d4fb8c8103ffa78401354fb7774798049849a2658af70f8fc75"
       }
+    },
+    "ci": {
+      "files": {
+        ".github/workflows/dev-standard.yml": "1764cb5bc0736c81e412dc34401faf3925699ecfeef3be53c84d2be3f9f21a6a",
+        ".dev-standard/bin/ci_config.py": "55baa3b833a55b95b3956f9e1b475a407bc348cdee26d922bd1f9546dbe7082d"
+      }
     }
   }
 }
