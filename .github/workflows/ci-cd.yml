@@ -78,7 +78,7 @@ jobs:
 
       # Cheap gates first, before the heavy install. 先跑便宜的閘門。
       - name: Agent rule files in sync (dev-standard)
-        run: python3 .dev-standard/sync.py check
+        run: python3 .dev-standard/sync.py check --no-local   # core.hooksPath is local state; a fresh CI clone never has it. core.hooksPath 是本機狀態，CI 新 clone 一定沒有
 
       - name: Lint (ruff, new violations only)
         # Version must match .ruff-baseline.json; the script fails on a mismatch. 版本須與 baseline 一致。
