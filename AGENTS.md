@@ -185,10 +185,10 @@ The block above is the shared dev-standard; below is what differs here.
 
 ## session 編排 / Session orchestration
 
-本節是本 repo 專屬，不在同步區塊內，只寫與通用做法不同的地方。通用規則包括一卡一 session、命名、`CLAIM`、一行 `PING`、完成四條、留言前綴與作者提醒、核可標記不由同一個 gh 身分留，正本是 dev-standard 的 [neohsiung/dev-standard#42](https://github.com/neohsiung/dev-standard/issues/42)，合併後見 STANDARD 對應節；實戰版本見 Litov 的 `docs/dd-session-orchestration-v1.md`。差異與現有 session 盤點見 [docs/design/DD-2026-1101-session-management.md](docs/design/DD-2026-1101-session-management.md)。本節不改任何交易、設定值、門檻、金鑰、排程或程式邏輯，與使命區塊和 R3 規則衝突時以它們為準。
+通用規則在上方精簡版〈session 編排〉，完整版是 `.dev-standard/STANDARD.md` §11。本節只寫本 repo 的差異，不重複 §11。差異與現有 session 盤點見 [docs/design/DD-2026-1101-session-management.md](docs/design/DD-2026-1101-session-management.md)。本節不改任何交易、設定值、門檻、金鑰、排程或程式邏輯，與使命區塊和 R3 規則衝突時以它們為準。
 
 **本 repo 的差異。**
-- 專案欄固定為 `advisor`，名稱是 `<組>/advisor/<一句話直觀描述>（#N）`。本 repo 是單一產品，沒有團隊層，也不建組表檔；組只用來歸類，分法見上述 DD §2。
+- 名稱的範圍欄是 `<組>/advisor`，即 `<組>/advisor/<一句話直觀描述>（#N）`。本 repo 是單一產品，沒有團隊層，也不建組表檔；組只用來歸類，分法見上述 DD §2。
 - 主 checkout 是正式環境的 bind mount，不在那裡寫檔；會寫檔的 session 一律用自己的 worktree。
 
 **只有創辦人能動的事，本節不改變這一點。**

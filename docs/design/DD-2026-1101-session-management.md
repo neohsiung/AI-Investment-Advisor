@@ -4,7 +4,7 @@
 
 **狀態**：R0 草稿，2026-11-01，合併由人。本文只提案；唯一會生效的規則寫在 `AGENTS.md`〈session 編排〉（R2）。
 **範圍**：只改文件。不碰交易、下單、設定值、門檻、金鑰、排程、程式邏輯。
-**範圍收斂**：通用規則已由 dev-standard#42 收編，本文只寫本 repo 的差異與現有 session 盤點。
+**範圍收斂**：通用規則已由 STANDARD §11 收編，本文只寫本 repo 的差異與現有 session 盤點。
 **來源**：創辦人 2026-11-01 指示：本 repo 與 hermes-investment-agent 照 Litov 的方式管理 session。Litov 的正本是 `litov/docs/dd-session-orchestration-v1.md`、`dd-team-groups-v1.md`、`framework/groups.json`，第一輪實戰發現見 `litov/docs/ops-dispatch-round1-2026-11-01.md`。
 **Refs**：[#297](https://github.com/neohsiung/AI-Investment-Advisor/issues/297)
 
@@ -92,7 +92,7 @@ Litov 依職能切團隊（growth、product、engineering…），因為它有�
 
 ## 4. 運作方式
 
-通用部分不在此重寫：一卡一 session、命名、`CLAIM`、`PING`、完成四條、留言前綴與核可標記規則，正本是 [neohsiung/dev-standard#42](https://github.com/neohsiung/dev-standard/issues/42)，合併後見 STANDARD 對應節；實戰版本見 Litov 的 `docs/dd-session-orchestration-v1.md`。本 repo 的合併依風險級：R0、R1 由腳本，R2 加創辦人的 `REVIEW: PASS`，R3 只有創辦人。
+通用部分不在此重寫：一卡一 session、命名、`CLAIM`、`PING`、完成四條、留言前綴與核可標記規則，正本是 `.dev-standard/STANDARD.md` §11（dev-standard 0.8.0）；實戰版本見 Litov 的 `docs/dd-session-orchestration-v1.md`。本 repo 的合併依風險級：R0、R1 由腳本，R2 加創辦人的 `REVIEW: PASS`，R3 只有創辦人。
 
 ## 5. 現有 session 盤點與建議歸組
 
