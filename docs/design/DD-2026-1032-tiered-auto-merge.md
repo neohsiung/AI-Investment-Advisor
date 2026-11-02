@@ -30,7 +30,7 @@ PR 作者與 code owner 是同一個 GitHub 帳號，GitHub 不讓人核可自�
 
 | 事實 | 指令 |
 |---|---|
-| ruleset 要求 PR、code owner 審查、討論串解決、CodeQL 高風險警示擋合併；必要核可數 0；2026-11-01 起移除 `update` 規則，原因見第 5 列 | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq '.rules[]\|{type,parameters}'` |
+| ruleset 要求 PR、code owner 審查、討論串解決、CodeQL 高風險警示擋合併；必要核可數 0；`update` 規則已移除，見第 5 列 | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq '.rules[]\|{type,parameters}'` |
 | 管理者角色與兩個 Integration 永遠可繞過 | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq .bypass_actors` |
 | 不使用 GitHub 的 auto-merge。`update` 規則擋下所有非繞過身分的合併：#286 回「Cannot update this protected ref」，#295 的 `--merge` 回「base branch policy prohibits the merge」。使用者於 2026-11-01 移除該規則，直接 push、force push、刪除仍由 `pull_request`、`non_fast_forward`、`deletion` 擋 | `gh api repos/neohsiung/AI-Investment-Advisor/rulesets/14706385 --jq '[.rules[].type]'` 不含 `update` |
 | CODEOWNERS 只列 R3 路徑，owner 是 `@neohsiung` | `grep -v '^#' .github/CODEOWNERS \| grep -c .` |
@@ -122,12 +122,12 @@ flowchart TD
 - **`REVIEW: PASS` 不是第二雙眼睛。** agent 與 owner 共用同一個 GitHub 身分，`trusted_authors` 為空，等於 repo owner。標記證明的是 `reviewer` agent 在當前 head 審過。R2 的獨立性來自 `reviewer` 是另一個 agent 與上下文，不來自身分。
 - **路徑清單完整度就是安全邊界。** 新增的動錢檔沒列進 `r3_globs`，會被當成 R1 自動合併。計畫中的 `tests/invariants/test_codeowners_covers_money_paths.py` 是補這個洞的測試，建議在步驟 6 之前完成。
 - **R1 不是零風險。** R1 含一般程式與測試，看錯的代價小但不為零。合併後留言的 retro 五行用來量這個代價。
-- **移除 `update` 後，GitHub 端的 R3 防線只剩 CODEOWNERS。** 所以檢查工具、`risk.json`、CODEOWNERS 與開關自己也列入 R3 清單，兩份清單由單元測試鎖住一致。
+- **CODEOWNERS 擋不住 R3。** 作者就是唯一的 code owner，#302 的 `mergeStateStatus` 仍是 `CLEAN`，見 #304。GitHub 端改靠 `r3-gate`：要人合併的 PR 回紅，設成 required check 後只能由人 bypass 合併。檢查工具、`risk.json`、CODEOWNERS 也列入 R3 清單，兩份清單由單元測試鎖住一致。
 - **權限範圍等於使用者本人。** 合併由 agent 在使用者的機器上用使用者的 `gh` 身分執行，沒有機器人身分。熔斷開關與 R3 拒絕是程式層的限制，不是權限層的。
 
 ## 7 未驗證
 
-1. R3 路徑的 PR 被 GitHub 擋下，是 CODEOWNERS 加 `require_code_owner_review` 的預期行為，尚未用真實 PR 實測。屬步驟 5。
+1. `r3-gate` 設成 required check 後，R3 PR 的 `mergeStateStatus` 為 `BLOCKED`、R1 PR 仍可由 `run.py --merge` 合併，尚未實測。屬步驟 5，進度見 #304。
 
 ## 8 回滾
 

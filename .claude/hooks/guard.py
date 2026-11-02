@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.8.0 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
+# 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
 """guard.py — Claude Code PreToolUse 硬底線（來由：hermes hermes_guard.py 與它的測試，加上 litov 的 worktree 基底檢查；dev-standard §1、§2、§6）
 
 CLAUDE.md／AGENTS.md 是建議，擋不住任何事；這支是擋得住的那一層（exit 2 在權限規則之前生效，bypass 也一樣）。
@@ -26,6 +26,8 @@ repo 自己的擋（.dev-standard/guard.json，缺的欄位＝不啟用；範例
      只看同一條管線；cd 進私有目錄或把私有路徑指給變數後，同一條指令後面的出網 CLI 一律擋。沒設 paths ＝ 關。
      擋不到的（python -c 自己開 socket、先 cp 出去再送）不在範圍。來由：litov#140。
   secret_extraction: false 可關掉 ③。
+  trunk_commit_allowed: true 關掉 ① 的「在 main 上 commit」，只對這個 repo；push main、worktree 基底照擋。給排程器或
+     同步工具原位 commit 的本機 repo 用；是 repo 自己的設定，依 commit 作用的那個 repo 的 guard.json 判斷，不看 cwd。
 
 內建保護（不能設定關掉）：.dev-standard/guard.json、.claude/settings.json、.claude/settings.local.json、.claude/hooks/** 不准 Edit／Write／
   Bash 重導寫入 —— 護欄自己的設定只有人能改。
@@ -133,6 +135,8 @@ def validate_config(cfg: dict) -> None:
                 raise ValueError(f"blocked_commands[{i}].why 必須是字串")
     if "secret_extraction" in cfg and not isinstance(cfg["secret_extraction"], bool):
         raise ValueError("secret_extraction 必須是 true／false")
+    if "trunk_commit_allowed" in cfg and not isinstance(cfg["trunk_commit_allowed"], bool):
+        raise ValueError("trunk_commit_allowed 必須是 true／false")
     if "live_tree" in cfg:
         lt = cfg["live_tree"]
         if not isinstance(lt, dict):
@@ -354,12 +358,18 @@ def worktree_new_branch_base(args: list):
     return new_branch, (pos[1] if len(pos) > 1 else None)
 
 
+def trunk_commit_allowed(target: str) -> bool:
+    """commit 作用的 repo 自己的 guard.json 有 trunk_commit_allowed: true 才放行；設定壞了當沒放行。"""
+    cfg = load_config(find_root(target))
+    return cfg.get("trunk_commit_allowed") is True
+
+
 def check_trunk(segs: list, cwd: str) -> None:
     for w in segs:
         if os.path.basename(w[0]) != "git":
             continue
         sub, args, target = git_parts(w, cwd)
-        if sub == "commit" and current_branch(target) in MAIN:
+        if sub == "commit" and current_branch(target) in MAIN and not trunk_commit_allowed(target):
             block("在 main 上 commit", WT_HOW)
         if sub == "worktree":
             new_branch, base = worktree_new_branch_base(args)
@@ -535,7 +545,7 @@ def new_git_check(cmd: str, cwd: str) -> None:
         sub, live, gcwd = git_target(w[1:], gcwd_now, env, prefix)
         if LIVE and sub in GIT_FORBIDDEN and live:
             block(f"在正式樹 {LIVE}（或判斷不了的目錄，保守當正式樹）執行 git {sub}", how)
-        if sub == "commit" and gcwd is not None and current_branch(gcwd) in MAIN:
+        if sub == "commit" and gcwd is not None and current_branch(gcwd) in MAIN and not trunk_commit_allowed(gcwd):
             block("在 main 上 commit", WT_HOW)
 
 

@@ -94,7 +94,7 @@ number.
 - **Frontend**: Next.js 15 (TypeScript, in `frontend/`)
 - **Backend**: FastAPI + MCP Server (in `services/mcp_server/`)
 
-<!-- DEV-STANDARD:BEGIN v0.8.0 -->
+<!-- DEV-STANDARD:BEGIN v0.11.0 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
@@ -121,6 +121,7 @@ number.
 
 - `SCOPE: OK <sha>` 表示說明與改動對得上，每一級合併都要；`REVIEW: PASS <sha>` 表示審過。兩者都可以由寫 PR 的 session 留，只證明檢查跑過，不證明有第二雙眼睛。要獨立審查，另設一個 gh 身分加進 `risk.json` 的 `trusted_authors`。
 
+- 裝了 `r3-gate` 的 repo，要人合併的 PR 在 GitHub 上會亮紅的 r3-gate，這是設計，不算 CI 失敗；其他檢查要全綠。
 - 根目錄的 `.automerge-off` 是熔斷開關：存在就拒絕自動合併；讀不到它時中止，不當作沒有。合併指令固定 `gh pr merge --merge --match-head-commit <sha> --delete-branch`，不 squash、不用 `--auto`。
 
 **模型分層**
@@ -165,6 +166,7 @@ number.
 **回填**
 - 在這個 repo 發展出跟 repo 無關的好做法，PR 的 `DERIVED:` 標「通用：是」，同一週對 dev-standard 開回填 PR。只在這個 repo 成立的留在 overlay。
 - 做開發流程工具前先查 dev-standard；通用的就做在 dev-standard，repo 差異寫在 `.dev-standard/*.json`。
+- 雇主的 repo、規則檔同事共用的 repo 用影子導入，指令是 `sync.py shadow`：規則由全域 `~/.claude` 帶，本 repo 只放 `.dev-standard/` 與 `.claude-task/`，兩者都在 `.git/info/exclude`；不碰任何追蹤檔，不設 `core.hooksPath`。在那裡學到的通用做法記進回填帳本，當週回填。
 <!-- DEV-STANDARD:END -->
 
 ## 開發辦法：本 repo 的差異 / Dev-standard overlay

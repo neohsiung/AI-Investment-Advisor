@@ -1,4 +1,4 @@
-# 由 dev-standard v0.8.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """合併決定（純函式）與稽核表。決定看 effective 風險級（宣告與路徑取高），不信任宣告。"""
 from __future__ import annotations
 
@@ -17,19 +17,28 @@ class Decision:
     reason: str = ""
 
 
-def decide(results, pr) -> Decision:
-    """順序固定：熔斷開關、改到檢查工具本身、R3、base 非預設分支、draft、不可合併、任一項不過。"""
-    if pr.automerge_off:
-        return Decision("refuse", ".automerge-off 存在，停止自動合併")
-    changed = risk.tool_changed(pr.files, pr.cfg)
+def needs_human(pr):
+    """這個 PR 一定要人合併的理由；不需要就回 None。順序固定：bootstrap、改到檢查工具本身、R3。
+    本機合併（decide）與 GitHub 端的 r3-gate 共用這一份判斷。"""
     if pr.bootstrap:
-        return Decision("refuse", "要人合併：" + BOOTSTRAP_WARN)
+        return "要人合併：" + BOOTSTRAP_WARN
+    changed = risk.tool_changed(pr.files, pr.cfg)
     if changed:
-        return Decision("refuse", "要人合併：PR 改了檢查工具本身（" + "、".join(changed[:5]) + ("…" if len(changed) > 5 else "")
-                        + "），不能用 PR 自己的程式替它放行")
+        return ("要人合併：PR 改了檢查工具本身（" + "、".join(changed[:5]) + ("…" if len(changed) > 5 else "")
+                + "），不能用 PR 自己的程式替它放行")
     if checks.effective(pr) == "R3":
         src = "宣告" if checks.declared(pr) == "R3" else "依路徑"
-        return Decision("refuse", f"R3：要人合併（{src}判定為 R3）")
+        return f"R3：要人合併（{src}判定為 R3）"
+    return None
+
+
+def decide(results, pr) -> Decision:
+    """順序固定：熔斷開關、要人合併（needs_human）、base 非預設分支、draft、不可合併、任一項不過。"""
+    if pr.automerge_off:
+        return Decision("refuse", ".automerge-off 存在，停止自動合併")
+    why = needs_human(pr)
+    if why:
+        return Decision("refuse", why)
     if not pr.base or pr.base != pr.default_branch:
         return Decision("refuse", f"base 分支 {pr.base or '不明'} 不是預設分支 {pr.default_branch or '不明'}：只自動合併到預設分支")
     if pr.draft:

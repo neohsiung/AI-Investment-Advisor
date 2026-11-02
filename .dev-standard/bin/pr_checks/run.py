@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.8.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """本機入口：取 PR 資料、跑七項檢查、印每項結果、依風險級決定能不能合併。不需要 GitHub Actions。
 
   python3 .dev-standard/bin/pr_checks/run.py <PR>             跑全部檢查，印表與決定（不合併）
   python3 .dev-standard/bin/pr_checks/run.py <PR> --merge     全過且規則允許才合併（gh pr merge --merge --match-head-commit …）
   python3 .dev-standard/bin/pr_checks/run.py <PR> --ci        只跑靜態項（給 workflow 用），不合併
+  python3 .dev-standard/bin/pr_checks/run.py <PR> --gate      只判「要不要人合併」（r3-gate workflow 用）：要就回 1，不合併
   python3 .dev-standard/bin/pr_checks/run.py --body-file B --files-file F [--risk-file R]
                                                               離線靜態項：描述與改動檔清單都是檔案（測試與 hermes 式 CI 用）
 
 退出碼：0 全過（--merge 時代表已合併）；1 有檢查不過，或 --merge 被規則拒絕（R3、.automerge-off…）；
 2 工具失敗（gh、risk.json、classifier 壞了——不會被當成通過）；3 已合併但合併後留言失敗。
+--gate：0 不需要人合併；1 要人合併（bootstrap、改到檢查工具、R3）；2 工具失敗。1 與 2 在 GitHub 上都是紅燈。
+--gate 不要求本機 checkout 是 base 最新：pull_request_target 的 checkout 就是事件當下的 base，classifier 跑的是 base 的程式。
 風險級設定讀 base 分支的 .dev-standard/risk.json（離線模式讀 --risk-file，預設 ./.dev-standard/risk.json）。
 請在 repo 根目錄執行；根目錄有 .automerge-off 也會拒絕合併。
 非 --ci 模式要求本機 checkout 的 HEAD 就是 origin 上 base 分支的最新 commit（classifier 在這裡跑，不能是 PR 的版本）；
@@ -22,6 +25,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -52,11 +56,30 @@ def offline_pr(body_file, files_file, risk_file) -> checks.PR:
                      cfg=cfg, classifier_level=level, trusted=tuple(cfg["trusted_authors"]))
 
 
+def gate(number, repo=None) -> int:
+    """r3-gate：只回答「這個 PR 要不要人合併」。共用 merge.needs_human，跟本機合併的判斷是同一份。"""
+    try:
+        pr = gh.fetch(number, repo, ci_mode=True, cwd=str(repo_root()))
+        why = merge.needs_human(pr)
+    except Exception as e:  # noqa: BLE001 — 讀不到就判不了，回 2（紅燈），絕不當成不需要人
+        print(f"工具失敗：{e}", file=sys.stderr)
+        return 2
+    msg = f"r3-gate：{why}。由人在 GitHub 上合併（ruleset bypass）。" if why else \
+        f"r3-gate：不需要人合併（風險級 {checks.effective(pr)}）。"
+    print(msg)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    return 1 if why else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("pr", type=int, nargs="?")
     ap.add_argument("--merge", action="store_true")
     ap.add_argument("--ci", action="store_true")
+    ap.add_argument("--gate", action="store_true")
     ap.add_argument("--repo")
     ap.add_argument("--body-file")
     ap.add_argument("--files-file")
@@ -71,6 +94,10 @@ def main(argv=None) -> int:
         ap.error("要給 PR 編號，或離線的 --body-file／--files-file")
     if a.merge and a.ci:
         ap.error("--ci 不合併")
+    if a.gate and (a.merge or a.ci or offline):
+        ap.error("--gate 不能跟 --merge、--ci 或離線模式一起用")
+    if a.gate:
+        return gate(a.pr, a.repo)
     static = a.ci or offline
     try:
         if offline:

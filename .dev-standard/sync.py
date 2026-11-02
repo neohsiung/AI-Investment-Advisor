@@ -14,6 +14,11 @@
   python3 .dev-standard/sync.py wire [--dry-run] [--force-hookspath]                              把已裝的元件掛上：core.hooksPath、.claude/settings.json 的 hooks（冪等，先備份 .bak）
   python3 .dev-standard/sync.py status --from $DEV_STANDARD   本 repo 釘的版本落後上游多少
   python3 <dev-standard>/tools/sync.py report <repo> <repo> …                列出各 repo overlay 段落，標出回填候選（只列不判）
+  python3 <dev-standard>/tools/sync.py shadow --from $DEV_STANDARD [--repo <路徑>]
+                                                                              影子導入：不是自己的 repo（雇主的、規則檔同事共用的）用這個。config 設 "mode": "shadow"
+                                                                              再 update：不產生區塊、不裝會寫到版控位置的元件；.dev-standard/ 與 .claude-task/ 寫進
+                                                                              .git/info/exclude；建 guard.json 骨架；origin 在 GitHub 就把 hooks 元件的 pre-push 寫到
+                                                                              .git/hooks/pre-push（本機檔）。規則由全域 ~/.claude 帶，hook 由全域 settings.json 掛
 
 repo 的設定在 .dev-standard/config.json：
   {"agents_file": "AGENTS.md", "shims": ["CLAUDE.md", "GEMINI.md", ".cursorrules"], "create_missing_shims": false}
@@ -23,6 +28,7 @@ agents_file 與每個 shim 都會有一段 DEV-STANDARD 區塊，區塊外是 re
 components/<名>/manifest.json 列的檔複製到目的地、檔頭寫「由 dev-standard vX 產生」、每檔 sha256 釘進 PINNED.json
 的 "components"。check 擋：被手改、缺檔、config 與 pin 對不上、元件裝了卻沒掛上（「未掛載」，見 wire）。manifest 的 "config" 列的是 repo 自己的設定檔
 （例：.dev-standard/guard.json）：缺才從範例建，之後 update 不碰、check 不管。沒有 "components" 的 repo 行為不變。
+"mode": "shadow" 的 repo 見上面的 shadow 子指令：只准裝寫進 .dev-standard/ 的元件（例：wt）。
 """
 from __future__ import annotations
 
@@ -67,6 +73,13 @@ def load_config(repo: Path) -> dict:
     if p.exists():
         cfg.update(json.loads(p.read_text(encoding="utf-8")))
     return cfg
+
+
+SHADOW_MODE = "shadow"
+
+
+def is_shadow(cfg: dict) -> bool:
+    return cfg.get("mode") == SHADOW_MODE
 
 
 def _sha_bytes(b: bytes) -> str:
@@ -356,6 +369,8 @@ def pinned(repo: Path) -> dict:
 
 
 def targets(repo: Path, cfg: dict) -> list:
+    if is_shadow(cfg):                                   # 規則由全域帶，本 repo 的規則檔是同事共用的，不碰
+        return []
     return [cfg["agents_file"], *cfg.get("shims", [])]
 
 
@@ -380,6 +395,9 @@ def compute(repo: Path) -> tuple:
 
 def cmd_render(repo: Path) -> int:
     out, version = compute(repo)
+    if is_shadow(load_config(repo)):
+        print(f"dev-standard v{version}：影子導入，規則由全域帶，不在本 repo 產生區塊")
+        return 0
     changed = []
     for rel, (cur, new) in out.items():
         if new != cur:
@@ -409,7 +427,13 @@ def cmd_update(repo: Path, src: Path, adopt: bool = False) -> int:
     old_pin = pinned(repo)
     # 先驗證所有元件再動手：未知元件、壞 manifest 不會留下寫一半的狀態
     fields = load_templates(repo)
-    files, configs = plan_components(src, load_config(repo).get("components", []), version, fields)
+    cfg = load_config(repo)
+    files, configs = plan_components(src, cfg.get("components", []), version, fields)
+    if is_shadow(cfg):
+        outside = sorted(d for d in [*(f[1] for f in files), *(c[0] for c in configs)] if not d.startswith(VENDOR_DIR + "/"))
+        if outside:
+            raise SystemExit("影子導入只能裝寫進 .dev-standard/ 的元件（例：wt）；這些元件會寫到版控看得到的位置："
+                             + "、".join(outside) + "。hook 與 agent 由全域 ~/.claude 接，見 README〈導入別人的 repo，影子導入〉")
     for info in old_pin.get("components", {}).values():       # 舊 pin 的路徑不可信：先驗，免得刪到 repo 外面
         for dst in info.get("files", {}):
             _safe_rel(dst, "PINNED 的檔案路徑")
@@ -439,6 +463,11 @@ def cmd_update(repo: Path, src: Path, adopt: bool = False) -> int:
         (vd / "config.json").write_text(json.dumps(DEFAULT_CONFIG, indent=2) + "\n", encoding="utf-8")
     print(f"釘版本：{old or '（無）'} → {version}")
     rc = cmd_render(repo)
+    if is_shadow(cfg):
+        for e in shadow_setup(repo, src, version):
+            print("錯誤：" + e, file=sys.stderr)
+            rc = 1
+        return rc
     ignored = ignore_errors(repo, pin)
     for e in ignored:
         print("錯誤：" + e, file=sys.stderr)
@@ -536,6 +565,91 @@ def ignore_errors(repo: Path, pin: dict) -> list:
             + "\n".join(f"{ALLOW_PREFIX}{a}" for a in allow)]
 
 
+# ── 影子導入：不是自己的 repo，工具設定在、版控看不到 ──────────────────────────────
+SHADOW_EXCLUDES = (VENDOR_DIR + "/", ".claude-task/")
+GITHUB_RE = re.compile(r"(^|[/@.])github\.com[:/]")
+GENERATED_MARK = "由 dev-standard"
+
+
+def git_common_dir(repo: Path):
+    """主 checkout 與 linked worktree 共用的 .git 目錄；不是 git repo 回 None。"""
+    r = _git(repo, "rev-parse", "--git-common-dir")
+    if r.returncode != 0:
+        return None
+    d = Path(r.stdout.strip())
+    return d.resolve() if d.is_absolute() else (repo / d).resolve()
+
+
+def ensure_exclude(common: Path, lines: tuple) -> list:
+    """把 lines 加進 <git-common-dir>/info/exclude；已有的不重複。回傳這次新加的。"""
+    p = common / "info" / "exclude"
+    cur = _read(p)
+    missing = [ln for ln in lines if ln not in cur.splitlines()]
+    if missing:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if cur and not cur.endswith("\n"):
+            cur += "\n"
+        p.write_text(cur + "".join(ln + "\n" for ln in missing), encoding="utf-8")
+    return missing
+
+
+def shadow_prepush(repo: Path, src: Path, common: Path, version: str) -> str:
+    """origin 在 GitHub 的 repo，把 hooks 元件的 pre-push 寫到 <git-common-dir>/hooks/pre-push（本機檔，不進版控）。
+    不設 core.hooksPath：設了 git 就不再執行 .git/hooks/ 裡別人裝的 hook。只覆蓋自己上次寫的；別人的不碰。回一行說明。"""
+    url = _git(repo, "remote", "get-url", "origin").stdout.strip()
+    if not GITHUB_RE.search(url):
+        return f"pre-push 不接：origin 不是 GitHub（{url or '沒有 origin'}），它靠 gh 查已合併的 PR"
+    hook = common / "hooks" / "pre-push"
+    body = add_header(_read(src / COMP_DIR / "hooks" / "pre-push.sh"), "pre-push.sh", "hooks", version)
+    if hook.exists():
+        cur = hook.read_text(encoding="utf-8", errors="replace")
+        if GENERATED_MARK not in cur:
+            return f"pre-push 不接：{hook} 已存在、不是 dev-standard 寫的，不覆蓋"
+        if cur == body:
+            return f"pre-push 已是 v{version}：{hook}"
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text(body, encoding="utf-8")
+    hook.chmod(0o755)
+    return f"pre-push 已寫 v{version}：{hook}（本機檔，不進版控；每次 update 會更新）"
+
+
+def shadow_setup(repo: Path, src: Path, version: str) -> list:
+    """影子導入在發檔之後要做的事：info/exclude、guard.json 骨架、pre-push。回傳錯誤清單。"""
+    common = git_common_dir(repo)
+    if common is None:
+        return ["影子導入需要 git repo：找不到 .git，exclude 與 hook 沒地方放"]
+    added = ensure_exclude(common, SHADOW_EXCLUDES)
+    print("info/exclude：" + ("已加 " + "、".join(added) if added else "已有 " + "、".join(SHADOW_EXCLUDES)))
+    gj = repo / VENDOR_DIR / "guard.json"
+    if not gj.exists():
+        shutil.copyfile(src / COMP_DIR / "guard" / "guard.example.json", gj)
+        print(f"已建 {VENDOR_DIR}/guard.json（空骨架；R2／R3 路徑自己填，全域的 guard 會讀它）")
+    print(shadow_prepush(repo, src, common, version))
+    return []
+
+
+def shadow_gaps(repo: Path) -> list:
+    """check 用：exclude 少了行就等於工具設定會出現在 git status 裡。"""
+    common = git_common_dir(repo)
+    if common is None:
+        return ["影子導入但這裡不是 git repo"]
+    cur = _read(common / "info" / "exclude").splitlines()
+    missing = [ln for ln in SHADOW_EXCLUDES if ln not in cur]
+    return [f"info/exclude 少了 {'、'.join(missing)}：跑 sync.py update --from <dev-standard>"] if missing else []
+
+
+def cmd_shadow(repo: Path, src: Path) -> int:
+    """把不是自己的 repo 設成影子導入再 update。config 不存在就建 {"mode": "shadow", "components": ["wt"]}；存在就只加 mode。"""
+    if not (repo / ".git").exists():
+        raise SystemExit(f"{repo} 不是 git repo：影子導入要寫 .git/info/exclude 與 .git/hooks，沒有 .git 就沒地方放")
+    cp = repo / VENDOR_DIR / "config.json"
+    cfg = json.loads(cp.read_text(encoding="utf-8")) if cp.exists() else {"components": ["wt"]}
+    cfg["mode"] = SHADOW_MODE
+    cp.parent.mkdir(exist_ok=True)
+    cp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return cmd_update(repo, src)
+
+
 HOOKS_PATH = ".githooks"
 SETTINGS_REL = ".claude/settings.json"
 GUARD_MATCHER = "Bash|Edit|Write|MultiEdit|NotebookEdit|Read"
@@ -606,6 +720,8 @@ def wiring_gaps(repo: Path, local: bool = True) -> list:
     gaps = []
     if "denylist-gate" in names and "hooks" not in names:
         gaps.append("未掛載：denylist-gate 需要 hooks 元件（它掛在 .githooks/pre-commit.d/，由 hooks 的 pre-commit 串起來）；config.json 的 components 加上 hooks")
+    if "r3-gate" in names and "pr-checks" not in names:
+        gaps.append("未掛載：r3-gate 需要 pr-checks 元件（workflow 跑的是 .dev-standard/bin/pr_checks/run.py --gate）；config.json 的 components 加上 pr-checks")
     if "hooks" in names and local:
         r = _git(repo, "config", "--local", "--get", "core.hooksPath")
         cur = r.stdout.strip()
@@ -713,14 +829,14 @@ def cmd_check(repo: Path, local: bool = True) -> int:
             errors.append("區塊過期或被手改：" + ", ".join(stale) + "（跑 sync.py render）")
         std_heads = set(overlay_headings(_read(repo / VENDOR_DIR / "STANDARD.md")))
         cfg = load_config(repo)
-        dup = [h for h in overlay_headings(_read(repo / cfg["agents_file"])) if h in std_heads]
+        dup = [] if is_shadow(cfg) else [h for h in overlay_headings(_read(repo / cfg["agents_file"])) if h in std_heads]
         for h in dup:   # 提醒不擋：是不是漂移由人判斷
             print(f"提醒：overlay 有跟正本同名的段落「{h}」，可能是漂移或該回填")
     errors += check_components(repo, pin)
     tp = repo / TEMPLATES_REL
     if pin and (_sha_bytes(tp.read_bytes()) if tp.is_file() else None) != pin.get("templates_sha256"):
         errors.append(f"{TEMPLATES_REL} 跟上次 update 時不同，範本還是舊的：跑 sync.py update --from <dev-standard>")
-    errors += ignore_errors(repo, pin)
+    errors += shadow_gaps(repo) if is_shadow(load_config(repo)) else ignore_errors(repo, pin)
     errors += wiring_gaps(repo, local)
     if errors:
         print("dev-standard 檢查失敗：\n- " + "\n- ".join(errors))
@@ -747,6 +863,9 @@ def cmd_report(repos: list) -> int:
     for r in repos:
         repo = Path(r).expanduser().resolve()
         cfg = load_config(repo)
+        if is_shadow(cfg):
+            print(f"## {repo.name}（影子導入，沒有 overlay；候選看回填帳本）\n")
+            continue
         heads = overlay_headings(_read(repo / cfg["agents_file"]))
         print(f"## {repo.name}（{cfg['agents_file']}）")
         for h in heads:
@@ -784,10 +903,12 @@ def main(argv: list) -> int:
         return cmd_check(repo, local="--no-local" not in rest)
     if cmd == "wire":
         return cmd_wire(repo, dry_run="--dry-run" in rest, force_hookspath="--force-hookspath" in rest)
-    if cmd in ("update", "status"):
+    if cmd in ("update", "status", "shadow"):
         src = opt("--from")
         if not src:
             raise SystemExit(f"{cmd} 需要 --from <dev-standard 路徑>")
+        if cmd == "shadow":
+            return cmd_shadow(repo, Path(src))
         return cmd_update(repo, Path(src), adopt="--adopt" in rest) if cmd == "update" else cmd_status(repo, Path(src))
     print(__doc__)
     return 2

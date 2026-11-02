@@ -1,4 +1,4 @@
-# 由 dev-standard v0.8.0 產生，請勿手改；要改請改 dev-standard 的 components/issue-templates，再跑 sync.py update
+# 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/issue-templates，再跑 sync.py update
 blank_issues_enabled: false
 contact_links:
   - name: "Security report / \u8cc7\u5b89\u554f\u984c"

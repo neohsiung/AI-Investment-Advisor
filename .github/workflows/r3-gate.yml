@@ -1,0 +1,36 @@
+# 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/r3-gate，再跑 sync.py update
+name: r3-gate
+# GitHub 端的「要人合併」紅燈（dev-standard#45）。PR 要人合併（bootstrap、改到檢查工具、R3）就紅燈，
+# 由 repo 在 ruleset 把它設成 required check（來源綁 GitHub Actions app），人用 ruleset bypass 合併。
+# 安全邊界：pull_request_target 以 base 的身分跑，所以只 checkout base、不 checkout 也不執行 PR 的任何檔案，
+# 不保留 credentials，權限唯讀。PR 的內容（描述、檔案清單）只經 API 讀進 run.py，不進 shell。
+# 不要加 paths 過濾、任何 if 或 continue-on-error：被略過的 required check 會被當成通過。
+# 不看 .automerge-off（熔斷開關只管自動合併，不管人）；不支援 merge queue（沒有 merge_group 觸發）。
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# 同一個 PR 連續 edited／synchronize 時只留最新一次；被取消的舊 run 是 cancelled，不是 skipped，不會變成綠燈。
+concurrency:
+  group: r3-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: 要人合併的 PR 擋下（r3-gate）
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 .dev-standard/bin/pr_checks/run.py "$PR_NUMBER" --gate

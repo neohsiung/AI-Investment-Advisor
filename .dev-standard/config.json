@@ -16,6 +16,7 @@
         "hooks",
         "ci",
         "pr-template",
-        "issue-templates"
+        "issue-templates",
+        "r3-gate"
     ]
 }
