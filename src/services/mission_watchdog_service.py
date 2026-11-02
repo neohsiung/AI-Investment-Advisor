@@ -24,6 +24,21 @@ from src.services.k1_projection import project_k1_clear, trailing_average
 
 logger = logging.getLogger("MissionWatchdog")
 
+# Reasons this module writes itself; only these are shown to the caller. Any other exception text stays in the log.
+# 本模組自己寫的原因才回給呼叫端；其他例外的文字只留在日誌（CodeQL py/stack-trace-exposure）。
+_KNOWN_REASONS = ("NAV unavailable", "no broker-anchored snapshot", "real billed LLM cost unavailable (estimate only)")
+
+
+def _reason(kid: str, e: Exception) -> str:
+    """The note for a K that could not be measured: an authored reason verbatim, else the exception class and a pointer
+    to the log. / 無法量測時的說明：自寫原因照列，其他只給例外類別並指向日誌。"""
+    msg = str(e)
+    for known in _KNOWN_REASONS:
+        if msg == known:
+            return known
+    logger.error("watchdog: %s not measurable: %s", kid, e, exc_info=True)
+    return f"{type(e).__name__}: measurement failed, see server log"
+
 MIN_HISTORY_DAYS_FOR_ALPHA = 252
 
 
@@ -170,7 +185,7 @@ class MissionWatchdogService:
                                 f"annualised cost ${annual:.0f} on NAV ${nav:.0f}" + proj_note
                                 + (self._top_cost_agents() if ratio > c1.threshold else ""), clears_on=proj_date))
         except Exception as e:
-            results.append(_row("K1", c1.name, "not_measurable", None, c1.threshold, c1.unit, str(e)))
+            results.append(_row("K1", c1.name, "not_measurable", None, c1.threshold, c1.unit, _reason("K1", e)))
 
         # K2 ledger vs broker cash
         c2 = k["K2"]
@@ -187,7 +202,7 @@ class MissionWatchdogService:
             results.append(_row("K2", c2.name, "breach" if diff > 1.0 else "ok", diff, 1.0, "usd_mismatch_now",
                                 f"local ledger cash ${float(local):.2f} vs broker ${float(broker):.2f} (persistence over days not tracked yet)"))
         except Exception as e:
-            results.append(_row("K2", c2.name, "not_measurable", None, c2.threshold, c2.unit, str(e)))
+            results.append(_row("K2", c2.name, "not_measurable", None, c2.threshold, c2.unit, _reason("K2", e)))
 
         # K3 / K4 from the trade ledger (conservative: every sell counts, safety exits are not separable yet)
         c3, c4 = k["K3"], k["K4"]
@@ -233,8 +248,8 @@ class MissionWatchdogService:
             results.append(_row("K4", c4.name, "breach" if turnover > c4.threshold else "ok", turnover, c4.threshold, c4.unit, k4_note,
                                 clears_on=k4_clr))
         except Exception as e:
-            results.append(_row("K3", c3.name, "not_measurable", None, c3.threshold, c3.unit, str(e)))
-            results.append(_row("K4", c4.name, "not_measurable", None, c4.threshold, c4.unit, str(e)))
+            results.append(_row("K3", c3.name, "not_measurable", None, c3.threshold, c3.unit, _reason("K3", e)))
+            results.append(_row("K4", c4.name, "not_measurable", None, c4.threshold, c4.unit, _reason("K4", e)))
 
         # K5 / K6 / K7: honest about what cannot be measured yet
         c5, c6, c7 = k["K5"], k["K6"], k["K7"]
@@ -251,7 +266,7 @@ class MissionWatchdogService:
                 results.append(_row("K7", c7.name, "breach" if bad else "ok", float(bad), 0.0, "candidates_without_dsr",
                                     f"{n_trials} trials recorded; every promotion verdict must carry a DSR"))
         except Exception as e:
-            results.append(_row("K7", c7.name, "not_measurable", None, c7.threshold, c7.unit, f"trial ledger unreadable: {e}"))
+            results.append(_row("K7", c7.name, "not_measurable", None, c7.threshold, c7.unit, f"trial ledger unreadable: {_reason('K7', e)}"))
 
         breaches = [r for r in results if r["status"] == "breach"]
         return {

@@ -1,4 +1,4 @@
-# 由 dev-standard v0.7.3 產生，請勿手改；要改請改 dev-standard 的 components/issue-templates，再跑 sync.py update
+# 由 dev-standard v0.8.0 產生，請勿手改；要改請改 dev-standard 的 components/issue-templates，再跑 sync.py update
 name: 風險
 description: 已知但還沒咬到的風險
 labels: ["kind:risk"]

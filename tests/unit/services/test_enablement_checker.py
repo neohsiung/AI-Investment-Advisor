@@ -290,7 +290,8 @@ def test_drill_restores_state_on_exception(engine, monkeypatch):
     monkeypatch.setattr(ec.charter_state_service, "order_allowed", boom)
     seen = []
     res = ec.drill(engine, NOW, lambda kind, key, payload: seen.append(payload))
-    assert res["ok"] is False and "gate exploded" in res["error"]
+    assert res["ok"] is False and "see server log" in res["error"]
+    assert "gate exploded" not in res["error"]      # exception text stays in the log, not in the API response
     assert _mode(engine) == ("dry_run", False) and seen[0]["ok"] is False
 
 
@@ -361,3 +362,12 @@ def test_a_drill_recorded_before_adr_005_does_not_count(engine):
     assert status == ec.NOT_OK and ev == {"drills": 1, "passed": 0}
     _add(engine, "drill", NOW - timedelta(days=2), payload=DRILL_PASSED)
     assert ec._c_drill(engine, NOW)[0] == ec.OK
+
+
+def test_check_does_not_return_exception_text(engine, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("secret /app/internal.py password=hunter2")
+    monkeypatch.setattr(ec, "_CHECKS", (("adr", boom),))
+    ok, missing = ec.check(engine, NOW)
+    assert ok is False and missing[0]["status"] == ec.NOT_MEASURABLE
+    assert "hunter2" not in str(missing) and "see server log" in str(missing)
