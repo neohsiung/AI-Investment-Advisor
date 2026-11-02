@@ -27,6 +27,7 @@
     ".dev-standard/risk.json",
     ".github/CODEOWNERS",
     ".github/workflows/pr-checks.yml",
+    ".github/workflows/r3-gate.yml",
     ".automerge-off"
   ],
   "_r2_globs": "設定、門檻、prompt、schema、migration、被其他 repo 複製出去的檔。",

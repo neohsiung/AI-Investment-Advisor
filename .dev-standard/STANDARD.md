@@ -1,6 +1,6 @@
 # 開發辦法（dev-standard）
 
-適用於 litov、investment-advisor、hermes-investment-agent，以及之後新開的 repo。每個 repo 用 `tools/sync.py` 把下方〈給 agent 的精簡版〉帶進自己的 AGENTS.md 與各家 agent 規則檔，repo 自己的差異寫在 overlay，不改這份。
+適用於 litov、investment-advisor、hermes-investment-agent，以及之後新開的 repo。每個 repo 用 `tools/sync.py` 把下方〈給 agent 的精簡版〉帶進自己的 AGENTS.md 與各家 agent 規則檔，repo 自己的差異寫在 overlay，不改這份。雇主的 repo、規則檔同事共用的 repo，用影子導入：規則由全域帶，本 repo 只放版控看不到的工具設定，見 §9。
 
 寫法延續 hermes：**規則是帳單。** 每條附來由，指到哪個 repo 的哪次事件。說不出來由的規則，下一個人會把它當成偏好刪掉。
 
@@ -36,6 +36,7 @@
 
 - `SCOPE: OK <sha>` 表示說明與改動對得上，每一級合併都要；`REVIEW: PASS <sha>` 表示審過。兩者都可以由寫 PR 的 session 留，只證明檢查跑過，不證明有第二雙眼睛。要獨立審查，另設一個 gh 身分加進 `risk.json` 的 `trusted_authors`。
 
+- 裝了 `r3-gate` 的 repo，要人合併的 PR 在 GitHub 上會亮紅的 r3-gate，這是設計，不算 CI 失敗；其他檢查要全綠。
 - 根目錄的 `.automerge-off` 是熔斷開關：存在就拒絕自動合併；讀不到它時中止，不當作沒有。合併指令固定 `gh pr merge --merge --match-head-commit <sha> --delete-branch`，不 squash、不用 `--auto`。
 
 **模型分層**
@@ -80,13 +81,14 @@
 **回填**
 - 在這個 repo 發展出跟 repo 無關的好做法，PR 的 `DERIVED:` 標「通用：是」，同一週對 dev-standard 開回填 PR。只在這個 repo 成立的留在 overlay。
 - 做開發流程工具前先查 dev-standard；通用的就做在 dev-standard，repo 差異寫在 `.dev-standard/*.json`。
+- 雇主的 repo、規則檔同事共用的 repo 用影子導入，指令是 `sync.py shadow`：規則由全域 `~/.claude` 帶，本 repo 只放 `.dev-standard/` 與 `.claude-task/`，兩者都在 `.git/info/exclude`；不碰任何追蹤檔，不設 `core.hooksPath`。在那裡學到的通用做法記進回填帳本，當週回填。
 <!-- AGENT-RULES:END -->
 
 ## 1. 分支、worktree、PR
 
 | 規則 | 為什麼（來由） | 怎麼檢查 |
 |---|---|---|
-| 不在 main commit、不 push main | hermes：`~/.hermes` 是正式環境的 bind mount，在上面切分支讓 cron 正在跑的腳本消失（2026-10-08）。litov：main 定義為「已審」 | guard 元件擋 agent 在 main 上 `git commit` 與 `git push … main`；hooks 元件的 `pre-push` 在 git 層擋推或刪 main、master、release/*，人自己推也擋（`DEV_ALLOW_PUSH_PROTECTED=1` 刻意放行並印提醒） |
+| 不在 main commit、不 push main | hermes：`~/.hermes` 是正式環境的 bind mount，在上面切分支讓 cron 正在跑的腳本消失（2026-10-08）。litov：main 定義為「已審」 | guard 元件擋 agent 在 main 上 `git commit` 與 `git push … main`；原位 commit 的本機 repo，例如排程器讀的那個，在它自己的 `.dev-standard/guard.json` 設 `trunk_commit_allowed: true` 放行 commit，push 照擋；hooks 元件的 `pre-push` 在 git 層擋推或刪 main、master、release/*，人自己推也擋（`DEV_ALLOW_PUSH_PROTECTED=1` 刻意放行並印提醒） |
 | 一個任務一個分支；會寫檔的 session 或 agent 各用自己的 worktree，唯讀的不開；兩個 writer 不碰同一檔 | hermes 同上事件：兩個 session 的改動混在同一棵樹。litov 與全域設定：唯讀的開 worktree 是浪費，兩個 writer 同檔會互相覆蓋且沒有訊號 | `.dev-standard/bin/wt.sh new`（wt 元件）；`tools/prune.py` 列出殘留；派工時寫明每個 writer 的檔案範圍 |
 | 一個 PR 一個連貫範圍；以「合併後系統自洽」為單位，上限是一次 review 讀得完 | decision-stack 寫入程序：只加工具不改契約等於沒生效；審不完的 diff 等於沒被審 | reviewer 問「拿掉這個 PR 的任一半，另一半還成立嗎」 |
 | 疊起來的 PR 每一個都合進 main | litov #2 疊在 #1 上，#1 先合進 main，#2 合進沒人看的 base 分支，main 沒拿到內容 | 合併前看 base 是不是 main |
@@ -106,6 +108,8 @@
 | R3 | 會動錢的路徑（下單、風險閘道、資金政策）、正式環境的 gateway 與帳本 | **不開放給 agent。** 只提案與寫 DD，由人核可或自己執行 |
 
 R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，關著的車道不會（hermes lane C）。
+
+**GitHub 端也要擋。** `run.py` 只在走它的時候擋得住；PR 作者就是唯一的 code owner 時，`gh pr merge` 直接成功（investment 2026-11-02，AI-Investment-Advisor#302 實測 `mergeStateStatus=CLEAN`）。能設 ruleset 的 repo 裝 `r3-gate` 元件：要人合併的 PR 讓 workflow 回紅，設成 required check、來源綁 GitHub Actions app，人用 ruleset bypass 合併，guard 另擋 agent 的 `gh pr merge`。檢查：先用 `gh api repos/<owner>/<repo>/commits/<head sha>/check-runs` 確認 r3-gate 掛在 PR 的 head 上，再設 required check；之後 R3 測試 PR 的 `mergeStateStatus` 是 `BLOCKED`，R1 測試 PR 照樣由 `run.py --merge` 合併。設計見 `docs/design/DD-2026-1102-r3-gate.md`。
 
 對照：hermes 的 lane A＝R0／R1，B＝R2，C＝R3。investment 的 R0–R3 名稱不變。
 
@@ -225,12 +229,13 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 | 給人讀的 PR 描述裡的測試數、情境數、行號、結果，由閘門腳本產出，不手抄 | 某 Rails 專案 2026-10：手抄的描述出現 139 與 81 兩個互相矛盾的數字，另有行號因後續修改而位移 | 描述裡的每個數字都能對到閘門腳本的輸出 |
 | 待辦只放 GitHub Issues | hermes：CLAUDE.md、DEVELOPMENT.md、OPEN-ITEMS.md 對「待辦在哪」三種說法 | grep 文件裡的待辦清單 |
 | 同一套規則只有一份正本，其餘由產生器帶出，CI 跑 `sync.py check` | investment：五份 agent 規則檔各自漂移，`.cursorrules` 留著過時的「615+ 測試」 | `python3 .dev-standard/sync.py check` |
+| 不是自己的 repo 用影子導入：不產生區塊、不裝會寫到版控位置的元件，`.dev-standard/` 與 `.claude-task/` 進 `.git/info/exclude`；規則由全域 `~/.claude` 帶，guard 與 green-gate 掛在全域 `settings.json`，各 repo 的 R2／R3 路徑仍寫在它自己的 `.dev-standard/guard.json`；origin 在 GitHub 才把 pre-push 寫到 `.git/hooks/`，不設 `core.hooksPath` | 某 GitLab 加 GitHub 混用的多 repo 工作區 2026-11：`AGENTS.md`、`CLAUDE.md` 已進版控且同事共用，寫區塊進去等於把個人工具交給同事；設 `core.hooksPath` 會讓 repo 既有的本機 hook 無聲停用 | `tests/test_shadow.py`：追蹤檔不變、`git status --porcelain` 為空、exclude 冪等、GitLab 不寫 pre-push、別人的 hook 不覆蓋；`sync.py check` 在 exclude 少行時回 1 |
 
 ## 10. 回填：各 repo 的好做法回到這裡
 
 - **判準：** 一個做法換到另一個 repo 也成立，就屬於這裡；只在原 repo 成立的（正式環境路徑、特定檔名、產品名）留在 overlay。
 - **觸發：** PR 的 `DERIVED:` 行標「通用：是」，同一週對 dev-standard 開回填 PR，連回原 PR。
-- **工具：** `tools/sync.py report <repo>…` 列出各 repo overlay 的段落，標出跨 repo 重複的標題（通用候選）與跟正本重名的段落（可能是漂移）。它只列不判，「是不是通用」由人決定。
+- **工具：** `tools/sync.py report <repo>…` 列出各 repo overlay 的段落，標出跨 repo 重複的標題（通用候選）與跟正本重名的段落（可能是漂移）。它只列不判，「是不是通用」由人決定。影子導入的 repo 沒有 overlay，那邊的 PR 也沒有 `DERIVED:` 行，候選改從導入者自己的回填帳本來。帳本是本機檔，不進任何 repo，格式由導入者的全域設定定。
 - **來由的寫法：** 來源不是本 repo 清單內的專案時，寫成「某 Rails 專案 2026-10」這種形狀：只留技術類型與年月，不寫公司、專案或 repo 名、票號、人名、MR 編號。0.4.0 的來源是某 Rails 專案 2026-10 一批 PR 的送審：§1 的 force 與搬檔、§4 的三條、§8 與 §9 各一條。
 - **定期回看：** 每月一次，或累積 3 個候選時。
 - **升版：** 加或改規則升 minor，只改文字升 patch。CHANGELOG 每版寫出換掉了哪個想法，每條規則記來源 repo。

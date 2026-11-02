@@ -1,4 +1,4 @@
-# 由 dev-standard v0.8.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """風險級：依改動路徑算出「至少是哪一級」，並解析 PR 第一行宣告。純函式，不碰網路。
 
 規則（STANDARD.md 風險級合併表）：
@@ -24,7 +24,7 @@ BUILTIN_FORBIDDEN = [r"(^|/)\.env$", r"(^|/)\.env\.(?!example$|sample$|template$
 # classifier 腳本的路徑另外從 risk.json 的 classifier argv 取。
 RISK_FILE = ".dev-standard/risk.json"
 TOOL_GLOBS = [".dev-standard/bin/pr_checks/*", ".dev-standard/risk.json",
-              ".github/workflows/pr-checks.yml"]   # CI 跑的是 PR 自己的 workflow
+              ".github/workflows/pr-checks.yml", ".github/workflows/r3-gate.yml"]   # CI 跑的是 PR 自己的 workflow
 LIST_KEYS = ("r2_globs", "r3_globs", "outward_globs", "forbidden", "trusted_authors", "ci_ignore")
 KNOWN_KEYS = set(LIST_KEYS) | {"classifier", "require_issue_ref"}
 
