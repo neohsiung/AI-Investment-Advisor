@@ -1,6 +1,6 @@
 {
  "ruff_version": "0.11.7",
- "total": 7370,
+ "total": 7369,
  "counts": {
   ".agent/skills/ci-test/scripts/ci_test.py::BLE001": 2,
   ".agent/skills/ci-test/scripts/ci_test.py::E501": 2,
@@ -1011,7 +1011,7 @@
   "src/services/dynamic_iv_surface_skew_hedging_service.py::F401": 1,
   "src/services/dynamic_iv_surface_skew_hedging_service.py::PLR0912": 1,
   "src/services/dynamic_iv_surface_skew_hedging_service.py::PLR0915": 1,
-  "src/services/enablement_checker.py::BLE001": 6,
+  "src/services/enablement_checker.py::BLE001": 5,
   "src/services/enablement_checker.py::E501": 7,
   "src/services/etoro_service.py::B023": 2,
   "src/services/etoro_service.py::B904": 3,

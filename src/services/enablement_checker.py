@@ -150,8 +150,9 @@ def check(engine: Any, now: datetime) -> Tuple[bool, List[Dict[str, Any]]]:
         try:
             status, value = fn(engine, now)
         except Exception as e:
-            logger.warning("enablement criterion %s not measurable: %s", name, e)
-            status, value = NOT_MEASURABLE, {"error": f"{type(e).__name__}: {e}"}
+            logger.warning("enablement criterion %s not measurable: %s", name, e, exc_info=True)
+            # Class only: the text stays in the log (CodeQL py/stack-trace-exposure). 只回類別，原文留日誌。
+            status, value = NOT_MEASURABLE, {"error": f"{type(e).__name__}: see server log"}
         if status != OK:
             missing.append({"criterion": name, "status": status, "value": value})
     return not missing, missing
@@ -221,15 +222,16 @@ def drill(engine: Any, now: datetime, emit: Optional[Emit] = None) -> Dict[str, 
             ).values(mode="frozen", reason="drill", resume_mode=prior.mode, since=now, updated_at=now)).rowcount
             s.commit()
         if not n:
-            raise RuntimeError("could not set frozen (state changed concurrently)")
-        buy_ok, _ = charter_state_service.order_allowed("BUY", DRILL_BUY_STRATEGY, now, engine)
-        nonexit_ok, _ = charter_state_service.order_allowed("SELL", DRILL_SELL_STRATEGY, now, engine)
-        sell_ok, _ = charter_state_service.order_allowed("SELL", DRILL_SAFE_STRATEGY, now, engine)
-        result["buy_refused"], result["nonexit_sell_refused"] = buy_ok is False, nonexit_ok is False
-        result["stop_loss_allowed"] = sell_ok is True
+            result["error"] = "could not set frozen (state changed concurrently)"
+        else:
+            buy_ok, _ = charter_state_service.order_allowed("BUY", DRILL_BUY_STRATEGY, now, engine)
+            nonexit_ok, _ = charter_state_service.order_allowed("SELL", DRILL_SELL_STRATEGY, now, engine)
+            sell_ok, _ = charter_state_service.order_allowed("SELL", DRILL_SAFE_STRATEGY, now, engine)
+            result["buy_refused"], result["nonexit_sell_refused"] = buy_ok is False, nonexit_ok is False
+            result["stop_loss_allowed"] = sell_ok is True
     except Exception as e:
-        logger.warning("drill failed: %s", e)
-        result["error"] = f"{type(e).__name__}: {e}"
+        logger.warning("drill failed: %s", e, exc_info=True)
+        result["error"] = f"{type(e).__name__}: drill failed, see server log"
     finally:
         _restore(engine, now, prior, result)
     result["ok"] = (result["buy_refused"] is True and result["nonexit_sell_refused"] is True
@@ -250,5 +252,5 @@ def _restore(engine: Any, now: datetime, prior: Any, result: Dict[str, Any]) -> 
                      resume_mode=prior.resume_mode, updated_at=now))
             s.commit()
     except Exception as e:
-        logger.error("drill: could not restore charter_state (left frozen, restore it by hand): %s", e)
-        result["error"] = f"restore failed: {e}"
+        logger.error("drill: could not restore charter_state (left frozen, restore it by hand): %s", e, exc_info=True)
+        result["error"] = "restore failed, left frozen: restore it by hand (see server log)"
