@@ -112,7 +112,7 @@ flowchart TD
 | 2 | ruleset 必要核可數改 0，保留 code owner 審查，由使用者在 GitHub 設定頁改 | 已完成 | 第 2 節的 ruleset 指令 |
 | 3 | CODEOWNERS 收斂為只列 R3，#284 | 已合併 | 第 2 節的 CODEOWNERS 指令 |
 | 4 | 對下一個真的 PR 跑 `run.py <PR>`，確認印出熔斷開關的拒絕，[#279](https://github.com/neohsiung/AI-Investment-Advisor/issues/279) | 已完成：#286 上印出熔斷開關的拒絕 | 該指令的輸出 |
-| 5 | 實測 R1 PR 能被 `--merge` 合進去，R3 路徑的 PR 被 GitHub 擋下，並確認使用者帳號在繞過名單，[#280](https://github.com/neohsiung/AI-Investment-Advisor/issues/280) | R0／R1 半邊已完成，#295 由 `run.py --merge` 合併；R3 被 GitHub 擋下的半邊待做 | `gh pr view 295 --json mergedBy` |
+| 5 | 實測 R1 PR 能被 `--merge` 合進去，R3 路徑的 PR 被 GitHub 擋下，並確認使用者帳號在繞過名單，[#280](https://github.com/neohsiung/AI-Investment-Advisor/issues/280) | 已完成。#295、#308 由 `run.py --merge` 合併，R3 探針 #307 為 `BLOCKED` | `gh pr view 295 --json mergedBy` |
 | 6 | 另開 PR 拿掉 `.automerge-off`，屬 R3，由使用者合併。順序改在步驟 5 之前：`run.py --merge` 讀的是 base 分支上的開關，開關在就一律拒絕，R1 實測合併做不出來 | 已合併，#291 | `ls .automerge-off` 應失敗 |
 
 開關拿掉後沒有程式層的急停。行為不如預期就補回空的 `.automerge-off`，這是 R3 PR。
@@ -122,12 +122,12 @@ flowchart TD
 - **`REVIEW: PASS` 不是第二雙眼睛。** agent 與 owner 共用同一個 GitHub 身分，`trusted_authors` 為空，等於 repo owner。標記證明的是 `reviewer` agent 在當前 head 審過。R2 的獨立性來自 `reviewer` 是另一個 agent 與上下文，不來自身分。
 - **路徑清單完整度就是安全邊界。** 新增的動錢檔沒列進 `r3_globs`，會被當成 R1 自動合併。計畫中的 `tests/invariants/test_codeowners_covers_money_paths.py` 是補這個洞的測試，建議在步驟 6 之前完成。
 - **R1 不是零風險。** R1 含一般程式與測試，看錯的代價小但不為零。合併後留言的 retro 五行用來量這個代價。
-- **CODEOWNERS 擋不住 R3。** 作者就是唯一的 code owner，#302 的 `mergeStateStatus` 仍是 `CLEAN`，見 #304。GitHub 端改靠 `r3-gate`：要人合併的 PR 回紅，設成 required check 後只能由人 bypass 合併。檢查工具、`risk.json`、CODEOWNERS 也列入 R3 清單，兩份清單由單元測試鎖住一致。
+- **CODEOWNERS 擋不住 R3。** 作者就是唯一的 code owner，#302 的 `mergeStateStatus` 仍是 `CLEAN`，見 #304。GitHub 端改靠 `r3-gate`：要人合併的 PR 回紅，已設成 required check，只能由人 bypass 合併。檢查工具、`risk.json`、CODEOWNERS 也列入 R3 清單，兩份清單由單元測試鎖住一致。
 - **權限範圍等於使用者本人。** 合併由 agent 在使用者的機器上用使用者的 `gh` 身分執行，沒有機器人身分。熔斷開關與 R3 拒絕是程式層的限制，不是權限層的。
 
 ## 7 未驗證
 
-1. `r3-gate` 設成 required check 後，R3 PR 的 `mergeStateStatus` 為 `BLOCKED`、R1 PR 仍可由 `run.py --merge` 合併，尚未實測。屬步驟 5，進度見 #304。
+1. guard 擋直接合併的規則只是減速丘，`python -c`、變數展開擋不到；MCP 的 deny 規則需重啟 session 後實測。邊界是 `r3-gate` 加 ruleset，進度見 #304。
 
 ## 8 回滾
 
