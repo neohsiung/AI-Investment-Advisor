@@ -254,3 +254,4 @@ def _restore(engine: Any, now: datetime, prior: Any, result: Dict[str, Any]) -> 
     except Exception as e:
         logger.error("drill: could not restore charter_state (left frozen, restore it by hand): %s", e, exc_info=True)
         result["error"] = "restore failed, left frozen: restore it by hand (see server log)"
+# probe
