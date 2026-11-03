@@ -13,6 +13,14 @@
     {
       "pattern": "docker (compose )?(stop|restart|kill|rm|down)\\b.*advisor_prod",
       "why": "停／重啟正式容器"
+    },
+    {
+      "pattern": "\\bgh\\s+pr\\s+merge\\b",
+      "why": "合併走 run.py --merge；R3 由人在網頁合併。請使用者確認後自己執行"
+    },
+    {
+      "pattern": "\\bgh\\s+api\\b.*(-X|--method)\\s+PUT\\b.*/merge\\b",
+      "why": "用 API 合併 PR 等同繞過 run.py"
     }
   ]
 }
