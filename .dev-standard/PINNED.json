@@ -1,70 +1,70 @@
 {
-  "version": "0.11.0",
-  "sha256": "7eabadffda25c1e57bc586479b3290b292ca9681f009f3ea743086db5329239f",
+  "version": "0.12.0",
+  "sha256": "3e6331880ada04c6d858d2beccc977ba1ebce912d0c6557ae41d2994f7dbd188",
   "templates_sha256": "ad28d59c9f04249827e3ba9ec234fdc1d44f37a34292ee4bc359e00f569c9681",
   "components": {
     "guard": {
       "files": {
-        ".claude/hooks/guard.py": "989ac88e4b23ceccf38ecf11587a3ad9f5291a9823d0b32aa76ee1e692e638e9"
+        ".claude/hooks/guard.py": "c5641160dedb3f7c1eea790d1476b5c2e78bdce871f4b755acbce5b0e65b66b4"
       }
     },
     "green-gate": {
       "files": {
-        ".claude/hooks/green_gate.py": "b7c42c9122c030f7c2caeb3b668c976a259df41db3732b25a5c5e115180e868e"
+        ".claude/hooks/green_gate.py": "d9699d2b6c5689e354bfcdc2dc82bf2d2255235e54fad3aef976c6a579ed21fc"
       }
     },
     "wt": {
       "files": {
-        ".dev-standard/bin/wt.sh": "e5bda3d7859cfb7a28d45c73407a7cb5f557669151772d4c8553332187919293"
+        ".dev-standard/bin/wt.sh": "6433a59e0c3965794ccd601af72b3725aa39ba9f587b2e6a5e807a23a01ecafe"
       }
     },
     "agents": {
       "files": {
-        ".claude/agents/scout.md": "9009d3ea766cfc0a1003e061b7eab2ac2add599e0671e44f62a5fe3e6e653d35",
-        ".claude/agents/implementer.md": "3da6db0f0a880dda93c1c5ef085cd896a5a36427ae457e9b3e9abe440c896b09",
-        ".claude/agents/reviewer.md": "f89f6fc4e223b3435db56aae09f5b4bba6a71c89f8c144462c34d233a933230a",
-        ".claude/agents/architect.md": "ee05fdb6811ab12f2d1045dc17dae117411e533240cae6c217f19940faefe6a8"
+        ".claude/agents/scout.md": "a64e24b0ad055d48fe936e34e28db97731e61de03aa75b2313152d8240b23d45",
+        ".claude/agents/implementer.md": "a25262f28940e811adff840d98c9a5195c6353933c56d2249ad143ca0612f144",
+        ".claude/agents/reviewer.md": "548fc4d454720c57fb6e716c420db9ba3af3ad713259cc0e081b5b4ed43b44be",
+        ".claude/agents/architect.md": "2a7723a405a056d00d5a65d1ca6aa5b2a574b08b8c85b5ca3d15f8f30992d415"
       }
     },
     "pr-checks": {
       "files": {
-        ".dev-standard/bin/pr_checks/__init__.py": "cac2d3a2dd981999f648b0f1af187b2a5e88e3b044de5ea31bc84b3094377e31",
-        ".dev-standard/bin/pr_checks/risk.py": "458ba6d5770029bee8f7df6a886d271794fb5d0926b534de62bbe8323654eb74",
-        ".dev-standard/bin/pr_checks/checks.py": "8731180285da60a1488d44ae755168d9e0ba8b0739c640df458b34fbf0215e5f",
-        ".dev-standard/bin/pr_checks/merge.py": "8ff3c9dbe309abbc06e27551cf100da381097be25de09fa42ab5cc4a5a73c959",
-        ".dev-standard/bin/pr_checks/gh.py": "37e01df922cfecc4dce12755a2be903cb1a00055ee857b8e5ea80f0a726b2c1c",
-        ".dev-standard/bin/pr_checks/run.py": "3be6e6a86af9f9b65e315bcb6f50496e5bebba0b8040923f0e97e3a73801b891",
-        ".github/workflows/pr-checks.yml": "5878dd6e33b1f76958820b5dd223bd45aeb49b1fdcc18a922007a5b8647a4a94"
+        ".dev-standard/bin/pr_checks/__init__.py": "d50f02b6529827d157bf783ca7c98dbeebe934258dd3469e90a48f3693a51071",
+        ".dev-standard/bin/pr_checks/risk.py": "f0c445517f6b089f27beed12d926dadf6936d26d607f07be65c7e1a5099f8963",
+        ".dev-standard/bin/pr_checks/checks.py": "448184197a6ff64d35186eb72be534dad263687cd4dd3fa6e7a053a42a9f2cd0",
+        ".dev-standard/bin/pr_checks/merge.py": "22227c7d260666a7f5cc8bd9e45264cdcc4da2d9b87ac96bf1d2165a21667d64",
+        ".dev-standard/bin/pr_checks/gh.py": "87fdb0f83f15964f7976a8db741a7cf67c7a94fb312753c9678480191931a13d",
+        ".dev-standard/bin/pr_checks/run.py": "6c76fbe66457da621376f813ed01e9d300f00707d162ab7a7a9e7087c078383f",
+        ".github/workflows/pr-checks.yml": "090dd12f0f9eb94961011581c618213749bb9cad7e109c740f5d170689c9d810"
       }
     },
     "hooks": {
       "files": {
-        ".githooks/pre-commit": "6628538e3007692f814c9a3021dd1ae046ba754e5ddd33dc2ddc18a792ff3479",
-        ".githooks/pre-push": "8eeb07a388e980eec6ac4c2b8738d431c82c4bb3c8a4251fd08bb40e91617318"
+        ".githooks/pre-commit": "ab324e2fde82c79f52bef4c0886a0f7cffad8fabc3dd46e425039ae336326148",
+        ".githooks/pre-push": "4a551574f26736f2ae9a2f063eba34e1d6b710f1b9754d6727f87f613e2e447e"
       }
     },
     "ci": {
       "files": {
-        ".github/workflows/dev-standard.yml": "d58ade920bfb2a8a5781400e267755e3f321edb2a8fb36127184104a354d0554",
-        ".dev-standard/bin/ci_config.py": "53154d45136fd34471cf5c507e915f7ff9a78277d9381fb33bb996581475fe65"
+        ".github/workflows/dev-standard.yml": "33accd6d71978ddd7b84783b855a6fcc779df0a2fd8fc2049627847fb3d77d33",
+        ".dev-standard/bin/ci_config.py": "749b04566872c35a4bea6cbecf9b7a6d9f4f49da46ec075276f5c94ccd86fb20"
       }
     },
     "pr-template": {
       "files": {
-        ".github/pull_request_template.md": "270c4c221f05685c46cec503b7e6cf6a5195bda0d2eafac2a59a1456848ed666"
+        ".github/pull_request_template.md": "fb25ac8ea7032f24bf4ffb9f81f21ca89d837cbfa995752468b7695a6680be1d"
       }
     },
     "issue-templates": {
       "files": {
-        ".github/ISSUE_TEMPLATE/todo.yml": "ab03ff7eecdd2ed8d2760fdeabfd2a68ec74f30611ee29cc02e8939854a9aec7",
-        ".github/ISSUE_TEMPLATE/risk.yml": "12731468bd0587de6edb19d736c8362e4b1a3819a6bdecfdb7a0c3efc051365b",
-        ".github/ISSUE_TEMPLATE/decision.yml": "6bae8a9aa5a15fc6cdcf9599abe8699c53e798be0b21f8bb4ade04bffd63ad67",
-        ".github/ISSUE_TEMPLATE/config.yml": "1fe433b1353714f58eedccd432d97cb24f5ca13387e17c8d28a8f576baaf880f"
+        ".github/ISSUE_TEMPLATE/todo.yml": "f20b04814538fa0b22f784c8fc73fa58d960a422dddb59eeab31686017221038",
+        ".github/ISSUE_TEMPLATE/risk.yml": "82b9da29486eeabec875a0f839f7c13b3c8a5ca5dca2532dc36594e5d8e70bd8",
+        ".github/ISSUE_TEMPLATE/decision.yml": "ac46b7728ff7cab9c317019dceaff912afae40a2b49b244007b9eb88384518c1",
+        ".github/ISSUE_TEMPLATE/config.yml": "2c85417142cb62963cd2a5b490a0145c5be1a2b03a3bb539f904e726bacc52b7"
       }
     },
     "r3-gate": {
       "files": {
-        ".github/workflows/r3-gate.yml": "c95cfd0747d3cda823f85015adf5c44df845805ed017bb4c390398dea5f7f89e"
+        ".github/workflows/r3-gate.yml": "9b4bda042f0ecbfe219bad6fab5e03a790989983550a1ca82f3db5780b4a536c"
       }
     }
   }

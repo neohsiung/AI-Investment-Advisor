@@ -94,7 +94,7 @@ number.
 - **Frontend**: Next.js 15 (TypeScript, in `frontend/`)
 - **Backend**: FastAPI + MCP Server (in `services/mcp_server/`)
 
-<!-- DEV-STANDARD:BEGIN v0.11.0 -->
+<!-- DEV-STANDARD:BEGIN v0.12.0 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
@@ -147,7 +147,7 @@ number.
 - 跨天的 worktree、草稿、未 commit 的實作，不放 `/tmp`，也不放被排程同步工具掃描的目錄。
 
 **安全**
-- 金鑰只走環境變數或金鑰庫；只驗存在或長度，不印出來。被 hook 擋下就不繞路，請人用 `!` 自己執行。
+- 金鑰只走環境變數或金鑰庫；只驗存在或長度，不印出來。被 hook 擋下就不繞路：跳核可視窗的由人按允許，擋死的請人在電腦的終端機用 `!` 自己執行（Remote Control 跑不了 `!`）。人能核可的動作寫進 guard 的 `ask: true` 或 `ask_paths`。
 - `.gitignore` 用白名單；pre-commit 掃金鑰（兩套掃描器）與單檔大小。不用 `--no-verify`。
 - 不靜默失敗：決策路徑不吞錯；失敗要讓呼叫端看得到。
 
