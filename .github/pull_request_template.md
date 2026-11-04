@@ -1,4 +1,4 @@
-<!-- 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-template，再跑 sync.py update -->
+<!-- 由 dev-standard v0.12.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-template，再跑 sync.py update -->
 風險級：<R0|R1|R2|R3>   <!-- R0 docs ｜ R1 非決策的程式／UI／測試 ｜ R2 決策、設定、schema、prompt、migration、路由 ｜ R3 動錢（券商、風控閘道、資金政策、mission.yaml），agent 不動手只提案；路徑見 .github/CODEOWNERS -->
 
 Refs #<issue>   <!-- 完整做完才用 Closes #N；只做一部分用 Refs #N 並在 issue 留言剩什麼 -->

@@ -1,4 +1,4 @@
-# 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/issue-templates，再跑 sync.py update
+# 由 dev-standard v0.12.0 產生，請勿手改；要改請改 dev-standard 的 components/issue-templates，再跑 sync.py update
 name: 待辦
 description: 一件具體要做的事
 labels: ["kind:debt"]

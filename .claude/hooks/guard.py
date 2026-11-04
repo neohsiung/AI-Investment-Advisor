@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.11.0 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
+# 由 dev-standard v0.12.0 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
 """guard.py — Claude Code PreToolUse 硬底線（來由：hermes hermes_guard.py 與它的測試，加上 litov 的 worktree 基底檢查；dev-standard §1、§2、§6）
 
 CLAUDE.md／AGENTS.md 是建議，擋不住任何事；這支是擋得住的那一層（exit 2 在權限規則之前生效，bypass 也一樣）。
@@ -25,6 +25,10 @@ repo 自己的擋（.dev-standard/guard.json，缺的欄位＝不啟用；範例
      rsync、nc、ncat、gh、ssh；可用 clis 改）。paths（目錄，相對 repo 根目錄）、allow（目錄內可出網的檔，例 .gitkeep）。
      只看同一條管線；cd 進私有目錄或把私有路徑指給變數後，同一條指令後面的出網 CLI 一律擋。沒設 paths ＝ 關。
      擋不到的（python -c 自己開 socket、先 cp 出去再送）不在範圍。來由：litov#140。
+  ⑩ 跳核可（opt-in）：blocked_commands 的項目加 "ask": true、或路徑寫進 ask_paths（regex，相對 repo 根目錄），命中時不擋死，
+     改輸出 permissionDecision=ask，跳 Claude Code 的核可視窗（依官方文件 auto 模式也跳、Remote Control 轉送得到；`!` 轉不到。
+     手機端尚未實測，見 DD-2026-1104 AC5）。
+     同一條指令還碰到任何擋死的規則就擋死；同時在 protected_paths 與 ask_paths 的路徑擋死。碰錢的不要寫成 ask。
   secret_extraction: false 可關掉 ③。
   trunk_commit_allowed: true 關掉 ① 的「在 main 上 commit」，只對這個 repo；push main、worktree 基底照擋。給排程器或
      同步工具原位 commit 的本機 repo 用；是 repo 自己的設定，依 commit 作用的那個 repo 的 guard.json 判斷，不看 cwd。
@@ -33,7 +37,7 @@ repo 自己的擋（.dev-standard/guard.json，缺的欄位＝不啟用；範例
   Bash 重導寫入 —— 護欄自己的設定只有人能改。
 guard.json 存在但內容壞了（不是合法 JSON、型別不對、缺 pattern、regex 編不起來）時，除了 Read 一律擋（不靜默退回「沒有設定」）；
   修它請用 `!` 自己改。任何未預期的例外也 exit 2（hook 的 exit 1／逾時都是放行，所以一律走 2）。
-被擋的動作要人做：回覆裡請使用者用 `!` 前綴自己執行。不要繞路。
+被擋的動作要人做：跳核可視窗的由人按允許；擋死的，回覆裡請使用者在電腦的終端機用 `!` 前綴自己執行。不要繞路。
 安裝：.claude/settings.json 的 hooks.PreToolUse（sync.py wire 會幫你掛）：
   {"matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Read", "hooks": [{"type": "command",
    "command": "python3 \\"$CLAUDE_PROJECT_DIR\\"/.claude/hooks/guard.py"}]}
@@ -86,9 +90,27 @@ def is_secret(path: str) -> bool:
     return bool(SECRET_NAME.search(path)) and not SECRET_OK.search(path)
 
 
-def block(reason: str, how: str = "請使用者用 `!` 前綴自己執行，不要繞路") -> None:
+def block(reason: str, how: str = "不要繞路；確實要做，請使用者在電腦的終端機用 `!` 自己執行（Remote Control 跑不了 `!`）") -> None:
     sys.stderr.write(f"⛔ guard：{reason}\n   → {how}\n   （dev-standard §1／§2／§6）\n")
     sys.exit(2)
+
+
+# ⑩ 跳核可（repo 明說的才算：blocked_commands 項目的 ask: true、ask_paths）：不擋死，改出 Claude Code 的核可視窗。
+# Remote Control 在手機上按得到核可，按不到 `!`。先記下來，所有檢查跑完才輸出：同一條指令後面碰到 block() 就 exit 2，擋死優先。
+ASKS: list = []
+
+
+def ask(reason: str) -> None:
+    ASKS.append(f"guard：{reason}")
+
+
+def emit_ask() -> None:
+    """只在 _main 正常跑完時呼叫；例外路徑一律 exit 2、stdout 不寫任何東西。"""
+    if ASKS:
+        sys.stdout.write(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "ask",
+            "permissionDecisionReason": "；".join(ASKS) + "。要人核可：確認這是你要的動作再按允許。"}}, ensure_ascii=False))
+        sys.stdout.flush()                               # 在 main() 的 try 裡失敗 ⇒ exit 2；拖到直譯器結束才失敗會變成放行
 
 
 # ── 設定 ────────────────────────────────────────────────────────────────────
@@ -123,6 +145,8 @@ def validate_config(cfg: dict) -> None:
     """完整驗 guard.json 的型別、必備鍵、regex；任何問題丟 ValueError。缺的欄位＝不啟用，不算錯。"""
     if "protected_paths" in cfg:
         _regexes(cfg["protected_paths"], "protected_paths")
+    if "ask_paths" in cfg:
+        _regexes(cfg["ask_paths"], "ask_paths")
     if "blocked_commands" in cfg:
         bc = cfg["blocked_commands"]
         if not isinstance(bc, list):
@@ -133,6 +157,8 @@ def validate_config(cfg: dict) -> None:
             _regexes([item["pattern"]], f"blocked_commands[{i}].pattern")
             if "why" in item and not isinstance(item["why"], str):
                 raise ValueError(f"blocked_commands[{i}].why 必須是字串")
+            if "ask" in item and not isinstance(item["ask"], bool):
+                raise ValueError(f"blocked_commands[{i}].ask 必須是 true／false")
     if "secret_extraction" in cfg and not isinstance(cfg["secret_extraction"], bool):
         raise ValueError("secret_extraction 必須是 true／false")
     if "trunk_commit_allowed" in cfg and not isinstance(cfg["trunk_commit_allowed"], bool):
@@ -929,7 +955,10 @@ def check_bash(cmd: str, cwd: str, root: str, cfg: dict) -> None:
     segs = segments(cmd)
     for item in cfg.get("blocked_commands", []):         # 逐段比對；要精準就在 pattern 用 ^ 錨定
         if any(re.search(item["pattern"], " ".join(w)) for w in segs):
-            block(f"危險指令：{item.get('why', item['pattern'])}")
+            if item.get("ask"):
+                ask(f"危險指令：{item.get('why', item['pattern'])}")
+            else:
+                block(f"危險指令：{item.get('why', item['pattern'])}")
     if cfg.get("secret_extraction", True):
         check_secret_extraction_text(cmd)
     check_trunk(segs, cwd)
@@ -953,9 +982,13 @@ def check_bash(cmd: str, cwd: str, root: str, cfg: dict) -> None:
                     block(f"用 {exe} 讀憑證檔 {a}", VALUE_FREE_HINT)
     # 重導／tee 寫進受保護的路徑
     for tgt in write_targets(segs, cmd):
-        hit = protected_hit(to_host(tgt, cwd_run), root, cfg)
+        host = to_host(tgt, cwd_run)
+        hit = protected_hit(host, root, cfg)
         if hit:
             block(f"寫入{hit[0]}", hit[1])
+        rel = ask_path_hit(host, root, cfg)
+        if rel:
+            ask(f"寫入 {rel}（ask_paths）")
     if LIVE:
         check_git(cmd, cwd0)
     else:
@@ -976,6 +1009,17 @@ def check_file(tool: str, path: str, root: str, cfg: dict) -> None:
         hit = protected_hit(path, root, cfg)
         if hit:
             block(f"{tool} {hit[0]}", hit[1])
+        rel = ask_path_hit(path, root, cfg)
+        if rel:
+            ask(f"{tool} {rel}（ask_paths）")
+
+
+def ask_path_hit(path: str, root: str, cfg: dict):
+    """寫入 path 是否落在 ask_paths（相對 repo 根目錄）；只在 protected_hit 沒擋死之後才問。"""
+    rel = os.path.relpath(os.path.realpath(path), os.path.realpath(root)).replace(os.sep, "/")
+    if rel == ".." or rel.startswith("../"):                 # repo 外的檔不歸這份設定管
+        return None
+    return rel if any(re.search(p, rel) for p in cfg.get("ask_paths", [])) else None
 
 
 def _main() -> int:
@@ -1002,6 +1046,7 @@ def _main() -> int:
         check_bash(inp.get("command", ""), cwd, root, cfg)
     else:
         check_file(tool, path, root, cfg)
+    emit_ask()                                           # 全部檢查都沒擋死，才輪到核可視窗
     return 0
 
 
