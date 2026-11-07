@@ -1,70 +1,70 @@
 {
-  "version": "0.12.0",
-  "sha256": "3e6331880ada04c6d858d2beccc977ba1ebce912d0c6557ae41d2994f7dbd188",
+  "version": "0.18.2",
+  "sha256": "735be98bd9579cd87381c4a5ba16c7d0f9007b86c4636d687dfbdce0f92062fe",
   "templates_sha256": "ad28d59c9f04249827e3ba9ec234fdc1d44f37a34292ee4bc359e00f569c9681",
   "components": {
     "guard": {
       "files": {
-        ".claude/hooks/guard.py": "c5641160dedb3f7c1eea790d1476b5c2e78bdce871f4b755acbce5b0e65b66b4"
+        ".claude/hooks/guard.py": "2de0f23292b3a7e5a48916f3eaae6bf09a5b91024cb344d5b7f006cb22d2aa88"
       }
     },
     "green-gate": {
       "files": {
-        ".claude/hooks/green_gate.py": "d9699d2b6c5689e354bfcdc2dc82bf2d2255235e54fad3aef976c6a579ed21fc"
+        ".claude/hooks/green_gate.py": "d00b241206447fc8ebad7ce5eb5f64d351189521933482a88d9f9624525f07ed"
       }
     },
     "wt": {
       "files": {
-        ".dev-standard/bin/wt.sh": "6433a59e0c3965794ccd601af72b3725aa39ba9f587b2e6a5e807a23a01ecafe"
+        ".dev-standard/bin/wt.sh": "c38188e383b834371fbe1604c7fd1c5155b4adace9aae8bf21d2c6ef4260720d"
       }
     },
     "agents": {
       "files": {
-        ".claude/agents/scout.md": "a64e24b0ad055d48fe936e34e28db97731e61de03aa75b2313152d8240b23d45",
-        ".claude/agents/implementer.md": "a25262f28940e811adff840d98c9a5195c6353933c56d2249ad143ca0612f144",
-        ".claude/agents/reviewer.md": "548fc4d454720c57fb6e716c420db9ba3af3ad713259cc0e081b5b4ed43b44be",
-        ".claude/agents/architect.md": "2a7723a405a056d00d5a65d1ca6aa5b2a574b08b8c85b5ca3d15f8f30992d415"
+        ".claude/agents/scout.md": "1ec5866120fcb16fc6bc9491da3c684e7d56ab744e21d2c3b5d7aaab7f0ccf67",
+        ".claude/agents/implementer.md": "f1330988793b8c3b1a45cae2a1e8743fa862a07f52e7057cc2f7838e586754a8",
+        ".claude/agents/reviewer.md": "0cd7dccb23dacca6a8493e495cf4c32a878f1af34b9033184098768f6387a5fd",
+        ".claude/agents/architect.md": "cc6dd72f92b95074ed137715c46aec130dbd4fc73cf530f50949d7c374ec96b6"
       }
     },
     "pr-checks": {
       "files": {
-        ".dev-standard/bin/pr_checks/__init__.py": "d50f02b6529827d157bf783ca7c98dbeebe934258dd3469e90a48f3693a51071",
-        ".dev-standard/bin/pr_checks/risk.py": "f0c445517f6b089f27beed12d926dadf6936d26d607f07be65c7e1a5099f8963",
-        ".dev-standard/bin/pr_checks/checks.py": "448184197a6ff64d35186eb72be534dad263687cd4dd3fa6e7a053a42a9f2cd0",
-        ".dev-standard/bin/pr_checks/merge.py": "22227c7d260666a7f5cc8bd9e45264cdcc4da2d9b87ac96bf1d2165a21667d64",
-        ".dev-standard/bin/pr_checks/gh.py": "87fdb0f83f15964f7976a8db741a7cf67c7a94fb312753c9678480191931a13d",
-        ".dev-standard/bin/pr_checks/run.py": "6c76fbe66457da621376f813ed01e9d300f00707d162ab7a7a9e7087c078383f",
-        ".github/workflows/pr-checks.yml": "090dd12f0f9eb94961011581c618213749bb9cad7e109c740f5d170689c9d810"
+        ".dev-standard/bin/pr_checks/__init__.py": "f49303356732d2f918fe4f4cb0f6092f338547d2f0a07173eaefc9dd1175cb4e",
+        ".dev-standard/bin/pr_checks/risk.py": "2512f9fd048b052e2501a30041f81671557f871b129322909323bc5de93173f9",
+        ".dev-standard/bin/pr_checks/checks.py": "97fe3943e1e3e5fb88ac6f0f0f50a4eefc4b95ea749c408fe073b60272e4881c",
+        ".dev-standard/bin/pr_checks/merge.py": "a4fbfcf1283a5333dc5e12c1dddd11d3ed75b3c65ec3f8119dab6a81aeed8e80",
+        ".dev-standard/bin/pr_checks/gh.py": "4ac2556f3ff0f8676c5e2fd74ab034e22df906aa52e9b766835345e69f7532e1",
+        ".dev-standard/bin/pr_checks/run.py": "a9a7513f94ddfff226159213ff4511fa0e2cb5d1020d52cc329dab2ae8cf1b57",
+        ".github/workflows/pr-checks.yml": "69708977f318ad75026b4576fc62175619018f5a254e21540ddeea1de5d9abc5"
       }
     },
     "hooks": {
       "files": {
-        ".githooks/pre-commit": "ab324e2fde82c79f52bef4c0886a0f7cffad8fabc3dd46e425039ae336326148",
-        ".githooks/pre-push": "4a551574f26736f2ae9a2f063eba34e1d6b710f1b9754d6727f87f613e2e447e"
+        ".githooks/pre-commit": "2801864fde433379dd4280f0f4daaae946e34eabefc898b128d6f4172afebd10",
+        ".githooks/pre-push": "aa9a2d68efcbafeeef0ae0ea6337347a6e282cbe608b1d5488f33cc9710484d2"
       }
     },
     "ci": {
       "files": {
-        ".github/workflows/dev-standard.yml": "33accd6d71978ddd7b84783b855a6fcc779df0a2fd8fc2049627847fb3d77d33",
-        ".dev-standard/bin/ci_config.py": "749b04566872c35a4bea6cbecf9b7a6d9f4f49da46ec075276f5c94ccd86fb20"
+        ".github/workflows/dev-standard.yml": "1ce96fea5353d8d362c27e532a9f471b9cb922894ea61832d387caae7c7a6419",
+        ".dev-standard/bin/ci_config.py": "8fa91b04de5e975fb37435f2953ea79f6468e12131ccb195b2c3bad8d9b09e6e"
       }
     },
     "pr-template": {
       "files": {
-        ".github/pull_request_template.md": "fb25ac8ea7032f24bf4ffb9f81f21ca89d837cbfa995752468b7695a6680be1d"
+        ".github/pull_request_template.md": "94ee8784a1936a5f2653a16513681d581c80f0a58843befebd18d99d630c85af"
       }
     },
     "issue-templates": {
       "files": {
-        ".github/ISSUE_TEMPLATE/todo.yml": "f20b04814538fa0b22f784c8fc73fa58d960a422dddb59eeab31686017221038",
-        ".github/ISSUE_TEMPLATE/risk.yml": "82b9da29486eeabec875a0f839f7c13b3c8a5ca5dca2532dc36594e5d8e70bd8",
-        ".github/ISSUE_TEMPLATE/decision.yml": "ac46b7728ff7cab9c317019dceaff912afae40a2b49b244007b9eb88384518c1",
-        ".github/ISSUE_TEMPLATE/config.yml": "2c85417142cb62963cd2a5b490a0145c5be1a2b03a3bb539f904e726bacc52b7"
+        ".github/ISSUE_TEMPLATE/todo.yml": "bd5bd600143de44ff371874f0d7f464f5a0e82f2d1c825d31284fe771653b243",
+        ".github/ISSUE_TEMPLATE/risk.yml": "eada14eb32f480f571a950e210fc7bc716820db50241a9d6b30549825b0fd32e",
+        ".github/ISSUE_TEMPLATE/decision.yml": "e7b7bd9a5446577d584b8b31a091783eb971db66f9a8395b318cb12083d1433c",
+        ".github/ISSUE_TEMPLATE/config.yml": "a23390ce7b152ea1970abfd06f3869608228566bafb05d536bf52d05ec53fcd9"
       }
     },
     "r3-gate": {
       "files": {
-        ".github/workflows/r3-gate.yml": "9b4bda042f0ecbfe219bad6fab5e03a790989983550a1ca82f3db5780b4a536c"
+        ".github/workflows/r3-gate.yml": "932af74855bf4b528c9caf4d6c1c25f8afaff32ca576a20a74e2eba6aa948006"
       }
     }
   }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.12.0 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
+# 由 dev-standard v0.18.2 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
 """guard.py — Claude Code PreToolUse 硬底線（來由：hermes hermes_guard.py 與它的測試，加上 litov 的 worktree 基底檢查；dev-standard §1、§2、§6）
 
 CLAUDE.md／AGENTS.md 是建議，擋不住任何事；這支是擋得住的那一層（exit 2 在權限規則之前生效，bypass 也一樣）。

@@ -35,12 +35,12 @@ Rules every AI coding agent must follow, whatever its capability level:
    每批開發結束必須交付讀者可用的技術文件並統整 `docs/`（或明確聲明「無需更新」與理由）；行為描述須附驗證指令。
 <!-- GENERATED:MISSION:END -->
 
-<!-- DEV-STANDARD:BEGIN v0.12.0 -->
+<!-- DEV-STANDARD:BEGIN v0.18.2 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
 **分支與 PR**
-- 不在 main commit、不 push main。一個任務一個分支；會寫檔的 session 或 agent 各用自己的 worktree（`.dev-standard/bin/wt.sh new <type>/<描述>`），唯讀的不開。分支前綴：`feat|fix|refactor|docs|chore|test|ci`，或該 repo 的組織前綴（例：`eng/`、`product/`）。
+- 不在 main commit、不 push main。一個任務一個分支；會寫檔的 session 或 agent 各用自己的 worktree（`.dev-standard/bin/wt.sh new <type>/<描述>`），唯讀的不開；已在 app 開好的 worktree 裡就直接用，`wt.sh new` 會偵測並沿用。分支前綴：`feat|fix|refactor|docs|chore|test|ci`，或該 repo 的組織前綴（例：`eng/`、`product/`）；app 給的分支名照用。
 - 一個 PR 一個連貫範圍：合併後系統自洽。重構與行為改變分開 commit。
 - PR 第一行寫風險級 `R0`–`R3`；有 issue 就寫 `Refs #N`（完全做完才用 `Closes #N`）；結尾寫 `DERIVED:` 一行，加上「通用？是／否」。
 - 合併依風險級（見下方〈風險級〉合併表），一律 merge commit、不 squash。疊起來的 PR 每一個都合進 main。
@@ -66,11 +66,12 @@ Rules every AI coding agent must follow, whatever its capability level:
 - 根目錄的 `.automerge-off` 是熔斷開關：存在就拒絕自動合併；讀不到它時中止，不當作沒有。合併指令固定 `gh pr merge --merge --match-head-commit <sha> --delete-branch`，不 squash、不用 `--auto`。
 
 **模型分層**
-- 主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。查找類 subagent 用 Haiku，實作與審查類用 Sonnet；深度 1，同時 ≤4 個。
-- 6 回合內判斷是不是難題。要換 Opus 就開新 session，交接 ≤20K（任務、失敗的檢查、3 個關鍵檔），不在長 context 中途換模型。
-- 角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級。兩個 writer 不碰同一檔。
-- 開新 session 或 subagent 一律寫明 model，不繼承主 session：唯讀、照表做的（巡檢、量測、驗證）用 Haiku，實作與維運用 Sonnet，設計為主的才用 Opus。
-- Fable 只在使用者點名時用（architect 也失敗、或高風險不可逆的決策）；不做成 agent，不自動升級過去。
+- 選模型看「錯了誰會發現、多久發現」，不看角色。內容已定稿、結果能機械讀回比對的用 Haiku：代送已核准的訊息、提醒、查找。有規則可循、錯了有讀回、閘門或下游檢查會發現的用 Sonnet：清單盤點、照規則核可、報表、程式實作、調查型 subagent、多數排程。人在場一起想、產出離開對話而且只有人讀到才會發現錯的用 Opus：規劃、管理判斷、給人看的文字、跨來源整合。
+- 寫程式的 session：主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級；深度 1，同時 ≤4 個；兩個 writer 不碰同一檔。
+- 主 session 的 context 超過 400K 就交接開新 session，交接 ≤20K，帶任務、失敗的檢查與 3 個關鍵檔。6 回合內判斷是不是難題，要換 Opus 也開新 session，不在長 context 中途換模型。
+- 投入程度（effort）跟著同一個判準走：照稿執行 `low`；有規則可循的排程、查找、調查 `medium`；程式實作與人在場的互動判斷 `high`；advisor、architect、同一件事第二次失敗 `xhigh`；`max` 跟 Fable 一樣只在使用者點名時用。effort 主要影響速度與品質，成本大頭是模型與 context 長度。
+- 開新 session、subagent、排程一律寫明 model 與 effort，不繼承主 session；內建的 general-purpose、Explore、Plan 也要帶 `model`。排程沒設模型時跟著 app 當下的預設模型跑，所以每支排程都要在 app 裡設定。
+- Fable 只在使用者點名時用，例如 architect 也失敗、或高風險不可逆的決策；不進排程、不讓 subagent 繼承、不做成 agent、不自動升級過去。
 
 **session 編排**
 - 一張卡（issue）一個 session。名稱 `<範圍>/<白話描述>（#N）`，範圍由 repo overlay 定；沒有卡的唯讀查詢省略卡號。
@@ -103,6 +104,12 @@ Rules every AI coding agent must follow, whatever its capability level:
 - 給人讀的文件照 zh-tw-docs 技能寫：繁中台灣用語、言簡意賅、能用表格與 mermaid 就用；送出前跑它的掃描腳本。
 - 文件不寫會漂移的數字（測試數、筆數、成本），改寫查詢方法。給人讀的 PR 描述裡的數字由閘門腳本產出，不手抄。
 - 待辦只放 GitHub Issues，不散在 markdown 清單。
+
+**優化 Personal 與算力**
+- 回報裡的票卡、PR、文件、log 都寫成 `[簡述](網址)`，每筆佐證一句簡述；不寫裸編號、裸網址。送出前跑 `tools/link_lint.py`。公司網域的網址樣板放本機 `~/.claude/.dev-standard/links.json`，不進個人 repo。
+- 工作分給誰，先跑 `tools/route.py`：判斷與需要對話脈絡的留在 Claude；機械可比對的用腳本或本機 ollama；獨立、唯讀、輸出能驗的才外派 `agy`。資料只送到帳號歸屬相同的執行者（公司資料走公司帳號，個人資料走個人帳號），不跨帳號；每次用之前現探測，探測失敗要印出來。
+- 換手門檻照〈模型分層〉的 context 上限；達門檻且功能告一段落時，用 `tools/handoff.py` 產承接包（≤20K）並開新 session；判斷不了算不算告一段落就問人。
+- 「優化 Personal」的順序：`personal_audit.py`、`adoption_audit.py`、`link_lint.py`，再依路由分工；每台機器各跑一次。
 
 **回填**
 - 在這個 repo 發展出跟 repo 無關的好做法，PR 的 `DERIVED:` 標「通用：是」，同一週對 dev-standard 開回填 PR。只在這個 repo 成立的留在 overlay。

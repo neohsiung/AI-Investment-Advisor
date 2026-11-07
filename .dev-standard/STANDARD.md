@@ -14,7 +14,7 @@
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
 **分支與 PR**
-- 不在 main commit、不 push main。一個任務一個分支；會寫檔的 session 或 agent 各用自己的 worktree（`.dev-standard/bin/wt.sh new <type>/<描述>`），唯讀的不開。分支前綴：`feat|fix|refactor|docs|chore|test|ci`，或該 repo 的組織前綴（例：`eng/`、`product/`）。
+- 不在 main commit、不 push main。一個任務一個分支；會寫檔的 session 或 agent 各用自己的 worktree（`.dev-standard/bin/wt.sh new <type>/<描述>`），唯讀的不開；已在 app 開好的 worktree 裡就直接用，`wt.sh new` 會偵測並沿用。分支前綴：`feat|fix|refactor|docs|chore|test|ci`，或該 repo 的組織前綴（例：`eng/`、`product/`）；app 給的分支名照用。
 - 一個 PR 一個連貫範圍：合併後系統自洽。重構與行為改變分開 commit。
 - PR 第一行寫風險級 `R0`–`R3`；有 issue 就寫 `Refs #N`（完全做完才用 `Closes #N`）；結尾寫 `DERIVED:` 一行，加上「通用？是／否」。
 - 合併依風險級（見下方〈風險級〉合併表），一律 merge commit、不 squash。疊起來的 PR 每一個都合進 main。
@@ -40,11 +40,12 @@
 - 根目錄的 `.automerge-off` 是熔斷開關：存在就拒絕自動合併；讀不到它時中止，不當作沒有。合併指令固定 `gh pr merge --merge --match-head-commit <sha> --delete-branch`，不 squash、不用 `--auto`。
 
 **模型分層**
-- 主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。查找類 subagent 用 Haiku，實作與審查類用 Sonnet；深度 1，同時 ≤4 個。
-- 6 回合內判斷是不是難題。要換 Opus 就開新 session，交接 ≤20K（任務、失敗的檢查、3 個關鍵檔），不在長 context 中途換模型。
-- 角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級。兩個 writer 不碰同一檔。
-- 開新 session 或 subagent 一律寫明 model，不繼承主 session：唯讀、照表做的（巡檢、量測、驗證）用 Haiku，實作與維運用 Sonnet，設計為主的才用 Opus。
-- Fable 只在使用者點名時用（architect 也失敗、或高風險不可逆的決策）；不做成 agent，不自動升級過去。
+- 選模型看「錯了誰會發現、多久發現」，不看角色。內容已定稿、結果能機械讀回比對的用 Haiku：代送已核准的訊息、提醒、查找。有規則可循、錯了有讀回、閘門或下游檢查會發現的用 Sonnet：清單盤點、照規則核可、報表、程式實作、調查型 subagent、多數排程。人在場一起想、產出離開對話而且只有人讀到才會發現錯的用 Opus：規劃、管理判斷、給人看的文字、跨來源整合。
+- 寫程式的 session：主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級；深度 1，同時 ≤4 個；兩個 writer 不碰同一檔。
+- 主 session 的 context 超過 400K 就交接開新 session，交接 ≤20K，帶任務、失敗的檢查與 3 個關鍵檔。6 回合內判斷是不是難題，要換 Opus 也開新 session，不在長 context 中途換模型。
+- 投入程度（effort）跟著同一個判準走：照稿執行 `low`；有規則可循的排程、查找、調查 `medium`；程式實作與人在場的互動判斷 `high`；advisor、architect、同一件事第二次失敗 `xhigh`；`max` 跟 Fable 一樣只在使用者點名時用。effort 主要影響速度與品質，成本大頭是模型與 context 長度。
+- 開新 session、subagent、排程一律寫明 model 與 effort，不繼承主 session；內建的 general-purpose、Explore、Plan 也要帶 `model`。排程沒設模型時跟著 app 當下的預設模型跑，所以每支排程都要在 app 裡設定。
+- Fable 只在使用者點名時用，例如 architect 也失敗、或高風險不可逆的決策；不進排程、不讓 subagent 繼承、不做成 agent、不自動升級過去。
 
 **session 編排**
 - 一張卡（issue）一個 session。名稱 `<範圍>/<白話描述>（#N）`，範圍由 repo overlay 定；沒有卡的唯讀查詢省略卡號。
@@ -78,6 +79,12 @@
 - 文件不寫會漂移的數字（測試數、筆數、成本），改寫查詢方法。給人讀的 PR 描述裡的數字由閘門腳本產出，不手抄。
 - 待辦只放 GitHub Issues，不散在 markdown 清單。
 
+**優化 Personal 與算力**
+- 回報裡的票卡、PR、文件、log 都寫成 `[簡述](網址)`，每筆佐證一句簡述；不寫裸編號、裸網址。送出前跑 `tools/link_lint.py`。公司網域的網址樣板放本機 `~/.claude/.dev-standard/links.json`，不進個人 repo。
+- 工作分給誰，先跑 `tools/route.py`：判斷與需要對話脈絡的留在 Claude；機械可比對的用腳本或本機 ollama；獨立、唯讀、輸出能驗的才外派 `agy`。資料只送到帳號歸屬相同的執行者（公司資料走公司帳號，個人資料走個人帳號），不跨帳號；每次用之前現探測，探測失敗要印出來。
+- 換手門檻照〈模型分層〉的 context 上限；達門檻且功能告一段落時，用 `tools/handoff.py` 產承接包（≤20K）並開新 session；判斷不了算不算告一段落就問人。
+- 「優化 Personal」的順序：`personal_audit.py`、`adoption_audit.py`、`link_lint.py`，再依路由分工；每台機器各跑一次。
+
 **回填**
 - 在這個 repo 發展出跟 repo 無關的好做法，PR 的 `DERIVED:` 標「通用：是」，同一週對 dev-standard 開回填 PR。只在這個 repo 成立的留在 overlay。
 - 做開發流程工具前先查 dev-standard；通用的就做在 dev-standard，repo 差異寫在 `.dev-standard/*.json`。
@@ -90,6 +97,7 @@
 |---|---|---|
 | 不在 main commit、不 push main | hermes：`~/.hermes` 是正式環境的 bind mount，在上面切分支讓 cron 正在跑的腳本消失（2026-10-08）。litov：main 定義為「已審」 | guard 元件擋 agent 在 main 上 `git commit` 與 `git push … main`；原位 commit 的本機 repo，例如排程器讀的那個，在它自己的 `.dev-standard/guard.json` 設 `trunk_commit_allowed: true` 放行 commit，push 照擋；hooks 元件的 `pre-push` 在 git 層擋推或刪 main、master、release/*，人自己推也擋（`DEV_ALLOW_PUSH_PROTECTED=1` 刻意放行並印提醒） |
 | 一個任務一個分支；會寫檔的 session 或 agent 各用自己的 worktree，唯讀的不開；兩個 writer 不碰同一檔 | hermes 同上事件：兩個 session 的改動混在同一棵樹。litov 與全域設定：唯讀的開 worktree 是浪費，兩個 writer 同檔會互相覆蓋且沒有訊號 | `.dev-standard/bin/wt.sh new`（wt 元件）；`tools/prune.py` 列出殘留；派工時寫明每個 writer 的檔案範圍 |
+| 已在 app 開好的 worktree（連結 worktree、不在 main）就直接用，不再另開 | watchface 2026-11-04：app 隔離的 session 照規則跑 `wt.sh new`，另開的 worktree 不在 app 允許的範圍，git add／commit／push 全被拒絕；litov 同日同樣 | `wt.sh new` 在連結 worktree 的任務分支上印「↪ 已在 worktree」並退出 0，`DEV_WT_NEW_ANYWAY=1` 才另開；`tests/test_wt.py` |
 | 一個 PR 一個連貫範圍；以「合併後系統自洽」為單位，上限是一次 review 讀得完 | decision-stack 寫入程序：只加工具不改契約等於沒生效；審不完的 diff 等於沒被審 | reviewer 問「拿掉這個 PR 的任一半，另一半還成立嗎」 |
 | 疊起來的 PR 每一個都合進 main | litov #2 疊在 #1 上，#1 先合進 main，#2 合進沒人看的 base 分支，main 沒拿到內容 | 合併前看 base 是不是 main |
 | 合併依風險級，一律 merge commit、不 squash | hermes：squash 會讓部署端的 `pull --ff-only` 與原子 commit 失效。litov 的私有免費 repo 沒有分支保護，`--auto` 等於立刻合，所以只用 `--match-head-commit` 鎖住檢查時的 head。2026-10-31 使用者決定：自動合併升成通用規則、預設開啟（`docs/design/DD-2026-1031-merge-by-risk.md`） | `tests/test_pr_checks.py`：R3 路徑判 R3 且拒絕合併、`.automerge-off` 拒絕、R2 缺 reviewer 拒絕、合併指令不含 `--squash`／`--auto` |
@@ -123,12 +131,14 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 
 | 規則 | 為什麼 | 怎麼檢查 |
 |---|---|---|
-| 主 session 用 Sonnet，Opus 當 advisor；查找類 subagent 用 Haiku，實作與審查類用 Sonnet（深度 1、同時 ≤4） | hermes DD-2026-1009：實測 cache 讀取兩個模型同價，長 session 裡 Opus 每回合只貴 1.3–1.9 倍，但整體 Opus 佔比要壓在 40% 以下 | hermes `scripts/dev/claude_cost.py`：Opus 佔比 <40%、subagent 佔比 >15% |
+| 選模型看錯了誰會發現：內容已定稿、能機械讀回比對的用 Haiku；有規則可循、錯了有讀回或閘門會發現的用 Sonnet；人在場一起想、只有人讀到才會發現錯的用 Opus | DD-2026-1105：兩週用量量測，舊規則「主 session 一律 Sonnet、依角色分層」對不上實際工作。管理型互動佔成本大宗，寫程式的角色幾乎沒被叫過；Sonnet 跑規則明確的高頻清單排程數百次全部成功；Opus 與 Sonnet 的被糾正比例看不出差別 | `tools/model_usage.py` 的「排程觸發 vs 人工」與各模型佔比；排程逐一用 run 的 `model` 欄位對照 DD 的對照表 |
+| 寫程式的 session：主 session 用 Sonnet，Opus 當 advisor；查找類 subagent 用 Haiku，實作與審查類用 Sonnet；深度 1、同時 ≤4 | hermes DD-2026-1009：實測 cache 讀取兩個模型同價，長 session 裡 Opus 每回合只貴 1.3–1.9 倍，但寫程式的 repo 整體 Opus 佔比要壓在 40% 以下 | 在寫程式的 repo 跑 `tools/model_usage.py --root <該 repo 的 projects 目錄>`：Opus 佔比 <40% |
 | advisor 三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前；context >150K 改用 reviewer | 同上 | session 紀錄裡有沒有這三次呼叫 |
-| 6 回合內判斷是不是難題；換 Opus 開新 session，交接 ≤20K | 在 300K context 中途換模型，光重建快取約 1.5 美元 | 交接檔大小 |
+| 主 session context 超過 400K 就交接開新 session，交接 ≤20K；6 回合內判斷是不是難題，換 Opus 也開新 session | DD-2026-1105：成本九成以上是 cache 讀寫，輸出不到一成；最大 context 超過 500K 的少數 session 吃掉大半成本。長度乘單價，只換模型不換長度省得有限。300K 中途換模型光重建快取約 1.5 美元 | `tools/model_usage.py` 的「超過上限的 session 數」；交接檔大小 |
 | 角色：`scout`（haiku 查找）、`implementer`（sonnet 實作）、`reviewer`（sonnet 審查）、`architect`（opus，卡關才用） | 難度決定模型，升級兩段式，不預設用強模型 | 定義檔正本在 `templates/agents/`，全域以 symlink 接進 `~/.claude/agents/`，所有專案共用，不在各 repo 複製 |
-| 開新 session 或 subagent 一律寫明 model，不繼承主 session。唯讀、照表做的 session（巡檢、量測、驗證）用 Haiku；實作與維運 Sonnet；設計為主才 Opus | 2026-10-25 一次開了 4 個 session 都沒寫 model，全數繼承 Opus 5.5。Haiku 5.5 每百萬 token $0.10／$0.50，是 Sonnet 的 1/20，唯讀 session 用它幾乎不花錢 | 開 session 的呼叫有沒有帶 `model`；`claude_cost.py` 的 Opus 佔比 |
-| Fable 5.1 只在使用者點名時用：architect（Opus）也失敗一次，或高風險、難回頭的決策。不做成 agent，不列進自動升級 | $10／$50，是 Opus 的 2.5 倍、Sonnet 的 5 倍；放進自動升級鏈，失敗的成本會一路放大 | session 紀錄裡用到 Fable 的都有使用者點名 |
+| effort 跟著同一個判準：照稿執行 `low`；有規則可循的排程、查找、調查 `medium`；程式實作與人在場的互動判斷 `high`；advisor、architect、第二次失敗 `xhigh`；`max` 只在使用者點名時用 | DD-2026-1105：同一個模型 high 比 medium 的輸出多約四成、思考 token 多一倍，但輸出只佔成本不到一成，換算總成本約多 3%。effort 調的是速度與品質，不是省錢的主要手段 | 開 session、排程的設定有沒有帶 effort；session 的 `effort` 欄位對照它的工作型態 |
+| 開新 session、subagent、排程一律寫明 model 與 effort，不繼承主 session；內建的 general-purpose、Explore、Plan 也要帶 `model`；每支排程在 app 裡設定模型 | 2026-10-25 一次開了 4 個 session 都沒寫 model，全數繼承 Opus 5.5。DD-2026-1105：subagent 大多是沒帶 model 的內建 agent，三分之二跑在 Opus 或 Fable；排程工具沒有 model 欄位，沒在 app 設定的排程跟著當下的預設模型跑，預設切到 Fable 那天，好幾支照表做的排程都跑在 Fable 上 | `tools/model_usage.py` 的「疑似繼承主 session 模型」次數；排程 run 的 `model` 欄位 |
+| Fable 5.1 只在使用者點名時用：architect（Opus）也失敗一次，或高風險、難回頭的決策。不進排程、不讓 subagent 繼承、不做成 agent、不列進自動升級 | $10／$50，是 Opus 的 2.5 倍、Sonnet 的 5 倍；放進自動升級鏈，失敗的成本會一路放大。DD-2026-1105：兩週內 Fable 週額度用掉一半，出現在排程與繼承它的 subagent 裡 | `tools/model_usage.py` 的 subagent 表與排程 run 的 `model` 都沒有 fable；session 紀錄裡用到 Fable 的都有使用者點名 |
 
 ## 4. 閘門
 
@@ -254,3 +264,23 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 | `SCOPE: OK`、`REVIEW: PASS` 可由寫 PR 的 session 留，只證明檢查跑過，不證明有第二雙眼睛 | 2026-11-01 使用者裁定維持現狀，讓 R0 到 R2 照合併表自動合併。litov overlay 可以更嚴，只認人留的標記 | `risk.json` 的 `trusted_authors` 有沒有 agent 以外的第二個 gh 身分；沒有就表示這個 repo 的標記不代表獨立審查 |
 | 封存 session 前四條全過：① PR 合併或關閉，或卡上有退回留言；② worktree 乾淨，`git cherry origin/main <分支>` 沒有 `+` 行，PR 關閉不合併時改看卡上有 `DISCARD <分支>`；③ 沒有排隊中的訊息或背景工作；④ PR 或卡的最後留言是 session 自己寫的 `RETRO:`，標準只檢查有沒有留，內容由 repo 定 | litov 2026-11-01：PR 合併了 session 還在；有分支 PR 已合併、本機卻多 5 個 commit。用 `rev-list --count` 會誤判，同一份改動從另一條分支以不同 commit 進 main 時 `git cherry` 標 `-`。RETRO 由 session 自己在封存前寫，不等合併腳本，litov round1 F2 就是等腳本而全部卡住 | `gh pr view <N> --json state`；`git -C <wt> status --porcelain` 為空；`git cherry origin/main <分支> \| grep -c '^+'` 為 0；`list_sessions` 的 `isRunning` 為 false；`gh pr view <N> --json comments --jq '.comments[-1].body' \| grep -q '^RETRO:'` |
 | 判①②時，分支從 `git -C <cwd> branch --show-current` 讀，PR 用該分支查。不信 `list_sessions` 的 `branch`、`prNumber` | litov round1 F4：worktree 會被不同 session 重複使用。這兩個欄位會過期 | `gh pr list --head <分支> --state all` |
+
+## 12. 優化 Personal、算力路由與換手
+
+「優化 Personal」是回頭檢視個人工作區的動作。這一節把它的三個延伸寫成可檢查的規則：回報要有連結、工作要分給合適的算力、長 session 要能換手。設計見 `docs/design/DD-2026-1105-optimize-personal-routing.md`。
+
+| 規則 | 為什麼 | 怎麼檢查 |
+|---|---|---|
+| 票卡、PR、文件、log 都寫成 `[簡述](網址)`；不寫裸編號、裸網址；連結文字不可只是編號或網址。公司網域的網址樣板只放本機未追蹤的 `links.json`；`links.json` 宣告過的前綴（含單字母）才當票號，兩個系統共用的前綴列進 `ambiguous`，一律不自動換、標「歧義票號」由人指定 | 裸編號讓讀者找不到出處；網域屬公司識別，進個人 repo 會被公私閘門擋 | `python3 tools/link_lint.py <檔案>` 回 0；`--ratio` 印裸的比例當基線 |
+| link_lint 的掃描範圍明寫：只掃落成檔案的產出（PR 描述與留言草稿、承接包、稽核報告、規則文件自己）。對話裡直接講的話不在範圍內 | 規則的作用範圍等於檢查的掃描範圍；掃不到的產出會停在訂規則之前的樣子 | 對 STANDARD.md、全域 CLAUDE.md 跑 link_lint 為 0（CHANGELOG 的歷史條目不在內，碰到那段再改）；上線前後各量一次 `--ratio` |
+| 工作外派前先 `tools/route.py`：判斷與需要對話脈絡的留 Claude；機械可比對的用腳本或本機；獨立、唯讀、輸出能驗的才外派 | 出錯誰會發現決定該付多少錢：機器會報的用便宜的，只有人讀到才發現的用強的 | `tests/test_route.py`：判斷類不外派、探測失敗有輸出 |
+| 資料只送到帳號歸屬與資料歸屬相同的執行者；本機沒宣告 `agy_account` 就不外派 | 公司資料送個人帳號是資料政策問題，不是品質問題 | `tests/test_route.py`：公司資料不回個人 agy，反之亦然，未宣告不回 agy |
+| 外派前現探測 `ollama list`、`agy models`；探測失敗列出來，不默默換執行者；模型清單不信表 | 模型清單會與實際漂移，漂移前沒有訊號 | `tests/test_route.py`：探測失敗出現在注意欄 |
+| 每台機器能用的執行者本來就不同：`route.py --check-agy` 真的呼叫一次 agy，把可用與否與原因寫進該機器的 `routes.local.json`（`agy_available`、`agy_note`、`agy_checked_on`）；註記不可用就不外派 | `agy models` 列得出清單不代表帳號有資格呼叫，某台公司機實測回「not eligible」；只靠清單探測會建議一個用不了的執行者 | `tests/test_route.py`：註記不可用不外派並印原因、`verify_agy` 偵測資格失敗與非 0 結束碼 |
+| 外派的場景先有 golden set（10 到 20 筆已知答案），選通過率達門檻的最便宜者；每次外派記進 `route-log.tsv` | 品質與費用都要量，不靠印象；返工的人時比 token 貴 | `route.py --log` 的紀錄；月報回看通過率 |
+| 模型單價存在 `templates/prices.json`：每列有官方來源連結與讀取日，查無寫 `null`，未來生效的價格寫在 `changes`；費用依當天生效的價格算，查無單價不當成 0 | 優惠價到期後價格翻倍，寫死單一價會讓月報悄悄失準；把查無的數字當 0 會低估費用 | `tests/test_prices.py`；`route.py --prices-check` 列出 7 天內生效的變動 |
+| `personal_audit.py` 的「連結」項掃各 repo 的 README，結果是注意不是問題；連結基線由 `link_lint.py --ratio` 對近 20 個已合併 PR 描述量，實施後重量 | 規則只走到檢查掃過的地方，範圍明寫才看得出沒走到哪 | `python3 tools/personal_audit.py` 的「連結」欄；基線數字記在 DD |
+| `personal_audit.py` 的「主 checkout」項（第 11 項）檢查主 checkout 有沒有停在已合併進預設分支的分支，停著是注意；剛從預設分支切出、還沒有自己 commit 的不算 | 檢索與工具讀的是工作目錄，停在已合併的舊分支時，之後合併的內容讀不到，且沒有任何訊號。某次決策棧主 checkout 停在已合併分支，落後 7 個 commit，新合併的流程文檔檢索不到 | `tests/test_personal_audit.py` 的四個情境：已合併、進行中、在預設分支、剛切出；只看本機已知的 origin 指標，不 fetch，沒同步時可能偏舊 |
+| 換手的門檻沿用 §3（主 session context 超過 400K）；達門檻且功能告一段落（PR 開出、步驟完成、`green.sh` 轉綠）就用 `tools/handoff.py` 產承接包並開新 session，新 session 寫明 model；判斷不了算不算告一段落就問人。承接包超過 20K 要寫出被截掉什麼 | 做到一半換手會丟掉未提交的脈絡；靜默截斷讓新 session 以為資訊完整。門檻只在 §3 定義一處，避免兩個數字各自漂移 | `tools/model_usage.py` 量 context 分桶；`tests/test_handoff.py`：缺下一步報錯、超長有截斷說明 |
+| 規則生效後每台機器各跑 `tools/adoption_audit.py`，全域版本與正本一致；版本不同由每日同步更新，只吃 main | 副本各自演化且沒有訊號；生效的是實際被載入的那一份，不是正本 | `adoption_audit.py --strict` 回 0 |
+

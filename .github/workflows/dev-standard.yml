@@ -1,4 +1,4 @@
-# 由 dev-standard v0.12.0 產生，請勿手改；要改請改 dev-standard 的 components/ci，再跑 sync.py update
+# 由 dev-standard v0.18.2 產生，請勿手改；要改請改 dev-standard 的 components/ci，再跑 sync.py update
 # dev-standard 共同 CI（來由：investment-advisor ci-cd.yml、secret-scan.yml；dev-standard §6、§9）
 # 放到 .github/workflows/dev-standard.yml。這個檔各 repo 都一樣、不要改；tests 與 lint 的差異寫在 .dev-standard/ci.json
 # （可關掉、可換指令，格式見 .dev-standard/bin/ci_config.py）。rules、secrets、junk 不看 ci.json，一律會跑。
