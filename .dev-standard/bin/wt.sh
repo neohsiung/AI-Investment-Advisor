@@ -1,8 +1,8 @@
 #!/bin/bash
-# 由 dev-standard v0.12.0 產生，請勿手改；要改請改 dev-standard 的 components/wt，再跑 sync.py update
+# 由 dev-standard v0.19.1 產生，請勿手改；要改請改 dev-standard 的 components/wt，再跑 sync.py update
 # wt.sh — 一個任務一個 worktree（來由：hermes scripts/dev/wt.sh，DD-2026-1008-agent-workflow）
 #
-#   wt.sh new <branch> [base]    從 base（預設 origin/main）開 <WT_ROOT>/<branch>
+#   wt.sh new <branch> [base]    從 base（預設 origin/main）開 <WT_ROOT>/<branch>；已在連結 worktree 的任務分支上就沿用
 #   wt.sh list
 #   wt.sh rm <branch> [--force]  移除 worktree 與本地分支（未合進 origin/main 的要 --force）
 #
@@ -29,6 +29,21 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
     branch="${1:?branch 名稱，例：feat/xxx}"; base="${2:-origin/main}"
+    # 已經在連結 worktree 的任務分支上（例：app 替 session 開好的 worktree）：沿用，不開第二棵。
+    # app 隔離的 session 只能在自己那棵跑 git，另開的會被擋（watchface#55）。真的要另開：DEV_WT_NEW_ANYWAY=1。
+    here_gd=$(git rev-parse --absolute-git-dir 2>/dev/null || true)
+    here_cd=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+    here_br=$(git symbolic-ref --short -q HEAD 2>/dev/null || true)
+    here_repo=$( [ -n "$here_cd" ] && cd -P "${here_cd%/.git}" 2>/dev/null && pwd || true)
+    want_repo=$(cd -P "$REPO" 2>/dev/null && pwd || true)
+    if [ -z "${DEV_WT_NEW_ANYWAY:-}" ] && [ -n "$here_gd" ] && [ -n "$here_cd" ] && [ "$here_gd" != "$here_cd" ] \
+       && [ -n "$here_repo" ] && [ "$here_repo" = "$want_repo" ] \
+       && [ -n "$here_br" ] && [ "$here_br" != main ] && [ "$here_br" != master ]; then
+      here=$(git rev-parse --show-toplevel)
+      echo "↪ 已在 worktree ${here}（分支 ${here_br}），直接在這裡做，不另開 ${branch}；之後的分支是 ${here_br}，不是 ${branch}"
+      echo "   要另開第二棵：DEV_WT_NEW_ANYWAY=1 再跑一次"
+      exit 0
+    fi
     dir="$WT_ROOT/${branch//\//-}"
     git -C "$REPO" fetch -q origin
     mkdir -p "$WT_ROOT"
@@ -37,8 +52,8 @@ case "$cmd" in
     if [ -x "$hook" ]; then
       "$hook" "$dir" "$REPO" || echo "❌ wt-post-new.sh 失敗，照它的訊息手動補做" >&2
     fi
-    echo "✅ $dir  （$branch ← $base）"
-    echo "   在那裡開 session：cd $dir && claude"
+    echo "✅ ${dir}  （${branch} ← ${base}）"            # 大括號必要：全形字元緊接變數名，某些 locale 的 bash 會當成名稱的一部分
+    echo "   在那裡開 session：cd ${dir} && claude"
     ;;
   list)
     git -C "$REPO" worktree list
