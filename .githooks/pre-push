@@ -1,5 +1,5 @@
 #!/bin/sh
-# 由 dev-standard v0.12.0 產生，請勿手改；要改請改 dev-standard 的 components/hooks，再跑 sync.py update
+# 由 dev-standard v0.19.1 產生，請勿手改；要改請改 dev-standard 的 components/hooks，再跑 sync.py update
 # pre-push.sh — 擋三件事：推保護分支、推 PR 已合併的分支、repo 自己的檢查（pre-push.d）
 # 來由：litov#25→#34（2026-10-25）、dev-standard §1；hermes 的逾時／只查 origin／排除 fork、investment-advisor 的保護分支與
 #   pre-push.d（neohsiung/dev-standard#18）。
