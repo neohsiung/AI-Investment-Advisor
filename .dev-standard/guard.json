@@ -22,5 +22,8 @@
       "pattern": "\\bgh\\s+api\\b.*(-X|--method)\\s+PUT\\b.*/merge\\b",
       "why": "用 API 合併 PR 等同繞過 run.py"
     }
-  ]
+  ],
+  "private_egress": {
+    "paths": ["secrets", "backups"]
+  }
 }
