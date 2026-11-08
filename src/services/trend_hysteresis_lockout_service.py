@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.domain import strategy_role_checks as roles
 from src.utils.logger import setup_logger
 from src.config.owner import resolve_user_id
 
@@ -304,22 +305,14 @@ class TrendHysteresisLockoutService:
         strat = str(strategy_name or "").lower()
 
         # Emergency exits and stop-loss are ALWAYS fail-open (never trapped)
-        is_emergency = any(
-            k in strat
-            for k in (
-                "stop_loss",
-                "trailing_stop_loss",
-                "trailing_stop",
-                "emergency_exit",
-                "emergency_liquidation",
-                "circuit_breaker",
-            )
-        )
+        is_emergency = roles.is_emergency_stop(strat)
 
         metric = await self.evaluate_ticker_trend(
             sym, current_price=current_price, confidence_score=confidence_score
         )
         details = metric.to_dict()
+        if roles.unknown_strategy(strat):
+            details["_unknown_strategy"] = True
 
         if not await self.is_enabled():
             return True, None, details
@@ -329,17 +322,7 @@ class TrendHysteresisLockoutService:
             if metric.current_state == HysteresisState.HOLD_BUFFER.value:
                 # If confidence is explicitly provided and below buy threshold, block BUY noise
                 # Exemption: non-momentum strategies, cash deployments, dip buying, rebalance, and approval flows
-                is_deadband_exempt = (
-                    not strat
-                    or strat == "emergency_hedge"  # ADR-005: this BUY was unnamed (exempt) before it was named
-                    or any(
-                        k in strat
-                        for k in (
-                            "deploy", "cash", "dip", "staggered", "rebalance",
-                            "rotation", "tier", "approval", "manual", "reporting", "pruning"
-                        )
-                    )
-                )
+                is_deadband_exempt = roles.is_deadband_exempt(strat)
                 if not is_deadband_exempt:
                     cfg = self._load_config()
                     conf_buy = float(cfg.get("trend_hysteresis_confidence_buy", self.DEFAULT_CONFIDENCE_BUY))

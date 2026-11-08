@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from src.domain import strategy_role_checks as roles
 from src.config.owner import resolve_user_id
 from src.services import charter_state_service
 from src.utils.logger import setup_logger
@@ -418,9 +419,7 @@ class UnifiedRiskGatewayService:
                     confidence_score=confidence_score,
                 )
                 guard_details["trend_hysteresis"] = hyst_details
-                is_routine_sell_to_block = (not is_buy) and any(
-                    k in str(strategy_name or "").lower() for k in ("routine_rebalance", "routine_sell")
-                )
+                is_routine_sell_to_block = (not is_buy) and roles.is_hysteresis_routine_sell(strategy_name)
                 if not allowed_h and (is_buy or is_routine_sell_to_block):
                     reasons.append(block_reason_h or "[TrendHysteresis] Blocked by hysteresis or trend lock")
                     return RiskGatewayResult(

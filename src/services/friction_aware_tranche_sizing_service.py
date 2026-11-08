@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.domain import strategy_role_checks as roles
 from src.utils.logger import setup_logger
 from src.config.owner import resolve_user_id
 
@@ -68,6 +69,9 @@ class FrictionHurdleMetric:
     decision: str
     reason: str
     spread_source: str = "STATIC_LOOKUP"
+    # True when the strategy name is not registered in strategy_names: the stricter (routine) reading was applied.
+    # 策略名未登記時為 True，已採較嚴的「例行單」判定。
+    unknown_strategy: bool = False
     evaluated_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -91,6 +95,7 @@ class FrictionHurdleMetric:
             "decision": self.decision,
             "reason": self.reason,
             "spread_source": self.spread_source,
+            "_unknown_strategy": self.unknown_strategy,
             "evaluated_at": self.evaluated_at,
         }
 
@@ -466,17 +471,7 @@ class FrictionAwareTrancheSizingService:
         cfg = self._load_config()
         hurdle_thresh = float(cfg.get("min_friction_hurdle_pct", self.DEFAULT_MIN_FRICTION_HURDLE_PCT))
 
-        is_emergency = any(
-            k in strat
-            for k in (
-                "stop_loss",
-                "trailing_stop_loss",
-                "trailing_stop",
-                "emergency_exit",
-                "emergency_liquidation",
-                "circuit_breaker",
-            )
-        )
+        is_emergency = roles.is_emergency_stop(strat)
 
         spread_pct, slippage_pct, fee_pct, friction_pct, spread_source = self.resolve_spread_and_friction(
             sym, live_spread_pct
@@ -502,8 +497,8 @@ class FrictionAwareTrancheSizingService:
 
         # Hurdle Check:
         # Emergency stops, cash deployments, or new entries are exempt from turnover friction blocking
-        is_routine_rebalance = any(k in strat for k in ("rebalance", "rotation", "churn", "routine"))
-        is_exempt_from_hurdle = is_emergency or ("deploy" in strat) or ("open" in strat) or (not is_routine_rebalance and delta_weight is None)
+        is_routine_rebalance = roles.is_routine_rebalance(strat)
+        is_exempt_from_hurdle = is_emergency or roles.is_deploy(strat) or (not is_routine_rebalance and delta_weight is None)
 
         passed_hurdle = True
         adjusted_shares = qty
@@ -557,6 +552,7 @@ class FrictionAwareTrancheSizingService:
             decision=decision,
             reason=reason,
             spread_source=spread_source,
+            unknown_strategy=roles.unknown_strategy(strat),
         )
 
     def format_tranche_report(

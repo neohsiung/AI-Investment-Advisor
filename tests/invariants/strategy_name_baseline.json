@@ -2,11 +2,8 @@
   "literal_name_lists": {
     "src/services/automated_trading_service.py": 7,
     "src/services/autonomous_reporting_service.py": 1,
-    "src/services/friction_aware_tranche_sizing_service.py": 1,
     "src/services/hard_token_budget_guard_service.py": 1,
-    "src/services/inference_hurdle_gate_service.py": 1,
-    "src/services/trend_hysteresis_lockout_service.py": 1,
-    "src/services/unified_risk_gateway_service.py": 1
+    "src/services/inference_hurdle_gate_service.py": 1
   },
   "substring_tests": {
     "src/agents/action_extractor.py": 1,
@@ -14,10 +11,7 @@
     "src/services/autonomous_reporting_service.py": 8,
     "src/services/cognitive_blindspot_service.py": 1,
     "src/services/conversation_router.py": 5,
-    "src/services/friction_aware_tranche_sizing_service.py": 2,
     "src/services/sentinel_service.py": 5,
-    "src/services/trend_hysteresis_lockout_service.py": 2,
-    "src/services/unified_risk_gateway_service.py": 1,
     "src/services/workflow_service.py": 1
   },
   "dynamic_strategy_names": {

@@ -37,9 +37,9 @@ def test_registered_safety_set_is_the_fallback_set_minus_the_self_registered_hed
 OLD_FRICTION_ROUTINE = lambda strat: _substring(strat, ("rebalance", "rotation", "churn", "routine"))        # noqa: E731
 OLD_FRICTION_DEPLOY = lambda strat: "deploy" in strat                                                        # noqa: E731
 OLD_FRICTION_OPEN = lambda strat: "open" in strat                                                            # noqa: E731
-OLD_DEADBAND_EXEMPT = lambda strat: _substring(strat, (                                                      # noqa: E731
+OLD_DEADBAND_EXEMPT = lambda strat: strat == "emergency_hedge" or _substring(strat, (                        # noqa: E731
     "deploy", "cash", "dip", "staggered", "rebalance", "rotation", "tier", "approval", "manual", "reporting",
-    "pruning"))
+    "pruning"))  # "emergency_hedge": the trend code's own P4 clause, now a member of the role
 OLD_EMERGENCY = lambda strat: _substring(strat, (                                                            # noqa: E731
     "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "emergency_liquidation",
     "circuit_breaker"))
