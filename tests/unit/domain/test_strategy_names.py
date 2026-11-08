@@ -84,3 +84,23 @@ def test_roles_that_were_exact_tuples_are_reproduced_member_for_member():
     }
     for role_name, members in expected.items():
         assert set(getattr(sn, role_name)) == members, role_name
+
+
+def test_auto_exec_buy_and_exit_labels_equal_the_dict_and_tuple_they_replaced():
+    """Oracle copied from automated_trading_service before P6 moved them here. / 搬移前的原始字面值。"""
+    assert set(sn.AUTO_EXEC_BUY) == {"pyramiding_scale_in", "macro_volatility_hedge", "tactical_factor_rotation"}
+    assert sn.AUTO_EXIT_LABELS == {
+        "stop_loss": "停損自動執行",
+        "trailing_stop_loss": "移動停損自動執行",
+        "trailing_stop": "移動停損自動執行",
+        "take_profit": "停利自動執行",
+        "capital_rotation": "換庫自動執行",
+        "rebalance_diversification": "再平衡自動執行",
+        "portfolio_rebalance": "再平衡自動執行",
+        "concentration_rebalance": "再平衡自動執行",
+        "stagnation_pruning": "停滯修剪自動執行",
+        "macro_volatility_hedge": "避險減碼自動執行",
+        "tactical_factor_rotation": "波段換倉自動執行",
+    }
+    # the stop-loss branch indexes the dict directly, so every member must have a label
+    assert sn.STOP_LOSS_FAMILY <= sn.AUTO_EXIT_LABELS.keys()
