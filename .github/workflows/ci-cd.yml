@@ -30,7 +30,8 @@ env:
 jobs:
   lab:
     name: Lab (CI / Validation)
-    runs-on: ubuntu-latest
+    # 釘 24.04：ubuntu-latest 升到 26.04 後 Playwright 不支援，等它支援再改回 latest（#317）
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       security-events: write
