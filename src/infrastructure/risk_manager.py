@@ -2,6 +2,7 @@ import pandas as pd
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Dict, List, Tuple, Any, Optional, Callable
 from datetime import datetime, timedelta
+from src.domain import strategy_names as sn
 from src.repositories.transaction_repository import AlchemyTransactionRepository
 from src.repositories.settings_repository import AlchemySettingsRepository
 from src.utils.logger import setup_logger
@@ -53,7 +54,7 @@ class RiskManager:
             if df.empty:
                 # Conservative startup defaults for new users
                 return self._schema_thresholds()
-            
+
             # Filter trades
             trades = df[df['action'].isin(['BUY', 'SELL'])].copy()
             if trades.empty:
@@ -63,7 +64,7 @@ class RiskManager:
             trades['date'] = pd.to_datetime(trades['trade_date']).dt.date
             last_30_days = datetime.now().date() - timedelta(days=30)
             recent_trades = trades[trades['date'] >= last_30_days]
-            
+
             if not recent_trades.empty:
                 daily_counts = recent_trades.groupby('date').size()
                 avg = daily_counts.mean()
@@ -74,11 +75,11 @@ class RiskManager:
 
             # 2. Holding Period (Fallback if no matched trades)
             holding_days = 21 # Baseline if can't calculate from matched trades
-            
+
             # 3. Loss Tolerance: Based on recent drawdown or volatility proxy
             # Default to 15% if no better data
-            loss_pct = 0.15 
-            
+            loss_pct = 0.15
+
             # 4. Streak Limit: Min 3, max 7 based on vol
             streak_limit = 3
 
@@ -132,9 +133,7 @@ class RiskManager:
         from src.services.strategy_registry import StrategyRegistry
         is_sell = str(action).upper() == "SELL" if action else False
         is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
-        is_rebalance = (strategy_name or "") in (
-            "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "tactical_factor_rotation"
-        )
+        is_rebalance = (strategy_name or "") in sn.DAILY_LIMIT_REBALANCE
 
         # 1. Daily Limit (僅約束一般主動買進開倉，不卡平倉與再平衡)
         if not is_sell and not is_safety and not is_rebalance:
@@ -189,7 +188,7 @@ class RiskManager:
                         streak += 1
                     else:
                         break
-                
+
                 if streak >= consecutive_limit:
                     logger.warning(f"CB Trigger: {streak} consecutive losses exceeds limit {consecutive_limit}.")
                     return True
@@ -203,16 +202,16 @@ class RiskManager:
                 try:
                     open_date = getattr(pos, 'open_date', None)
                     current_val = getattr(pos, 'market_value', 0)
-                    pnl = getattr(pos, 'unrealized_pnl', 0) 
+                    pnl = getattr(pos, 'unrealized_pnl', 0)
                     cost = current_val - pnl
-                    
+
                     if not open_date: continue
                     if isinstance(open_date, str):
                         open_date = datetime.fromisoformat(open_date.replace('Z', '+00:00'))
-                    
+
                     days_held = (now - open_date).days if hasattr(open_date, 'year') else 0
                     roi = (pnl / cost) if cost > 0 else 0
-                    
+
                     if days_held >= holding_days_limit and roi < -loss_pct_limit:
                          logger.warning(f"CB Trigger: Position {getattr(pos, 'symbol', '?')} held {days_held} days with {roi*100:.1f}% loss.")
                          return True
@@ -231,28 +230,28 @@ class RiskManager:
 
         from src.services.market_data_service import MarketDataService
         mds = MarketDataService(user_id=user_id)
-        
+
         new_sector = self._get_sector(mds, new_ticker)
         if not new_sector: return True
-            
+
         total_value = 0.0
         sector_value = 0.0
-        
+
         for pos in current_positions:
             val = getattr(pos, 'market_value', 0)
             total_value += val
             ticker = getattr(pos, 'symbol', None)
             if ticker and self._get_sector(mds, ticker) == new_sector:
                 sector_value += val
-                    
+
         total_value += new_amount
         sector_value += new_amount
         exposure = sector_value / total_value if total_value > 0 else 0
-        
+
         if exposure > limit_pct:
             logger.warning(f"Risk Block: Sector {new_sector} exposure {exposure:.1%} exceeds limit {limit_pct:.1%}")
             return False
-            
+
         return True
 
     def _get_sector(self, mds, ticker: str) -> Optional[str]:

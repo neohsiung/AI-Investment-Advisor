@@ -142,6 +142,7 @@ TREND_DEADBAND_EXEMPT: FrozenSet[str] = frozenset({
     CASH_DEPLOYMENT, BATCH_CASH_DEPLOYMENT, CAPITAL_ROTATION, REBALANCE_DIVERSIFICATION, PORTFOLIO_REBALANCE,
     CONCENTRATION_REBALANCE, TACTICAL_FACTOR_ROTATION, ROUTINE_REBALANCE, REBALANCE, STAGNATION_PRUNING,
     "proposal_rotation", "proposal_manual",
+    EMERGENCY_HEDGE,  # ADR-005: this BUY was unnamed (so exempt) before it was named; trend already exempts it
 })
 
 
@@ -156,7 +157,21 @@ def normalize(raw: Optional[str]) -> Optional[str]:
     return name or None
 
 
-def has_role(raw: Optional[str], role: FrozenSet[str]) -> bool:
-    """Exact membership after ``normalize``. An unknown or empty name is simply not a member (False)."""
+def is_known(raw: Optional[str]) -> bool:
+    """True for a name this module knows, and for the unnamed forms (empty, None, the ledger label).
+    已知名稱，以及「沒有名稱」的各種形式（空字串、None、帳本標記）都算已知。"""
     name = normalize(raw)
-    return name is not None and name in role
+    return name is None or name in universe() or name == UNNAMED_LEDGER_LABEL.lower()
+
+
+def has_role(raw: Optional[str], role: FrozenSet[str], *, unknown: bool = False) -> bool:
+    """Exact membership after ``normalize``. Empty/None and known non-members are False.
+    A name this module does not know answers ``unknown`` (default False = not a member). The caller picks the safe
+    direction per role and logs it; this module stays free of I/O.
+    未知名稱回傳 ``unknown``，方向由呼叫端依角色決定。"""
+    name = normalize(raw)
+    if name is None:
+        return False
+    if name in role:
+        return True
+    return unknown and not is_known(name)

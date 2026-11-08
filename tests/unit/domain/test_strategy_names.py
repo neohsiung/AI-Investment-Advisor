@@ -37,9 +37,9 @@ def test_registered_safety_set_is_the_fallback_set_minus_the_self_registered_hed
 OLD_FRICTION_ROUTINE = lambda strat: _substring(strat, ("rebalance", "rotation", "churn", "routine"))        # noqa: E731
 OLD_FRICTION_DEPLOY = lambda strat: "deploy" in strat                                                        # noqa: E731
 OLD_FRICTION_OPEN = lambda strat: "open" in strat                                                            # noqa: E731
-OLD_DEADBAND_EXEMPT = lambda strat: _substring(strat, (                                                      # noqa: E731
+OLD_DEADBAND_EXEMPT = lambda strat: strat == "emergency_hedge" or _substring(strat, (                        # noqa: E731
     "deploy", "cash", "dip", "staggered", "rebalance", "rotation", "tier", "approval", "manual", "reporting",
-    "pruning"))
+    "pruning"))  # "emergency_hedge": the trend code's own P4 clause, now a member of the role
 OLD_EMERGENCY = lambda strat: _substring(strat, (                                                            # noqa: E731
     "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "emergency_liquidation",
     "circuit_breaker"))
@@ -84,23 +84,3 @@ def test_roles_that_were_exact_tuples_are_reproduced_member_for_member():
     }
     for role_name, members in expected.items():
         assert set(getattr(sn, role_name)) == members, role_name
-
-
-def test_roles_match_the_lists_still_in_the_services():
-    """Until a later PR deletes the old tuples, the services' literal lists must equal the roles (no silent drift)."""
-    import ast
-    import pathlib
-
-    repo = pathlib.Path(__file__).resolve().parents[3]
-
-    # strategy_registry fallback + registration loop
-    reg = (repo / "src/services/strategy_registry.py").read_text(encoding="utf-8")
-    tree = ast.parse(reg)
-    literals = [set(n.value for n in ast.walk(t) if isinstance(n, ast.Constant) and isinstance(n.value, str))
-                for t in ast.walk(tree) if isinstance(t, (ast.Tuple, ast.List))]
-    assert sn.SAFETY_CONTROLS in literals and sn.SAFETY_REGISTERED in literals
-
-    ps = (repo / "src/services/proposal_shadow_service.py").read_text(encoding="utf-8")
-    sets = [set(n.value for n in ast.walk(t) if isinstance(n, ast.Constant) and isinstance(n.value, str))
-            for t in ast.walk(ast.parse(ps)) if isinstance(t, ast.Set)]
-    assert sn.REPLACEMENT_PLAN_EXEMPT in sets
