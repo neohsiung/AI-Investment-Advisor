@@ -41,10 +41,10 @@ ENV_FILE=<主 checkout>/.env bash <本 PR worktree>/scripts/check_leaked_secrets
 1. 備份：`./start.sh backup`，確認 `backups/` 有新的一份。
 註：步驟 2 到 4 要連續做完。改完資料庫密碼到 `.env` 與服務重建之間，使用舊密碼的服務會連不上，新連線會被拒絕。
 2. 改資料庫內的密碼。`POSTGRES_PASSWORD` 只在資料庫第一次初始化時生效，改環境變數不會改已存在的使用者。用互動式 `psql`，密碼不會出現在指令列或 `ps`：
-   `docker exec -it advisor_prod_db psql -U postgres`，進去後執行 `\password postgres`，輸入兩次新密碼。`\password` 送出的是雜湊，不是明文。
+   `docker exec -it "${ADVISOR_CONTAINER_PREFIX}_db" psql -U postgres`（容器名依 `.env` 的 `ADVISOR_CONTAINER_PREFIX`，先 `docker ps` 確認），進去後執行 `\password postgres`，輸入兩次新密碼。`\password` 送出的是雜湊，不是明文。
 3. 把 `.env` 的 `DB_PASS` 改成同一個新值。用編輯器開 `.env`，不要用會留在 shell 歷史的指令貼值。
 4. 重建所有讀 `DB_PASS` 的服務，名單用 `grep -n "DB_PASS\|env_file" docker-compose.prod.yml` 列出，目前有 postgres、mcp_server、worker、celery_beat。寫法比照 `start.sh` 的 `PROD_COMPOSE`：
-   `docker compose --project-name investment_advisor -f docker-compose.prod.yml $PROFILES up -d --force-recreate postgres mcp_server worker celery_beat`
+   `docker compose --project-name "$ADVISOR_PROJECT_NAME" -f docker-compose.prod.yml $PROFILES up -d --force-recreate postgres mcp_server worker celery_beat`
    `$PROFILES` 沿用 `start.sh:35-41` 的規則：平常是空的；若平常用 `OBSERVABILITY=1 ./start.sh up` 啟動，就填 `--profile observability`，否則 profile 內的服務會被漏掉。
    資料庫的資料在 volume 裡，重建不會重新初始化。postgres 一併重建，是為了讓容器的 `POSTGRES_PASSWORD` 跟 `.env` 一致；不重建的話，重跑檢查腳本時容器那兩列會顯示「相同」，這是預期輸出，不是沒換成功。
 5. 驗證：`./start.sh health`。再確認舊密碼已失效：用互動式 `psql` 以舊密碼連線，應該被拒絕。
@@ -59,7 +59,7 @@ ENV_FILE=<主 checkout>/.env bash <本 PR worktree>/scripts/check_leaked_secrets
    只有「相同」的那一把需要換；另一把的 `_NEW` 設成與舊值相同。
 4. 乾跑沒有錯誤才加 `--commit`。腳本重新包裝 `settings` 的 `ENC:` 與 `llm_providers` 的 `FERN:` 密文。
 5. 之後才把 `.env` 換成新金鑰並重建 mcp_server、worker、celery_beat，指令與 A.4 相同，只是服務名單去掉 postgres：
-   `docker compose --project-name investment_advisor -f docker-compose.prod.yml $PROFILES up -d --force-recreate mcp_server worker celery_beat`
+   `docker compose --project-name "$ADVISOR_PROJECT_NAME" -f docker-compose.prod.yml $PROFILES up -d --force-recreate mcp_server worker celery_beat`
    順序不能反：只換 `.env` 會讓資料庫裡的密文變孤兒，而且是靜默失敗，`settings_repository` 的 `_decrypt` 吞掉錯誤並回傳原密文。
 6. 驗證：`./start.sh health`；到設定頁確認 eToro 金鑰能讀出，不是 `ENC:` 開頭的字串。
 7. 回滾：`--commit` 之後出錯，把 `.env` 還原舊金鑰，用 `./start.sh restore <id>` 還原備份的資料庫。
@@ -84,6 +84,6 @@ bash -n scripts/check_leaked_secrets.sh
 ## 驗收條件
 - AC1：程式裡沒有 DB 密碼的預設值；反驗：在任一處把讀取 `DB_PASS` 的呼叫加回帶字串預設值的寫法，`tests/unit/config/test_db_credentials.py` 的 `test_no_source_file_gives_db_password_a_string_default` 要失敗。
 - AC2：缺 `DB_PASS` 時組連線字串會 raise 並寫明變數名；反驗：把 `get_db_engine` 的 `require_db_password()` 改回帶預設值，`test_sync_engine_builder_does_not_use_a_default_password` 要失敗。
-- AC3：檢查腳本存在、可執行、語法通過，且本身不含歷史值；反驗：把一個歷史值貼進腳本，維護者以 `git grep` 比對歷史值要有命中（此項為人工檢查，不進自動測試，因為測試檔本身不能含歷史值）。
+- AC3：檢查腳本存在、可執行、語法通過，且本身不含歷史值；反驗：把一個歷史值貼進腳本，pre-commit 的 detect-secrets 與 gitleaks 要擋下該 commit（自動；測試檔本身不能含歷史值，所以不另寫單元測試）。
 - AC4：腳本執行時不印出任何值；反驗：在主 checkout 跑 `bash scripts/check_leaked_secrets.sh 2>&1 | grep -vE '^(==|--)|: (相同|不同|不存在)$'`，應無任何輸出；有輸出就代表印出了別的東西，要檢查是不是洩漏了值。
 - AC5：測試仍通過；反驗：`.venv/bin/python -m pytest tests/unit tests/invariants -q` 全綠；把 `tests/unit/infrastructure/test_telegram_adapter.py` 的 `DB_PASS` 設定拿掉，該檔測試要失敗，證明測試真的依賴明確設定。
