@@ -127,7 +127,7 @@ flowchart TD
 
 ## 7 未驗證
 
-1. guard 擋直接合併的規則只是減速丘，`python -c`、變數展開擋不到；MCP 的 deny 規則需重啟 session 後實測。邊界是 `r3-gate` 加 ruleset，進度見 #304。
+1. guard 擋直接合併的規則只是減速丘，`python -c`、變數展開擋不到；MCP 的 deny 已實測（2026-11-08）：呼叫 `merge_pull_request` 在本機被擋，沒有 403。邊界是 `r3-gate` 加 ruleset，進度見 #304。
 
 ## 8 回滾
 
