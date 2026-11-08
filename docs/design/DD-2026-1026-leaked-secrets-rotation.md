@@ -82,8 +82,8 @@ bash -n scripts/check_leaked_secrets.sh
 - `scripts/ci_local.sh` 與 CI 的測試庫仍用固定密碼，那是用完即丟的容器，不連正式資料。
 
 ## 驗收條件
-- AC1：程式裡沒有 DB 密碼的預設值；反驗：在任一處把讀取 `DB_PASS` 的呼叫加回帶字串預設值的寫法，`.claude-task/green.sh` 的全 repo grep 檢查要失敗。
+- AC1：程式裡沒有 DB 密碼的預設值；反驗：在任一處把讀取 `DB_PASS` 的呼叫加回帶字串預設值的寫法，`tests/unit/config/test_db_credentials.py` 的 `test_no_source_file_gives_db_password_a_string_default` 要失敗。
 - AC2：缺 `DB_PASS` 時組連線字串會 raise 並寫明變數名；反驗：把 `get_db_engine` 的 `require_db_password()` 改回帶預設值，`test_sync_engine_builder_does_not_use_a_default_password` 要失敗。
-- AC3：檢查腳本存在、可執行、語法通過，且本身不含歷史值；反驗：把一個歷史值貼進腳本，`green.sh` 的「腳本不含歷史值」要失敗。
+- AC3：檢查腳本存在、可執行、語法通過，且本身不含歷史值；反驗：把一個歷史值貼進腳本，維護者以 `git grep` 比對歷史值要有命中（此項為人工檢查，不進自動測試，因為測試檔本身不能含歷史值）。
 - AC4：腳本執行時不印出任何值；反驗：在主 checkout 跑 `bash scripts/check_leaked_secrets.sh 2>&1 | grep -vE '^(==|--)|: (相同|不同|不存在)$'`，應無任何輸出；有輸出就代表印出了別的東西，要檢查是不是洩漏了值。
 - AC5：測試仍通過；反驗：`.venv/bin/python -m pytest tests/unit tests/invariants -q` 全綠；把 `tests/unit/infrastructure/test_telegram_adapter.py` 的 `DB_PASS` 設定拿掉，該檔測試要失敗，證明測試真的依賴明確設定。

@@ -55,3 +55,19 @@ def test_llama_index_url_does_not_use_a_default_password(no_db_env):
 
     with pytest.raises(MissingDbPasswordError):
         LlamaIndexService._default_db_url()
+
+
+def test_no_source_file_gives_db_password_a_string_default():
+    """AC1: no getenv/get("DB_PASS[WORD]", "<literal>") anywhere in source.
+    原始碼任何位置都不得替 DB 密碼帶字串預設值。"""
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parents[3]
+    pattern = re.compile(r"""(getenv|get)\(\s*["']DB_PASS(WORD)?["']\s*,\s*["'][^"']+["']\s*\)""")
+    offenders = []
+    for top in ("src", "alembic", "scripts", "services"):
+        for path in (root / top).rglob("*.py"):
+            if pattern.search(path.read_text(encoding="utf-8", errors="ignore")):
+                offenders.append(str(path.relative_to(root)))
+    assert not offenders, f"hardcoded DB password default in: {offenders}"
