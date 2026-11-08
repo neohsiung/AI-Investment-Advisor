@@ -11,7 +11,7 @@
 - 路由經由隧道對外：`infra/nginx/nginx.conf` 的 8080 虛擬主機專供 ngrok，只轉 `/webhook/` 與 `/callback/`，所以 `/webhook/telegram` 是從網際網路可達的入口。另外 `src/api/middleware/local_auth.py` 的 `_ALWAYS_OPEN_PREFIXES` 含 `/webhook`，即使 `AUTH_MODE=token` 也不要求 token，所以 `/webhook/telegram` 只剩 payload 這一道門。同檔的一般 webhook 會驗 `X-API-Key`（`Missing X-API-Key`），Telegram 這條沒有。
 - 能做什麼：`/resume` 在 `webhook_service.py` 的 `cmd == "/resume"` 分支把 `ai_trading_enabled` 寫成 `true`；`/pause` 寫成 `false`；另有按鈕回呼 `resume_trading`，實作在 `src/services/actionable_alert_service.py` 的 `action == "resume_trading"` 分支，做同一件事。
 - 為什麼 chat_id 不是祕密：它出現在公開歷史，`3a7be7f0` 的 `.env.bak-20260711` 有 `TELEGRAM_CHAT_ID`。本文不寫值。任何人取得它，再知道這個服務的 webhook 網址，就能偽造一個看起來來自本人的請求。網址是否外洩由創辦人自行判斷，本文不記錄。
-- 現有緩解：開關要真的下單還要過風控閘門與資本上限，`/resume` 本身不會下單；`/resume` 只寫 `ai_trading_enabled`，不碰 charter 狀態，charter 停機仍由風控閘門持有，該兩處的 `G7` 註解都這樣寫，所以偽造 `/resume` 解不開 charter 停機。這降低損失上限，但不是驗證。
+- 現有緩解：開關要真的下單還要過風控閘門與資本上限，`/resume` 本身不會下單；`/resume` 只寫 `ai_trading_enabled`，不碰 charter 狀態，charter 停機仍由風控閘門持有，該兩處的 `G7` 註解都這樣寫。查法：`git grep -n charter -- src/services/unified_risk_gateway_service.py` 有輸出，`git grep -n charter -- src/services/webhook_service.py src/services/actionable_alert_service.py` 只有註解，所以偽造 `/resume` 解不開 charter 停機。這降低損失上限，但不是驗證。
 
 ## 2 決定：新做法，正本在哪
 - 正本：Telegram Bot API 的 `setWebhook` 參數 `secret_token`。設了之後，Telegram 每次呼叫都帶 `X-Telegram-Bot-Api-Secret-Token` 標頭，值等於設定的字串。

@@ -19,7 +19,7 @@
 - 交易表單送出前顯示：標的、方向、數量、價格，市價則標明、模式，demo 或 real、以及這個動作會做什麼，是「只記帳」還是「送到券商」。
 - 一律要求再輸入一次標的代號，與表單的標的一致才能按確認，不分模式：demo 現在不是可用的安全模式，不能因為它而放鬆確認。模式只顯示在對話框，不決定要不要輸入。若日後 token 取得 demo 權限，再由新 DD 決定是否放鬆。
 - 再平衡的對話框說明會發生什麼：啟動一次哨兵檢查、可能產生議會與 LLM 費用、是否可能下單取決於交易總開關目前的值。
-- 模式的讀法：鍵名是 `etoro_mode`，schema 預設 `demo`，選項 demo 或 real；但目前 token 沒有 demo 權限，選 demo 會讓所有券商呼叫失敗，schema 說明與 `AGENTS.md` 都這樣寫，所以 demo 不是可用的安全模式，見 `config/settings_schema.yaml` 的 `key: etoro_mode`。讀取統一走 `src/services/broker_factory.py` 的 `effective_trading_mode`：缺值當 demo；讀取例外當 real；環境變數 `TRADING_MODE=paper` 會強制 demo。前端和 `src/api` 目前都沒有暴露這個值，實作需要新增一個唯讀端點回傳 `effective_trading_mode` 的結果，不要讓前端自己讀設定。
+- 模式的讀法：鍵名是 `etoro_mode`，schema 預設 `demo`，選項 demo 或 real；但目前 token 沒有 demo 權限，選 demo 會讓所有券商呼叫失敗，schema 說明與 `AGENTS.md` 都這樣寫，查法是 `git grep -n "無 demo 權限" -- config/settings_schema.yaml`，所以 demo 不是可用的安全模式，見 `config/settings_schema.yaml` 的 `key: etoro_mode`。讀取統一走 `src/services/broker_factory.py` 的 `effective_trading_mode`：缺值當 demo；讀取例外當 real；環境變數 `TRADING_MODE=paper` 會強制 demo。前端和 `src/api` 目前都沒有暴露這個值，實作需要新增一個唯讀端點回傳 `effective_trading_mode` 的結果，不要讓前端自己讀設定。
 - 端點失敗或回傳未知值時，對話框顯示「模式未知」，確認流程不變。與 `effective_trading_mode` 讀取例外當 real 的關門預設一致。
 - 後端不改。確認只是前端的摩擦；真正的保護仍是風控與總開關。AUTH_MODE 的議題另案處理。
 - 介面文字同步修正：Terminal.tsx 的按鈕說明要與端點實際行為一致。
@@ -51,8 +51,8 @@ PY
 
 確認 `/transactions` 不呼叫券商，只讀檔：
 ```bash
-sed -n 73,98p src/services/transaction_service.py | grep -n -i "broker\|etoro\|AutomatedTrading"
-sed -n 40,62p src/api/v1/endpoints/transactions.py | grep -n -i "broker\|etoro\|AutomatedTrading"
+git grep -n -A25 "def add_manual_trade" -- src/services/transaction_service.py | grep -i "broker\|etoro\|AutomatedTrading"
+git grep -n -A25 "async def add_transaction" -- src/api/v1/endpoints/transactions.py | grep -i "broker\|etoro\|AutomatedTrading"
 ```
 兩條現況都無輸出，支持上面的 [推論]。注意不能對整個 `transaction_service.py` 搜尋，同檔的 `sync_broker_positions` 是另一條路徑。
 
