@@ -1389,7 +1389,7 @@ class AutomatedTradingService:
             raw_meta = {
                 "order_status": execution_status,
                 "broker_order_id": broker_order_id,
-                "strategy_name": strategy_name or "AutomatedTrading",
+                "strategy_name": strategy_name,  # None stays None: no plausible default label / 缺名如實記 None
                 "confidence_score": confidence_score,
                 "rationale": rationale,
                 "approval_type": approval_type,
@@ -1626,7 +1626,11 @@ class AutomatedTradingService:
 
                         if execution_price and execution_price > 0:
                             outcome_svc = OutcomeReflectionService(user_id=user_id)
-                            agent_identifier = strategy_name or "AutomatedTrading"
+                            agent_identifier = strategy_name or sn.UNNAMED_LEDGER_LABEL
+                            if not strategy_name:
+                                logger.warning(
+                                    f"Unnamed trade {order.symbol}: outcome tagged {agent_identifier!r} / 缺策略名"
+                                )
                             dec_id = outcome_svc.record_decision(
                                 ticker=order.symbol,
                                 agent_name=agent_identifier,

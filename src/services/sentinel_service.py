@@ -4267,7 +4267,9 @@ class SentinelService:
 
             ticker = trigger.get("ticker")
             sell_qty = trigger.get("sell_quantity")
-            strategy_name = trigger.get("strategy_name", "position_exit")
+            strategy_name = trigger.get("strategy_name")
+            if not strategy_name:
+                logger.error(f"[Sentinel Exit] {ticker} trigger has no strategy_name; sell sent unnamed")
             current_price = trigger.get("current_price")
             avg_price = trigger.get("avg_price")
             return_pct = trigger.get("return_pct")

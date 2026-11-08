@@ -25,6 +25,7 @@ from src.services.broker_factory import BrokerFactory
 from src.domain.broker import IBroker
 from src.services.order_inflight_lock_service import OrderInflightLockService
 from src.config.owner import resolve_user_id
+from src.domain import strategy_names as sn
 
 logger = setup_logger("OrderReconciliationService")
 
@@ -279,7 +280,11 @@ class OrderReconciliationService:
                         try:
                             from src.services.outcome_reflection_service import OutcomeReflectionService
                             outcome_svc = OutcomeReflectionService(user_id=uid)
-                            agent_id = raw.get("strategy_name") or "AutomatedTrading"
+                            agent_id = raw.get("strategy_name") or sn.UNNAMED_LEDGER_LABEL
+                            if not raw.get("strategy_name"):
+                                logger.warning(
+                                    f"Unnamed strategy on fill {ticker}: outcome tagged {agent_id!r} / 缺策略名"
+                                )
                             session_id = raw.get("session_id")
                             dec_id = outcome_svc.record_decision(
                                 ticker=ticker,
@@ -426,7 +431,11 @@ class OrderReconciliationService:
                             try:
                                 from src.services.outcome_reflection_service import OutcomeReflectionService
                                 outcome_svc = OutcomeReflectionService(user_id=uid)
-                                agent_id = raw.get("strategy_name") or "AutomatedTrading"
+                                agent_id = raw.get("strategy_name") or sn.UNNAMED_LEDGER_LABEL
+                                if not raw.get("strategy_name"):
+                                    logger.warning(
+                                        f"Unnamed strategy on fill {ticker}: outcome tagged {agent_id!r} / 缺策略名"
+                                    )
                                 session_id = raw.get("session_id")
                                 dec_id = outcome_svc.record_decision(
                                     ticker=ticker,
