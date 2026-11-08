@@ -29,6 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from sqlalchemy import text
 
 from src.config.mission import load_mission
+from src.domain import strategy_names as sn
 from src.services.order_cap_policy import single_order_cap_usd
 from src.services.param_policy import get_param
 from src.services.proposal_validator import ValidationContext, ValidationResult, validate
@@ -46,9 +47,7 @@ COUNTERFACTUAL_HORIZONS = (5, 63)
 GATEWAY_TIMEOUT_S = 30
 VALIDATOR_ERROR = "validator_error"
 # Frozen: the five safety exits that may bypass the replacement-plan rule. / 凍結的五個安全出場名稱。
-SAFETY_EXIT_NAMES = frozenset(
-    {"stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "macro_volatility_hedge"}
-)
+SAFETY_EXIT_NAMES = sn.REPLACEMENT_PLAN_EXEMPT
 MODE_OFF = "off"
 MODE_SHADOW = "shadow"
 SETTING_MODE = "trade_proposal_mode"

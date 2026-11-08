@@ -1,13 +1,10 @@
 {
   "literal_name_lists": {
-    "src/infrastructure/risk_manager.py": 1,
     "src/services/automated_trading_service.py": 7,
     "src/services/autonomous_reporting_service.py": 1,
     "src/services/friction_aware_tranche_sizing_service.py": 1,
     "src/services/hard_token_budget_guard_service.py": 1,
     "src/services/inference_hurdle_gate_service.py": 1,
-    "src/services/proposal_shadow_service.py": 2,
-    "src/services/strategy_registry.py": 2,
     "src/services/trend_hysteresis_lockout_service.py": 1,
     "src/services/unified_risk_gateway_service.py": 1
   },

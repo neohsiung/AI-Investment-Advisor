@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from src.domain import strategy_names as sn
 from src.domain.strategy_contract import (
     StrategyContract,
     MarketRegimeType,
@@ -158,12 +159,8 @@ class StrategyRegistry:
         contract = cls._strategies.get(strategy_id)
         if contract and contract.is_safety_control():
             return True
-        # Standard safety keywords fallback
-        return strategy_id in (
-            "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
-            "capital_rotation", "rebalance_diversification",
-            "cash_deployment", "stagnation_pruning", "macro_volatility_hedge", "benchmark_parking"
-        )
+        # Standard safety keywords fallback / 備援清單（單一定義在 strategy_names）
+        return strategy_id in sn.SAFETY_CONTROLS
 
     @classmethod
     def _ensure_initialized(cls) -> None:
@@ -173,11 +170,7 @@ class StrategyRegistry:
         cls._initialized = True
 
         # 1. Register Safety Controls
-        for safe_name in [
-            "stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "position_exit", "take_profit",
-            "capital_rotation", "rebalance_diversification",
-            "cash_deployment", "stagnation_pruning", "benchmark_parking"
-        ]:
+        for safe_name in sorted(sn.SAFETY_REGISTERED):
             cls._strategies[safe_name] = SafetyExitContract(safe_name)
 
         # 2. Register Concentration Rebalance
@@ -206,4 +199,3 @@ class StrategyRegistry:
             cls._strategies["tactical_factor_rotation"] = TacticalFactorRotationContract()
         except Exception as e:
             logger.warning(f"StrategyRegistry: TacticalFactorRotationContract load deferred: {e}")
-
