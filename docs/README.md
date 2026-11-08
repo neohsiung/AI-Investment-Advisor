@@ -23,7 +23,7 @@ python .agent/skills/docs-maintainer/scripts/verify_docs_links.py
 - 維運：`06_SRE_Observability/` 的單機自架手冊、冷備份與可觀測性
 - 產品：`00_Product_Strategy/` 的單機轉型路線圖、產品需求規格總綱
 - 架構：`01_System_Architecture/` 的系統全景圖
-- 品質：`05_Quality_Assurance/` 的靜默失敗防治、端到端行為驅動測試規格、使命與不變量
+- 品質：`05_Quality_Assurance/` 的靜默失敗防治、端到端行為驅動測試規格、使命與不變量、策略名單一定義
 - 後端：`03_Backend_Intelligence/` 的代理人戰略協定
 - 引擎：根目錄 README 引用的四頁，分別是統一投組自適應智慧聚合、貝氏體制轉移、極值理論尾部風險、策略自動演化
 - 前端：`02_Frontend_UX/` 的自適應戰情室雷達儀表板
