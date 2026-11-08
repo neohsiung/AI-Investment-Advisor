@@ -1,6 +1,5 @@
 {
   "literal_name_lists": {
-    "src/services/automated_trading_service.py": 7,
     "src/services/autonomous_reporting_service.py": 1,
     "src/services/hard_token_budget_guard_service.py": 1,
     "src/services/inference_hurdle_gate_service.py": 1
