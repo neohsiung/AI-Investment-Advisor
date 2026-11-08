@@ -10,7 +10,7 @@
 | 2 | 比對一律先 `normalize()` 再完全比對，不對名稱做 `"關鍵字" in x` | 同上 |
 | 3 | 送進下單呼叫的字面策略名，必須已在模組定義 | `test_every_literal_strategy_name_sent_to_an_order_call_is_defined` |
 | 4 | 舊名（`LEGACY`）不得再有產生端 | `test_legacy_names_are_not_produced_by_any_order_path` |
-| 5 | 改名或刪名的 PR 附 grep 結果（見下） | PR 描述 |
+| 5 | 改名或刪名的 PR 附 grep 結果，指令在〈改名或刪名〉 | PR 描述 |
 
 這份是 `strategy_names.py` 的使用說明，測試與模組的 docstring 才是規格。
 
