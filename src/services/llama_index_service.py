@@ -29,7 +29,7 @@ from llama_index.embeddings.ollama import OllamaEmbedding
 from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.postgres import PGVectorStore
 from llama_index.readers.file import PDFReader
-from src.config.db_credentials import require_db_password
+from src.config.db_credentials import describe_db_target, require_db_password
 from src.utils.logger import setup_logger
 from src.utils.safe_path import resolve_within
 
@@ -135,7 +135,7 @@ class LlamaIndexService:
 
         logger.info(
             f"LlamaIndexService initialized | embed_model={embed_model_name} "
-            f"| ollama={ollama_base_url} | pgvector={self._connection_string.split('@')[-1] if '@' in self._connection_string else 'configured'}"
+            f"| ollama={ollama_base_url} | pgvector={describe_db_target(self._connection_string)}"
         )
 
     @staticmethod

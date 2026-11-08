@@ -14,7 +14,7 @@ import typing
 import re
 from html.parser import HTMLParser
 from typing import List, Dict, Tuple, Any, Optional, Callable
-from src.config.db_credentials import require_db_password
+from src.config.db_credentials import describe_db_target, require_db_password
 from src.utils.logger import setup_logger
 logger = setup_logger("TelegramAdapter")
 
@@ -161,7 +161,7 @@ class TelegramAdapter(BaseChannelAdapter):
 
                 if db_url:
                     self._db_pool = await asyncpg.create_pool(db_url, min_size=1, max_size=5)
-                    logger.info(f"Database pool created: {db_url.split('@')[1] if '@' in db_url else 'unknown'}")
+                    logger.info(f"Database pool created: {describe_db_target(db_url)}")
             except Exception as e:
                 logger.error(f"Failed to create DB pool: {e}")
         return self._db_pool

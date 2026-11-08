@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 import typing
 from typing import List, Dict, Tuple, Any, Optional, Callable, Union, Awaitable
 from datetime import datetime, timezone
-from src.config.db_credentials import require_db_password
+from src.config.db_credentials import describe_db_target, require_db_password
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +237,7 @@ def get_async_db_engine(db_path: str = None) -> AsyncEngine:
                 pool_recycle=3600,
                 pool_timeout=30
             )
-            logger.info(f"Using PostgreSQL AsyncEngine: {db_url.split('@')[-1]}")
+            logger.info(f"Using PostgreSQL AsyncEngine: {describe_db_target(db_url)}")
         else:
             engine = create_async_engine(db_url)
 

@@ -71,3 +71,18 @@ def test_no_source_file_gives_db_password_a_string_default():
             if pattern.search(path.read_text(encoding="utf-8", errors="ignore")):
                 offenders.append(str(path.relative_to(root)))
     assert not offenders, f"hardcoded DB password default in: {offenders}"
+
+
+def test_describe_db_target_never_contains_credentials():
+    from src.config.db_credentials import describe_db_target
+
+    url = "postgresql://someuser:s3cr3t-pw@db.internal:5433/portfolio"  # pragma: allowlist secret
+    out = describe_db_target(url)
+    assert out == "db.internal:5433/portfolio"
+    assert "s3cr3t" not in out and "someuser" not in out
+
+
+def test_describe_db_target_handles_garbage_without_leaking():
+    from src.config.db_credentials import describe_db_target
+
+    assert describe_db_target("not a url :: pw@@") == "unparseable-url"

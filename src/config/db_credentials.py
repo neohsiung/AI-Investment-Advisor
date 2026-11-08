@@ -17,6 +17,9 @@ from __future__ import annotations
 import os
 from typing import Mapping, Optional
 
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
+
 
 class MissingDbPasswordError(RuntimeError):
     """DB_PASS is not set; refusing to fall back to a default password."""
@@ -37,3 +40,17 @@ def require_db_password(env: Optional[Mapping[str, str]] = None) -> str:
         "or provide a full DB_URL; there is no default password. "
         "未設定 DB_PASS：請在 .env、金鑰庫或 CI 環境設定，或直接提供完整 DB_URL；系統不提供預設密碼。"
     )
+
+
+def describe_db_target(url: str) -> str:
+    """
+    Return `host:port/dbname` for logging; the username and password are never included.
+    回傳可寫進 log 的 `host:port/資料庫名`，不含帳號與密碼。
+    """
+    try:
+        parsed = make_url(url)
+    except ArgumentError:
+        return "unparseable-url"
+    host = parsed.host or "local"
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{host}{port}/{parsed.database or ''}"
