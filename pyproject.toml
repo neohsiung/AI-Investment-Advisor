@@ -93,7 +93,7 @@ memory = [
 
 # Web scraping / browser automation.
 scrape = [
-    "playwright>=1.44.0",
+    "playwright>=1.61.0",
     "newspaper3k>=0.2.8",
     "lxml-html-clean>=0.1.0",
     "pytrends==4.9.2",
