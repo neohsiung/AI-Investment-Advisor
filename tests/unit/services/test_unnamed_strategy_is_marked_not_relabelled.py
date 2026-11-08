@@ -3,11 +3,10 @@
 Write side: ``transactions.raw_data.strategy_name`` and the in-flight lock payload hold None when no name was given.
 Read side: the learning ledger (``decision_outcomes.agent_name`` is NOT NULL) gets the explicit marker
 ``UNNAMED_LEDGER_LABEL`` plus a warning, so the sample is kept and the gap is visible.
-Sentinel: an exit trigger without a name is still sent (a sell must not be dropped) with strategy_name=None and an error log.
+Sentinel: a nameless exit trigger is still sent (a sell must not be dropped), strategy_name=None, error log.
 缺策略名就如實記為缺，不補成某個策略；學習帳本讀取端改用明確標記並警告；Sentinel 缺名賣單照送並記 error。
 """
 import ast
-import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -142,7 +141,7 @@ def test_every_trigger_exit_dict_in_sentinel_names_its_strategy():
     bad = []
     for n in ast.walk(tree):
         if isinstance(n, ast.Dict):
-            pairs = {k.value: v for k, v in zip(n.keys, n.values) if isinstance(k, ast.Constant)}
+            pairs = {k.value: v for k, v in zip(n.keys, n.values, strict=True) if isinstance(k, ast.Constant)}
             a = pairs.get("action")
             if isinstance(a, ast.Constant) and a.value == "trigger_exit" and "strategy_name" not in pairs:
                 bad.append(n.lineno)

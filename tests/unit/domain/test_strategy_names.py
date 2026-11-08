@@ -103,4 +103,4 @@ def test_auto_exec_buy_and_exit_labels_equal_the_dict_and_tuple_they_replaced():
         "tactical_factor_rotation": "波段換倉自動執行",
     }
     # the stop-loss branch indexes the dict directly, so every member must have a label
-    assert sn.STOP_LOSS_FAMILY <= sn.AUTO_EXIT_LABELS.keys()
+    assert sn.AUTO_EXIT_LABELS.keys() >= sn.STOP_LOSS_FAMILY
