@@ -26,6 +26,7 @@
   },
   "permissions": {
     "deny": [
+      "mcp__claude_ai_Github__merge_pull_request",
       "mcp__31afe94d-f68a-4e22-ae08-835cede897e3__merge_pull_request"
     ]
   }
