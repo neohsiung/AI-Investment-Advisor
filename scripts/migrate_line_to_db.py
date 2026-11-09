@@ -4,6 +4,9 @@ import sys
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.config.db_credentials import require_db_password  # noqa: E402
+
 def migrate():
     load_dotenv()
 
@@ -19,7 +22,7 @@ def migrate():
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         # Fallback to standard dev DB
-        db_url = f"postgresql://{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASS', 'postgres')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'portfolio')}"
+        db_url = f"postgresql://{os.getenv('DB_USER', 'postgres')}:{require_db_password()}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'portfolio')}"
 
     engine = create_engine(db_url)
     user_id = os.getenv("MIGRATE_USER_ID")
