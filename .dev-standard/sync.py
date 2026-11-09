@@ -5,20 +5,25 @@
 擴充成跨 repo：每個 repo 存一份正本複本（.dev-standard/STANDARD.md）並以 sha256 釘版本，
 所以 CI 不用連到 dev-standard 也能檢查。只用標準函式庫，相容 python 3.9。
 
-  python3 .dev-standard/sync.py update --from $DEV_STANDARD [--adopt]
+  python3 .dev-standard/sync.py update [--from <dev-standard>] [--adopt]
                                                                               複製正本與本工具、釘版本、產生區塊。目的地已有「沒被釘過、內容不同」的檔時整個中止、什麼都不寫，
                                                                               列出檔案；確認要蓋掉才加 --adopt（會先把原檔備份到 .dev-standard/backup/<日期>/，備份不要 commit）
   python3 .dev-standard/sync.py render                                        依目前的複本產生區塊
   python3 .dev-standard/sync.py check [--no-local]                            CI 用：複本沒被手改、區塊是最新、元件有掛上；回非 0 表示漂移
                                                                               （--no-local：不看 core.hooksPath——它是本機狀態，CI 新 clone 一定是空的）
   python3 .dev-standard/sync.py wire [--dry-run] [--force-hookspath]                              把已裝的元件掛上：core.hooksPath、.claude/settings.json 的 hooks（冪等，先備份 .bak）
-  python3 .dev-standard/sync.py status --from $DEV_STANDARD   本 repo 釘的版本落後上游多少
+  python3 <dev-standard>/tools/sync.py wire-global [--dry-run] [--home <路徑>]
+                                                                              把全域 hook（components/loopback-hooks）掛進 ~/.claude：hooks/dev-standard/ 建 symlink 指到這個 checkout，
+                                                                              settings.json 併四個 hook entry（冪等、先寫 .bak、壞 JSON 不動），並把 top-level model 設成 sonnet
+  python3 .dev-standard/sync.py status [--from <dev-standard>] 本 repo 釘的版本落後上游多少
   python3 <dev-standard>/tools/sync.py report <repo> <repo> …                列出各 repo overlay 段落，標出回填候選（只列不判）
-  python3 <dev-standard>/tools/sync.py shadow --from $DEV_STANDARD [--repo <路徑>]
+  python3 <dev-standard>/tools/sync.py shadow [--from <dev-standard>] [--repo <路徑>]
                                                                               影子導入：不是自己的 repo（雇主的、規則檔同事共用的）用這個。config 設 "mode": "shadow"
                                                                               再 update：不產生區塊、不裝會寫到版控位置的元件；.dev-standard/ 與 .claude-task/ 寫進
                                                                               .git/info/exclude；建 guard.json 骨架；origin 在 GitHub 就把 hooks 元件的 pre-push 寫到
                                                                               .git/hooks/pre-push（本機檔）。規則由全域 ~/.claude 帶，hook 由全域 settings.json 掛
+
+--from 省略時依序看 $DEV_STANDARD、~/.claude/.dev-standard/source.local.json 的 dev_standard；都沒有就報錯。
 
 repo 的設定在 .dev-standard/config.json：
   {"agents_file": "AGENTS.md", "shims": ["CLAUDE.md", "GEMINI.md", ".cursorrules"], "create_missing_shims": false}
@@ -36,6 +41,7 @@ import datetime
 import difflib
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -258,6 +264,9 @@ def plan_components(src: Path, names: list, version: str, fields: dict = None) -
     files, configs, seen = [], [], {}
     for name in names:
         d, man = load_manifest(src, name)
+        if man.get("global"):
+            raise SystemExit(f"元件「{name}」是全域元件，不裝進 repo；從 config.json 的 components 拿掉，"
+                             "改在這個 dev-standard checkout 跑 python3 tools/sync.py wire-global")
         for f in man["files"]:
             fsrc, dst = f.get("src", ""), _safe_rel(f.get("dst", ""), "dst")
             sp = d / _safe_rel(fsrc, "src")
@@ -669,8 +678,11 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def _load_settings(repo: Path) -> dict:
+    return _load_settings_file(repo / SETTINGS_REL)
+
+
+def _load_settings_file(p: Path) -> dict:
     """settings.json 不存在回 {}；壞掉就大聲失敗，絕不覆蓋使用者的檔。"""
-    p = repo / SETTINGS_REL
     if not p.exists():
         return {}
     try:
@@ -697,13 +709,14 @@ def _has_hook(groups: list, marker: str) -> bool:
     return False
 
 
-def merge_settings(data: dict, names: list) -> dict:
+def merge_settings(data: dict, names: list, wires: dict = None) -> dict:
     """把 names 列的元件需要的 hook entry 併進 data：既有的 entry 與順序都保留，已經掛了的不重複，新的接在該事件的最後。"""
+    wires = SETTINGS_WIRES if wires is None else wires
     out = json.loads(json.dumps(data))
     for name in names:
-        if name not in SETTINGS_WIRES:
+        if name not in wires:
             continue
-        event, entry, marker = SETTINGS_WIRES[name]
+        event, entry, marker = wires[name]
         if _has_hook(_event_groups(out, event), marker):
             continue
         out.setdefault("hooks", {}).setdefault(event, []).append(json.loads(json.dumps(entry)))
@@ -712,6 +725,30 @@ def merge_settings(data: dict, names: list) -> dict:
 
 def installed(repo: Path) -> list:
     return [n for n in load_config(repo).get("components", []) if isinstance(n, str)]
+
+
+def _hooks_path_value(repo: Path) -> str:
+    """worktree 自己的 core.hooksPath（app 開的 worktree 設在 config.worktree）優先，沒有再看 repo 的 local。"""
+    for scope in ("--worktree", "--local"):
+        v = _git(repo, "config", scope, "--get", "core.hooksPath").stdout.strip()
+        if v:
+            return v
+    return ""
+
+
+def _hooks_path_ok(repo: Path, cur: str) -> bool:
+    """core.hooksPath 指到本 repo 的 HOOKS_PATH，或（git worktree）指到主 checkout 的 HOOKS_PATH 都算掛好。"""
+    if cur == HOOKS_PATH:
+        return True
+    if not cur or not (repo / cur).is_dir():
+        return False
+    got = (repo / cur).resolve()
+    ok = {(repo / HOOKS_PATH).resolve()}
+    # --git-common-dir 的上層在 submodule／separate-git-dir 不是主 checkout：只會多報，不會漏報
+    common = _git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip()
+    if common:
+        ok.add((Path(common).parent / HOOKS_PATH).resolve())
+    return got in ok
 
 
 def wiring_gaps(repo: Path, local: bool = True) -> list:
@@ -723,9 +760,8 @@ def wiring_gaps(repo: Path, local: bool = True) -> list:
     if "r3-gate" in names and "pr-checks" not in names:
         gaps.append("未掛載：r3-gate 需要 pr-checks 元件（workflow 跑的是 .dev-standard/bin/pr_checks/run.py --gate）；config.json 的 components 加上 pr-checks")
     if "hooks" in names and local:
-        r = _git(repo, "config", "--local", "--get", "core.hooksPath")
-        cur = r.stdout.strip()
-        if cur != HOOKS_PATH and not (cur and (repo / cur).is_dir() and (repo / cur).resolve() == (repo / HOOKS_PATH).resolve()):
+        cur = _hooks_path_value(repo)
+        if not _hooks_path_ok(repo, cur):
             gaps.append(f"未掛載：core.hooksPath（現值：{cur or '未設'}，應為 {HOOKS_PATH}）；跑 sync.py wire")
     hook = repo / HOOKS_PATH / "pre-commit"
     if "hooks" in names and (repo / ".pre-commit-config.yaml").exists() and hook.exists() \
@@ -812,6 +848,103 @@ def cmd_wire(repo: Path, dry_run: bool = False, force_hookspath: bool = False) -
     return 1 if problems else 0
 
 
+GLOBAL_HOOK_DIR = ".claude/hooks/dev-standard"
+GLOBAL_COMPONENT = "loopback-hooks"
+GLOBAL_MODEL = "sonnet"
+REPLACE_MODEL = "opusplan"
+
+
+def global_wires(base: str) -> dict:
+    """全域 hook 的 settings entry。base 是 home 的寫法（"$HOME" 或絕對路徑）；marker 是判重用的相對尾巴，與 base 無關。"""
+    def entry(script: str, timeout: int, matcher: str = None) -> tuple:
+        marker = f"hooks/dev-standard/{script}"
+        # `|| exit 1`：腳本檔不見（checkout 搬走、換分支）時 python3 會回 2，Claude Code 把 2 當成「擋」，
+        # 會卡死所有派工、所有提示與每次 Stop；改成 1 是不擋、stderr 給使用者看。腳本自己從不刻意回 2。
+        cmd = f'python3 "{base}/{GLOBAL_HOOK_DIR}/{script}" || exit 1'
+        group = {"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}
+        if matcher:
+            group = {"matcher": matcher, **group}
+        return group, marker
+
+    out = {}
+    for key, event, script, timeout, matcher in (
+            ("dispatch-gate", "PreToolUse", "dispatch_gate.py", 10, "Agent|Task"),
+            ("correction-nudge", "UserPromptSubmit", "correction_nudge.py", 10, None),
+            ("gate-fail-nudge", "PostToolUse", "gate_fail_nudge.py", 10, "Bash"),
+            # Bash 結束碼非 0 時 Claude Code 可能走 PostToolUseFailure 而不是 PostToolUse，兩個都掛，腳本兩種形狀都認
+            ("gate-fail-nudge-failure", "PostToolUseFailure", "gate_fail_nudge.py", 10, "Bash"),
+            ("loopback-stop", "Stop", "loopback_stop.py", 15, None)):
+        group, marker = entry(script, timeout, matcher)
+        out[key] = (event, group, marker)
+    return out
+
+
+def plan_global_links(src: Path, home: Path) -> tuple:
+    """回 (要建或換的 [(連結, 目標)], 衝突清單)。已經指對的略過；指到別處的 symlink 換掉；同名的真實檔案不蓋。"""
+    d, man = load_manifest(src, GLOBAL_COMPONENT)
+    todo, conflicts = [], []
+    for f in man["files"]:
+        link = home / _safe_rel(f.get("dst", ""), "dst")
+        target = d / _safe_rel(f.get("src", ""), "src")
+        if not target.is_file():
+            raise SystemExit(f"元件「{GLOBAL_COMPONENT}」的來源檔不存在：{target}")
+        if link.is_symlink():
+            if os.readlink(link) != str(target):
+                todo.append((link, target))
+        elif link.exists():
+            conflicts.append(link)
+        else:
+            todo.append((link, target))
+    return todo, conflicts
+
+
+def cmd_wire_global(src: Path, home: Path, dry_run: bool = False) -> int:
+    """把全域 hook 掛進 <home>/.claude：symlink 指向這個 checkout，settings.json 併 hook entry、model 設 sonnet。
+
+    冪等；先寫 .bak；settings.json 壞掉或有同名真實檔案時什麼都不動。
+    """
+    settings_p = home / SETTINGS_REL
+    base = "$HOME" if home.resolve() == Path.home().resolve() else str(home)
+    cur = _load_settings_file(settings_p)
+    new = merge_settings(cur, list(global_wires(base)), global_wires(base))
+    old_model = new.get("model")
+    # 使用者裁定換掉的是 opusplan；之後刻意設的值不悄悄蓋回去（DD-2026-1108）
+    if old_model in (None, REPLACE_MODEL):
+        new["model"] = GLOBAL_MODEL
+    todo, conflicts = plan_global_links(src, home)
+    if conflicts:
+        for c in conflicts:
+            print(f"衝突：{c} 已經有一個不是 symlink 的檔，不蓋；確認後自行移開再跑 wire-global", file=sys.stderr)
+        return 1
+    tag = "[dry-run] " if dry_run else ""
+    if old_model in (None, REPLACE_MODEL):
+        print(f"{tag}model: {old_model if old_model is not None else '(未設)'} → {GLOBAL_MODEL}")
+    elif old_model != GLOBAL_MODEL:
+        print(f"{tag}model: 保留 {old_model}（只換掉 {REPLACE_MODEL} 或未設定）")
+    for link, target in todo:
+        print(f"{tag}{'會建立' if dry_run else '建立'} symlink：{link} → {target}")
+        if not dry_run:
+            link.parent.mkdir(parents=True, exist_ok=True)
+            if link.is_symlink():
+                link.unlink()
+            link.symlink_to(target)
+    if new == cur:
+        print(f"{SETTINGS_REL} 已掛好（沒有要改的）")
+        return 0
+    old_text = settings_p.read_text(encoding="utf-8") if settings_p.exists() else ""
+    new_text = json.dumps(new, indent=2, ensure_ascii=False) + "\n"
+    if dry_run:
+        sys.stdout.writelines(difflib.unified_diff(old_text.splitlines(True), new_text.splitlines(True),
+                                                   f"a/{SETTINGS_REL}", f"b/{SETTINGS_REL}"))
+        return 0
+    settings_p.parent.mkdir(parents=True, exist_ok=True)
+    if settings_p.exists():
+        shutil.copyfile(settings_p, settings_p.with_name(settings_p.name + ".bak"))
+    settings_p.write_text(new_text, encoding="utf-8")
+    print(f"已更新 {settings_p}（原檔備份在 {settings_p.name}.bak）")
+    return 0
+
+
 def cmd_check(repo: Path, local: bool = True) -> int:
     errors = []
     pin = pinned(repo)
@@ -881,6 +1014,30 @@ def cmd_report(repos: list) -> int:
     return 0
 
 
+SOURCE_FILE = ".claude/.dev-standard/source.local.json"
+
+
+def resolve_source(given, env: dict, home: Path) -> tuple:
+    """dev-standard 在哪：--from，否則 $DEV_STANDARD，否則 ~/<SOURCE_FILE> 的 dev_standard。回 (路徑, 出處)。
+
+    路徑每台機器只記一處；dev-standard 搬家時改這一處，各 repo 的升版指令不用動。
+    """
+    if given:
+        return Path(given).expanduser(), "--from"
+    if env.get("DEV_STANDARD"):
+        return Path(env["DEV_STANDARD"]).expanduser(), "$DEV_STANDARD"
+    f = home / SOURCE_FILE
+    if f.exists():
+        try:
+            value = json.loads(f.read_text(encoding="utf-8"))["dev_standard"]
+        except (ValueError, KeyError, TypeError) as e:
+            raise SystemExit(f"{f} 讀不出 dev_standard：{e}")
+        p = Path(value)
+        return (home / p.relative_to("~") if value.startswith("~") else p), str(f)
+    raise SystemExit("找不到 dev-standard：給 --from <路徑>、設 $DEV_STANDARD，"
+                     f'或寫 ~/{SOURCE_FILE}：{{"dev_standard": "<路徑>"}}')
+
+
 def main(argv: list) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
@@ -888,6 +1045,10 @@ def main(argv: list) -> int:
     cmd, rest = argv[0], argv[1:]
     if cmd == "report":
         return cmd_report(rest or ["."])
+    if cmd == "wire-global":
+        home = rest[rest.index("--home") + 1] if "--home" in rest and rest.index("--home") + 1 < len(rest) else None
+        return cmd_wire_global(Path(__file__).resolve().parents[1],
+                               Path(home).expanduser() if home else Path.home(), dry_run="--dry-run" in rest)
 
     def opt(name: str):
         if name in rest:
@@ -904,9 +1065,9 @@ def main(argv: list) -> int:
     if cmd == "wire":
         return cmd_wire(repo, dry_run="--dry-run" in rest, force_hookspath="--force-hookspath" in rest)
     if cmd in ("update", "status", "shadow"):
-        src = opt("--from")
-        if not src:
-            raise SystemExit(f"{cmd} 需要 --from <dev-standard 路徑>")
+        src, how = resolve_source(opt("--from"), dict(os.environ), Path.home())
+        if how != "--from":
+            print(f"dev-standard：{src}（來自 {how}）", file=sys.stderr)
         if cmd == "shadow":
             return cmd_shadow(repo, Path(src))
         return cmd_update(repo, Path(src), adopt="--adopt" in rest) if cmd == "update" else cmd_status(repo, Path(src))
