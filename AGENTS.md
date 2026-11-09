@@ -189,6 +189,8 @@ The block above is the shared dev-standard; below is what differs here.
 - **Worktree**：主 checkout 是正式環境的 bind mount（detached 在 `origin/main`），不在那裡切分支或寫檔；一律開 worktree。
 - **Git hooks**：由 dev-standard 的 hooks 元件提供（`.githooks/pre-push` 擋 main、master、release/*，`.githooks/pre-commit` 串接 `.pre-commit-config.yaml` 的掃描）。
   本 repo 自己的 pre-push 檢查掛在 `.githooks/pre-push.d/project-checks`，內容是呼叫 `scripts/pre_push_check.sh`。`core.hooksPath` 由 `sync.py wire` 設定。
+- **策略名單一定義**：新增、改名、刪名策略名一律走 `src/domain/strategy_names.py`，別處只准 import。棘輪測試 `tests/invariants/test_strategy_name_ssot.py` 只准計數下降。說明見 [docs/05_Quality_Assurance/策略名單一定義-Strategy-Name-SSOT.md](docs/05_Quality_Assurance/策略名單一定義-Strategy-Name-SSOT.md)。
+- **動錢檔必在 CODEOWNERS**：`tests/invariants/test_codeowners_covers_money_paths.py` 守具名動錢檔與所有呼叫券商下單的檔；已知缺口只准縮，補進 CODEOWNERS 由創辦人做。
 - **Lint**：ruff 只擋新增違規。舊違規存成計數 baseline（`.ruff-baseline.json`），不在原始碼加 `noqa`（R3 檔不因 lint 被改）。
   檢查：`python3 scripts/ruff_baseline.py check`；修掉舊違規後跑 `python3 scripts/ruff_baseline.py update` 收緊 baseline。
 
