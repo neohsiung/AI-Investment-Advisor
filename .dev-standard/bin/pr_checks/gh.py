@@ -1,7 +1,7 @@
-# 由 dev-standard v0.19.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.21.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """外殼：用 gh 取 PR 資料、合併、留言。決策不在這裡。
 
-整個套件只有這個檔起子行程，且只有三處：`_run`（gh）、`_git_head`（唯讀的 `git rev-parse HEAD`）與 `run_classifier`（risk.json 指定的 argv）。
+整個套件只有這個檔起子行程，且只有四處：`_run`（gh）、`_git_head`（唯讀的 `git rev-parse HEAD`）、`_git`（準備 base checkout 的 fetch／worktree）與 `run_classifier`（risk.json 指定的 argv）。
 `_run` 只放行固定形狀的子命令（唯讀的 pr view／pr list／api GET，與合併、留言各一種），其餘一律丟 GhError：
 合併永遠是 `pr merge N --merge --match-head-commit <40 位 sha> --delete-branch`，沒有 --squash、沒有 --auto。
 任何一次 gh 失敗都丟例外（run.py 轉成非 0），不會變成「通過」。
@@ -9,9 +9,14 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import re
+import shutil
 import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
 from pr_checks import checks, risk
 
@@ -113,15 +118,92 @@ def _git_head(cwd) -> str:
     return sha
 
 
-def require_base_checkout(base, repo=None, cwd=None) -> None:
-    """本機 checkout 的 HEAD 必須等於 origin 上 base 分支的最新 commit，否則 classifier 等檢查工具跑的是舊版或 PR 的版本。"""
+def base_tip(base, repo=None) -> str:
     tip = _run(["api", f"repos/{_slug(repo)}/branches/{base}", "--jq", ".commit.sha"]).stdout.strip()
     if not SHA40.match(tip):
         raise GhError(f"取不到 {base} 的最新 commit")
-    head = _git_head(cwd)
+    return tip
+
+
+def _git(args, cwd=None) -> str:
+    """git 子命令，失敗原樣丟 GhError（不吞錯）。"""
+    try:
+        r = subprocess.run(["git", *args], capture_output=True, text=True, timeout=TIMEOUT * 4, cwd=cwd)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise GhError(f"git {' '.join(args[:2])} 無法執行：{e}")
+    if r.returncode != 0:
+        raise GhError(f"git {' '.join(args)} 失敗：{r.stderr.strip()[:300]}")
+    return r.stdout.strip()
+
+
+def check_base_dir(base_dir, base, tip) -> None:
+    """--base-dir 必須是乾淨的、HEAD 等於 base 最新的 checkout；在用不用 classifier 之前就驗。"""
+    head = _git_head(str(base_dir))
     if head != tip:
-        raise GhError(f"本機 checkout（{head[:8]}）不是 {base} 的最新（{tip[:8]}）：檢查工具要用 base 的版本跑。"
-                      f"請先切到 {base} 並更新，再跑一次")
+        raise GhError(f"--base-dir（{head[:8]}）不是 {base} 的最新（{tip[:8]}）")
+    if _git(["status", "--porcelain"], cwd=str(base_dir)):
+        raise GhError(f"--base-dir 有未提交的改動：{base_dir}（base 版本要乾淨）")
+
+
+def verify_tools_match(tools_dir, root, bdir) -> None:
+    """跑檢查的程式（pr_checks/*.py）若在本機 repo 內，必須與 base 版逐檔相同；
+    否則 HEAD 在 PR 分支時，被改弱的 merge.py／checks.py 會拿 base 版 classifier 的結果做出合併決定。
+    程式在 repo 外（例如另一份 dev-standard checkout）不受 PR 影響，略過。"""
+    try:
+        rel = Path(tools_dir).resolve().relative_to(Path(root).resolve())
+    except ValueError:
+        return
+    mine = {p.name: p.read_bytes() for p in Path(tools_dir).glob("*.py")}
+    bdir_tools = Path(bdir) / rel
+    theirs = {p.name: p.read_bytes() for p in bdir_tools.glob("*.py")} if bdir_tools.is_dir() else {}
+    if mine != theirs:
+        diff = sorted(n for n in set(mine) | set(theirs) if mine.get(n) != theirs.get(n))
+        raise GhError(f"本機檢查工具（{rel}）與 base 版不同（{', '.join(diff)}）：不用 PR 分支的檢查程式做合併決定。"
+                      f"請切到 base 最新再跑，或把 {rel} 換成 base 的版本")
+
+
+def _cleanup(args, cwd) -> None:
+    """清理步驟的失敗只印出來，不蓋掉主流程的結果或例外。"""
+    try:
+        _git(args, cwd=cwd)
+    except GhError as e:
+        print(f"警告：清理暫存 base checkout 失敗：{e}", file=sys.stderr)
+
+
+@contextlib.contextmanager
+def base_checkout(base, cwd=None, tip=None, base_dir=None, tools_dir=None):
+    """產出一份 HEAD 等於 origin/<base> 最新 commit 的目錄給 classifier 跑（不能是 PR 的版本）。
+
+    - base_dir：呼叫端指定的現成 base checkout，必須乾淨且 HEAD 等於 tip，否則拒絕；不會被刪。
+    - cwd 的 HEAD 已是 tip：直接用 cwd，行為與舊版相同。
+    - 否則（例如 app 開的 worktree 永遠在自己的分支）：fetch 後 `git worktree add --detach` 到暫存目錄，離開時一定移除。
+    只換 classifier 的 cwd 不夠：用了 base checkout 時，本機 pr_checks 程式要與 base 版相同（verify_tools_match）。
+    """
+    here = str(cwd) if cwd else "."
+    tools = tools_dir or Path(__file__).resolve().parent
+    if base_dir is not None:
+        check_base_dir(base_dir, base, tip)
+        verify_tools_match(tools, _git(["rev-parse", "--show-toplevel"], cwd=here), base_dir)
+        yield str(base_dir)
+        return
+    if _git_head(here) == tip:
+        yield here
+        return
+    _git(["fetch", "origin", base], cwd=here)
+    if _git(["rev-parse", f"origin/{base}"], cwd=here) != tip:
+        raise GhError(f"fetch 後 origin/{base} 仍不是 {tip[:8]}（遠端剛有新 commit？再跑一次）")
+    tmp = tempfile.mkdtemp(prefix="pr-checks-base-")
+    target = tmp + "/base"
+    try:
+        _git(["worktree", "add", "--detach", target, f"origin/{base}"], cwd=here)
+        try:
+            verify_tools_match(tools, _git(["rev-parse", "--show-toplevel"], cwd=here), target)
+            yield target
+        finally:
+            _cleanup(["worktree", "remove", "--force", target], here)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+        _cleanup(["worktree", "prune"], here)
 
 
 def default_branch(repo=None) -> str:
@@ -200,8 +282,8 @@ def repo_owner(repo=None) -> str:
     return out
 
 
-def fetch(number, repo=None, ci_mode=False, cfg=None, local_automerge_off=False, cwd=None) -> checks.PR:
-    """cwd：base 分支 checkout 的根目錄（classifier 在這裡跑）。非 CI 模式會先確認這份 checkout 就是 base 的最新。"""
+def fetch(number, repo=None, ci_mode=False, cfg=None, local_automerge_off=False, cwd=None, base_dir=None) -> checks.PR:
+    """cwd：本機 repo 根目錄。非 CI 模式 classifier 跑在 base 最新版的 checkout：cwd 已是就直接用，否則自備暫存 worktree（或用 base_dir）。"""
     fields = "number,title,body,headRefOid,baseRefName,isDraft,mergeable,state,changedFiles"
     if not ci_mode:
         fields += ",statusCheckRollup,comments"
@@ -209,8 +291,9 @@ def fetch(number, repo=None, ci_mode=False, cfg=None, local_automerge_off=False,
     if d["state"] != "OPEN":
         raise GhError(f"PR #{number} 不是 OPEN（{d['state']}）")
     base = d["baseRefName"]
-    if not ci_mode:
-        require_base_checkout(base, repo, cwd)
+    tip = base_tip(base, repo) if not ci_mode else None
+    if base_dir is not None and not ci_mode:
+        check_base_dir(base_dir, base, tip)               # 在用不用 classifier 之前就驗
     files = pr_files(number, repo, d.get("changedFiles"))
     bootstrap = False
     if cfg is None:
@@ -226,7 +309,13 @@ def fetch(number, repo=None, ci_mode=False, cfg=None, local_automerge_off=False,
     if risk.tool_changed(files, cfg):                     # PR 改了檢查工具：不跑 PR 版的 classifier，直接 R3、要人合併
         level = "R3"
     else:
-        level = run_classifier(cfg["classifier"], files, cwd=cwd) if cfg["classifier"] else None
+        level = None
+        if cfg["classifier"]:
+            if ci_mode:
+                level = run_classifier(cfg["classifier"], files, cwd=cwd)
+            else:
+                with base_checkout(base, cwd, tip, base_dir) as bdir:
+                    level = run_classifier(cfg["classifier"], files, cwd=bdir)
     dbranch = None
     others, ci, comments, off = {}, [], [], False
     trusted = tuple(cfg["trusted_authors"]) or (repo_owner(repo),)
