@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.19.1 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.21.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """本機入口：取 PR 資料、跑七項檢查、印每項結果、依風險級決定能不能合併。不需要 GitHub Actions。
 
   python3 .dev-standard/bin/pr_checks/run.py <PR>             跑全部檢查，印表與決定（不合併）
@@ -15,7 +15,9 @@
 --gate 不要求本機 checkout 是 base 最新：pull_request_target 的 checkout 就是事件當下的 base，classifier 跑的是 base 的程式。
 風險級設定讀 base 分支的 .dev-standard/risk.json（離線模式讀 --risk-file，預設 ./.dev-standard/risk.json）。
 請在 repo 根目錄執行；根目錄有 .automerge-off 也會拒絕合併。
-非 --ci 模式要求本機 checkout 的 HEAD 就是 origin 上 base 分支的最新 commit（classifier 在這裡跑，不能是 PR 的版本）；
+非 --ci 模式的 classifier 要用 origin 上 base 最新 commit 的版本跑（不能是 PR 的版本）：本機 HEAD 已是就直接用；
+不是（例如 app 開的 worktree 在自己的分支）就 fetch 後自備暫存 worktree，跑完移除。--base-dir 可改指定現成的 base checkout（HEAD 不是最新就拒絕）。
+--repo-root 指定本機 repo（預設從目前目錄往上找）；
 PR 改到檢查工具本身（.dev-standard/bin/pr_checks/**、risk.json、classifier 腳本）一律當 R3：要人合併，--ci 也一樣。
 bootstrap：base 還沒有 risk.json、而本 PR 加入它時，暫用本 PR 版本評估（印警告），一律要人合併、--ci 不算工具失敗；PR 沒加它則照舊是工具失敗。
 PR 的 base 不是 repo 預設分支、或改動檔清單被截斷（>=3000 或筆數對不上 changedFiles）也不自動合併。
@@ -81,6 +83,8 @@ def main(argv=None) -> int:
     ap.add_argument("--ci", action="store_true")
     ap.add_argument("--gate", action="store_true")
     ap.add_argument("--repo")
+    ap.add_argument("--repo-root", help="本機 repo 根目錄（預設：從目前目錄往上找 .git）")
+    ap.add_argument("--base-dir", help="現成的 base checkout（HEAD 必須等於 base 最新，否則拒絕）；省略時自動備一份暫存的")
     ap.add_argument("--body-file")
     ap.add_argument("--files-file")
     ap.add_argument("--risk-file", default=".dev-standard/risk.json")
@@ -94,6 +98,8 @@ def main(argv=None) -> int:
         ap.error("要給 PR 編號，或離線的 --body-file／--files-file")
     if a.merge and a.ci:
         ap.error("--ci 不合併")
+    if a.base_dir and (a.ci or offline or a.gate):
+        ap.error("--base-dir 只用在本機完整檢查（不能搭 --ci、--gate 或離線模式）")
     if a.gate and (a.merge or a.ci or offline):
         ap.error("--gate 不能跟 --merge、--ci 或離線模式一起用")
     if a.gate:
@@ -103,8 +109,9 @@ def main(argv=None) -> int:
         if offline:
             pr = offline_pr(a.body_file, a.files_file, a.risk_file)
         else:
-            local_off = (repo_root() / ".automerge-off").exists()
-            pr = gh.fetch(a.pr, a.repo, ci_mode=static, local_automerge_off=local_off, cwd=str(repo_root()))
+            root = Path(a.repo_root).resolve() if a.repo_root else repo_root()
+            local_off = (root / ".automerge-off").exists()
+            pr = gh.fetch(a.pr, a.repo, ci_mode=static, local_automerge_off=local_off, cwd=str(root), base_dir=a.base_dir)
         results = checks.run_all(pr, ci_mode=static)
     except Exception as e:  # noqa: BLE001 — 取資料／讀設定／classifier 失敗＝工具失敗，回 2，絕不當成通過
         print(f"工具失敗：{e}", file=sys.stderr)

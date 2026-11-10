@@ -35,7 +35,7 @@ Rules every AI coding agent must follow, whatever its capability level:
    每批開發結束必須交付讀者可用的技術文件並統整 `docs/`（或明確聲明「無需更新」與理由）；行為描述須附驗證指令。
 <!-- GENERATED:MISSION:END -->
 
-<!-- DEV-STANDARD:BEGIN v0.19.1 -->
+<!-- DEV-STANDARD:BEGIN v0.21.0 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
@@ -67,7 +67,7 @@ Rules every AI coding agent must follow, whatever its capability level:
 
 **模型分層**
 - 選模型看「錯了誰會發現、多久發現」，不看角色。內容已定稿、結果能機械讀回比對的用 Haiku：代送已核准的訊息、提醒、查找。有規則可循、錯了有讀回、閘門或下游檢查會發現的用 Sonnet：清單盤點、照規則核可、報表、程式實作、調查型 subagent、多數排程。人在場一起想、產出離開對話而且只有人讀到才會發現錯的用 Opus：規劃、管理判斷、給人看的文字、跨來源整合。
-- 寫程式的 session：主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級；深度 1，同時 ≤4 個；兩個 writer 不碰同一檔。
+- 主 session 預設 Sonnet（全域 `settings.json` 的 `model: sonnet`）；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級；深度 1，同時 ≤4 個；兩個 writer 不碰同一檔。
 - 主 session 的 context 超過 400K 就交接開新 session，交接 ≤20K，帶任務、失敗的檢查與 3 個關鍵檔。6 回合內判斷是不是難題，要換 Opus 也開新 session，不在長 context 中途換模型。
 - 投入程度（effort）跟著同一個判準走：照稿執行 `low`；有規則可循的排程、查找、調查 `medium`；程式實作與人在場的互動判斷 `high`；advisor、architect、同一件事第二次失敗 `xhigh`；`max` 跟 Fable 一樣只在使用者點名時用。effort 主要影響速度與品質，成本大頭是模型與 context 長度。
 - 開新 session、subagent、排程一律寫明 model 與 effort，不繼承主 session；內建的 general-purpose、Explore、Plan 也要帶 `model`。排程沒設模型時跟著 app 當下的預設模型跑，所以每支排程都要在 app 裡設定。
@@ -75,6 +75,7 @@ Rules every AI coding agent must follow, whatever its capability level:
 
 **session 編排**
 - 一張卡（issue）一個 session。名稱 `<範圍>/<白話描述>（#N）`，範圍由 repo overlay 定；沒有卡的唯讀查詢省略卡號。
+- 子卡：工作拆成兩塊以上可各自落地的部分，或要派 session、會寫檔的 subagent 去做其中一塊，就在母卡下開 sub-issue（`gh api -X POST repos/<owner>/<repo>/issues/<母卡>/sub_issues -F sub_issue_id=<子卡的 id>`），session 名帶子卡號；唯讀查找不開。不在 repo 裡的資料夾（例：`~/Work`）開的 session，卡開在 dev-standard repo，標 label `scope:workspace`。
 - 排程（routine）taskId `<週期>-<範圍>-<動作>`，週期用 `daily|weekly|monthly|hourly|once`；title `<週期中文>｜<範圍>｜<白話動作>`。檢查 `tools/routine_names.py`（DD-2026-1107）。
 - 耐久的內容只放 issue 或 PR 留言。跨 session 訊息只當叫醒鈴：`PING <repo>#<N> <動作> <head sha 或 無>｜一句白話`。`start` 讀卡、留 CLAIM、照驗收條件做；`resume` 讀最新留言接著做；`review` 審那個 head，結果留在 PR；`stop` 已做的落地或留 `DISCARD <分支>`，過封存四條後停手。協定生效前開的 session，第一次先送完整說明再用 PING。
 - 接手第一件事在卡上留 `CLAIM <session id> <分支> <model> <ISO 時間>`。兩個 CLAIM 時早的有效，晚的留 `YIELD` 停手。同一張卡同一個動作的 PING 再來一次，`review` 還要同一個 head，卡上已有自己的 CLAIM 就只回進度。
@@ -109,11 +110,14 @@ Rules every AI coding agent must follow, whatever its capability level:
 **優化 Personal 與算力**
 - 回報裡的票卡、PR、文件、log 都寫成 `[簡述](網址)`，每筆佐證一句簡述；不寫裸編號、裸網址。送出前跑 `tools/link_lint.py`。公司網域的網址樣板放本機 `~/.claude/.dev-standard/links.json`，不進個人 repo。
 - 工作分給誰，先跑 `tools/route.py`：判斷與需要對話脈絡的留在 Claude；機械可比對的用腳本或本機 ollama；獨立、唯讀、輸出能驗的才外派 `agy`。資料只送到帳號歸屬相同的執行者（公司資料走公司帳號，個人資料走個人帳號），不跨帳號；每次用之前現探測，探測失敗要印出來。
+- 派 subagent 時 prompt 帶 `route.py` 印出的 `ROUTE:` 行，呼叫寫明 `model`（具名 agent 由定義檔帶）與 `effort`；缺任一項，`dispatch-gate` hook 擋下要補（DD-2026-1108）。
 - 換手門檻照〈模型分層〉的 context 上限；達門檻且功能告一段落時，用 `tools/handoff.py` 產承接包（≤20K）並開新 session；判斷不了算不算告一段落就問人。
 - 「優化 Personal」的順序：`personal_audit.py`、`adoption_audit.py`、`link_lint.py`，再依路由分工；每台機器各跑一次。
 
 **回填**
 - 在這個 repo 發展出跟 repo 無關的好做法，PR 的 `DERIVED:` 標「通用：是」，同一週對 dev-standard 開回填 PR。只在這個 repo 成立的留在 overlay。
+- 使用者說「回填」：回看這個 session，跟本 repo 無關的開發做法對 dev-standard 開分支與 PR，判斷原則照決策棧寫入程序寫進 decision-stack；去識別化照 dev-standard §10，都不合併；沒有就回「沒有可回填」。這台沒接決策棧就只做前半。
+- 回頭優化不等人說「回填」：使用者糾正時 `correction-nudge` 注入提醒，已知閘門轉紅時 `gate-fail-nudge` 注入提醒；同一輪照決策棧寫入程序寫 `judgment_case` 或 `self_caught`，並在回填帳本（`~/.claude/.dev-standard/backfill-ledger.tsv`）記一行，門檻不成立也記一行，種類 `skip`、去處寫理由。收尾時有提醒卻沒記，`loopback-stop` 擋一次，不迴圈（DD-2026-1108）。
 - 做開發流程工具前先查 dev-standard；通用的就做在 dev-standard，repo 差異寫在 `.dev-standard/*.json`。
 - 雇主的 repo、規則檔同事共用的 repo 用影子導入，指令是 `sync.py shadow`：規則由全域 `~/.claude` 帶，本 repo 只放 `.dev-standard/` 與 `.claude-task/`，兩者都在 `.git/info/exclude`；不碰任何追蹤檔，不設 `core.hooksPath`。在那裡學到的通用做法記進回填帳本，當週回填。
 <!-- DEV-STANDARD:END -->

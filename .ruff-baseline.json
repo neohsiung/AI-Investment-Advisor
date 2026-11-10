@@ -1,6 +1,6 @@
 {
  "ruff_version": "0.11.7",
- "total": 7365,
+ "total": 7364,
  "counts": {
   ".agent/skills/ci-test/scripts/ci_test.py::BLE001": 2,
   ".agent/skills/ci-test/scripts/ci_test.py::E501": 2,
@@ -1173,7 +1173,6 @@
   "src/services/litellm_spend_service.py::BLE001": 1,
   "src/services/llama_index_service.py::B904": 1,
   "src/services/llama_index_service.py::BLE001": 4,
-  "src/services/llama_index_service.py::E501": 1,
   "src/services/llama_index_service.py::F401": 6,
   "src/services/llama_index_service.py::F841": 2,
   "src/services/llm_agent_override_service.py::BLE001": 7,

@@ -41,7 +41,7 @@
 
 **模型分層**
 - 選模型看「錯了誰會發現、多久發現」，不看角色。內容已定稿、結果能機械讀回比對的用 Haiku：代送已核准的訊息、提醒、查找。有規則可循、錯了有讀回、閘門或下游檢查會發現的用 Sonnet：清單盤點、照規則核可、報表、程式實作、調查型 subagent、多數排程。人在場一起想、產出離開對話而且只有人讀到才會發現錯的用 Opus：規劃、管理判斷、給人看的文字、跨來源整合。
-- 寫程式的 session：主 session 用 Sonnet；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級；深度 1，同時 ≤4 個；兩個 writer 不碰同一檔。
+- 主 session 預設 Sonnet（全域 `settings.json` 的 `model: sonnet`）；Opus 當 advisor，用在三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前。角色：查找 `scout`，實作 `implementer`，審查 `reviewer`，卡關設計 `architect`。先用便宜的，失敗才升級；深度 1，同時 ≤4 個；兩個 writer 不碰同一檔。
 - 主 session 的 context 超過 400K 就交接開新 session，交接 ≤20K，帶任務、失敗的檢查與 3 個關鍵檔。6 回合內判斷是不是難題，要換 Opus 也開新 session，不在長 context 中途換模型。
 - 投入程度（effort）跟著同一個判準走：照稿執行 `low`；有規則可循的排程、查找、調查 `medium`；程式實作與人在場的互動判斷 `high`；advisor、architect、同一件事第二次失敗 `xhigh`；`max` 跟 Fable 一樣只在使用者點名時用。effort 主要影響速度與品質，成本大頭是模型與 context 長度。
 - 開新 session、subagent、排程一律寫明 model 與 effort，不繼承主 session；內建的 general-purpose、Explore、Plan 也要帶 `model`。排程沒設模型時跟著 app 當下的預設模型跑，所以每支排程都要在 app 裡設定。
@@ -49,6 +49,7 @@
 
 **session 編排**
 - 一張卡（issue）一個 session。名稱 `<範圍>/<白話描述>（#N）`，範圍由 repo overlay 定；沒有卡的唯讀查詢省略卡號。
+- 子卡：工作拆成兩塊以上可各自落地的部分，或要派 session、會寫檔的 subagent 去做其中一塊，就在母卡下開 sub-issue（`gh api -X POST repos/<owner>/<repo>/issues/<母卡>/sub_issues -F sub_issue_id=<子卡的 id>`），session 名帶子卡號；唯讀查找不開。不在 repo 裡的資料夾（例：`~/Work`）開的 session，卡開在 dev-standard repo，標 label `scope:workspace`。
 - 排程（routine）taskId `<週期>-<範圍>-<動作>`，週期用 `daily|weekly|monthly|hourly|once`；title `<週期中文>｜<範圍>｜<白話動作>`。檢查 `tools/routine_names.py`（DD-2026-1107）。
 - 耐久的內容只放 issue 或 PR 留言。跨 session 訊息只當叫醒鈴：`PING <repo>#<N> <動作> <head sha 或 無>｜一句白話`。`start` 讀卡、留 CLAIM、照驗收條件做；`resume` 讀最新留言接著做；`review` 審那個 head，結果留在 PR；`stop` 已做的落地或留 `DISCARD <分支>`，過封存四條後停手。協定生效前開的 session，第一次先送完整說明再用 PING。
 - 接手第一件事在卡上留 `CLAIM <session id> <分支> <model> <ISO 時間>`。兩個 CLAIM 時早的有效，晚的留 `YIELD` 停手。同一張卡同一個動作的 PING 再來一次，`review` 還要同一個 head，卡上已有自己的 CLAIM 就只回進度。
@@ -83,11 +84,14 @@
 **優化 Personal 與算力**
 - 回報裡的票卡、PR、文件、log 都寫成 `[簡述](網址)`，每筆佐證一句簡述；不寫裸編號、裸網址。送出前跑 `tools/link_lint.py`。公司網域的網址樣板放本機 `~/.claude/.dev-standard/links.json`，不進個人 repo。
 - 工作分給誰，先跑 `tools/route.py`：判斷與需要對話脈絡的留在 Claude；機械可比對的用腳本或本機 ollama；獨立、唯讀、輸出能驗的才外派 `agy`。資料只送到帳號歸屬相同的執行者（公司資料走公司帳號，個人資料走個人帳號），不跨帳號；每次用之前現探測，探測失敗要印出來。
+- 派 subagent 時 prompt 帶 `route.py` 印出的 `ROUTE:` 行，呼叫寫明 `model`（具名 agent 由定義檔帶）與 `effort`；缺任一項，`dispatch-gate` hook 擋下要補（DD-2026-1108）。
 - 換手門檻照〈模型分層〉的 context 上限；達門檻且功能告一段落時，用 `tools/handoff.py` 產承接包（≤20K）並開新 session；判斷不了算不算告一段落就問人。
 - 「優化 Personal」的順序：`personal_audit.py`、`adoption_audit.py`、`link_lint.py`，再依路由分工；每台機器各跑一次。
 
 **回填**
 - 在這個 repo 發展出跟 repo 無關的好做法，PR 的 `DERIVED:` 標「通用：是」，同一週對 dev-standard 開回填 PR。只在這個 repo 成立的留在 overlay。
+- 使用者說「回填」：回看這個 session，跟本 repo 無關的開發做法對 dev-standard 開分支與 PR，判斷原則照決策棧寫入程序寫進 decision-stack；去識別化照 dev-standard §10，都不合併；沒有就回「沒有可回填」。這台沒接決策棧就只做前半。
+- 回頭優化不等人說「回填」：使用者糾正時 `correction-nudge` 注入提醒，已知閘門轉紅時 `gate-fail-nudge` 注入提醒；同一輪照決策棧寫入程序寫 `judgment_case` 或 `self_caught`，並在回填帳本（`~/.claude/.dev-standard/backfill-ledger.tsv`）記一行，門檻不成立也記一行，種類 `skip`、去處寫理由。收尾時有提醒卻沒記，`loopback-stop` 擋一次，不迴圈（DD-2026-1108）。
 - 做開發流程工具前先查 dev-standard；通用的就做在 dev-standard，repo 差異寫在 `.dev-standard/*.json`。
 - 雇主的 repo、規則檔同事共用的 repo 用影子導入，指令是 `sync.py shadow`：規則由全域 `~/.claude` 帶，本 repo 只放 `.dev-standard/` 與 `.claude-task/`，兩者都在 `.git/info/exclude`；不碰任何追蹤檔，不設 `core.hooksPath`。在那裡學到的通用做法記進回填帳本，當週回填。
 <!-- AGENT-RULES:END -->
@@ -124,7 +128,7 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 
 各 repo 把 R2／R3 路徑樣式寫在 `.dev-standard/risk.json`（元件 pr-checks，缺才從範例建，sync 不覆蓋），並寫進 `.github/CODEOWNERS`。能用程式判定的就用程式判定：risk.json 的 `classifier` 可指定一支命令（例：hermes `scripts/dev/lane.py` 用 import 閉包判斷會不會碰到下單腳本），它的結論與路徑樣式取高，只會抬高、不會壓低路徑樣式判出的 R3。
 
-**R3 由路徑判定，不靠宣告**：私有免費 repo 沒有分支保護，GitHub 也不執行 CODEOWNERS，所以把交易相關改動標成 R1 就能被自動合併（litov 2026-10 盤點）。pr-checks 的 `computed ＝ max(各路徑的級, classifier)`，宣告低於 computed 判紅燈並點名路徑；合併、reviewer 條件、R3 拒絕都看 `max(宣告, computed)`。設定檔一律讀 base 分支的版本，PR 不能在同一個改動裡拿掉自己的 R3 樣式。檢查工具評估 PR 時不能用 PR 自己的程式：改到 `.dev-standard/bin/pr_checks/**`、`risk.json` 或 classifier 腳本的 PR 一律要人合併；本機 checkout 必須是 base 最新；base 不是預設分支或改動檔清單被截斷的 PR 也不自動合併。
+**R3 由路徑判定，不靠宣告**：私有免費 repo 沒有分支保護，GitHub 也不執行 CODEOWNERS，所以把交易相關改動標成 R1 就能被自動合併（litov 2026-10 盤點）。pr-checks 的 `computed ＝ max(各路徑的級, classifier)`，宣告低於 computed 判紅燈並點名路徑；合併、reviewer 條件、R3 拒絕都看 `max(宣告, computed)`。設定檔一律讀 base 分支的版本，PR 不能在同一個改動裡拿掉自己的 R3 樣式。檢查工具評估 PR 時不能用 PR 自己的程式：改到 `.dev-standard/bin/pr_checks/**`、`risk.json` 或 classifier 腳本的 PR 一律要人合併；classifier 用 base 最新版的 checkout 跑（本機 HEAD 不是時自備暫存 worktree，且本機檢查程式須與 base 版相同，不要求切回 main）；base 不是預設分支或改動檔清單被截斷的 PR 也不自動合併。
 
 合併表、熔斷開關與來由見 `docs/design/DD-2026-1031-merge-by-risk.md`。
 
@@ -133,7 +137,7 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 | 規則 | 為什麼 | 怎麼檢查 |
 |---|---|---|
 | 選模型看錯了誰會發現：內容已定稿、能機械讀回比對的用 Haiku；有規則可循、錯了有讀回或閘門會發現的用 Sonnet；人在場一起想、只有人讀到才會發現錯的用 Opus | DD-2026-1105：兩週用量量測，舊規則「主 session 一律 Sonnet、依角色分層」對不上實際工作。管理型互動佔成本大宗，寫程式的角色幾乎沒被叫過；Sonnet 跑規則明確的高頻清單排程數百次全部成功；Opus 與 Sonnet 的被糾正比例看不出差別 | `tools/model_usage.py` 的「排程觸發 vs 人工」與各模型佔比；排程逐一用 run 的 `model` 欄位對照 DD 的對照表 |
-| 寫程式的 session：主 session 用 Sonnet，Opus 當 advisor；查找類 subagent 用 Haiku，實作與審查類用 Sonnet；深度 1、同時 ≤4 | hermes DD-2026-1009：實測 cache 讀取兩個模型同價，長 session 裡 Opus 每回合只貴 1.3–1.9 倍，但寫程式的 repo 整體 Opus 佔比要壓在 40% 以下 | 在寫程式的 repo 跑 `tools/model_usage.py --root <該 repo 的 projects 目錄>`：Opus 佔比 <40% |
+| 主 session 預設 Sonnet（全域 `settings.json` 的 `model: sonnet`），Opus 當 advisor；查找類 subagent 用 Haiku，實作與審查類用 Sonnet；深度 1、同時 ≤4 | hermes DD-2026-1009：實測 cache 讀取兩個模型同價，長 session 裡 Opus 每回合只貴 1.3–1.9 倍，但寫程式的 repo 整體 Opus 佔比要壓在 40% 以下。2026-11-08 發現全域預設是 `opusplan`，與這條相反且沒有訊號，使用者裁定改 `sonnet`（DD-2026-1108） | 在寫程式的 repo 跑 `tools/model_usage.py --root <該 repo 的 projects 目錄>`：Opus 佔比 <40% |
 | advisor 三個時點：照計畫動手前、同一件事第二次失敗、宣告完成前；context >150K 改用 reviewer | 同上 | session 紀錄裡有沒有這三次呼叫 |
 | 主 session context 超過 400K 就交接開新 session，交接 ≤20K；6 回合內判斷是不是難題，換 Opus 也開新 session | DD-2026-1105：成本九成以上是 cache 讀寫，輸出不到一成；最大 context 超過 500K 的少數 session 吃掉大半成本。長度乘單價，只換模型不換長度省得有限。300K 中途換模型光重建快取約 1.5 美元 | `tools/model_usage.py` 的「超過上限的 session 數」；交接檔大小 |
 | 角色：`scout`（haiku 查找）、`implementer`（sonnet 實作）、`reviewer`（sonnet 審查）、`architect`（opus，卡關才用） | 難度決定模型，升級兩段式，不預設用強模型 | 定義檔正本在 `templates/agents/`，全域以 symlink 接進 `~/.claude/agents/`，所有專案共用，不在各 repo 複製 |
@@ -246,6 +250,8 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 
 - **判準：** 一個做法換到另一個 repo 也成立，就屬於這裡；只在原 repo 成立的（正式環境路徑、特定檔名、產品名）留在 overlay。
 - **觸發：** PR 的 `DERIVED:` 行標「通用：是」，同一週對 dev-standard 開回填 PR，連回原 PR。
+- **觸發詞：** 使用者在任何專案 session 說「回填」，就是要那個 session 回看自己做過的事，把跟本 repo 無關的收斂回正本：開發流程進 dev-standard，判斷原則進 decision-stack。一個詞就夠，細節由這一節與決策棧寫入程序帶，不必每次重講。從證據出發，不是「去優化共用資料夾」：後者沒有門檻，又會讓多個 session 同時改同一個共用 repo。沒有可回填也要明說，不然分不出「看過了沒有」與「沒看」。設計見 `docs/design/DD-2026-1107-backfill-trigger.md`。檢查：`tests/test_standard_doc.py` 確認精簡版那一行帶得出兩個去處、不合併、沒有也回答。
+- **自動觸發：** 「回填」與 `DERIVED:` 都要有人或 PR 想起來。session 中途被糾正、或檢查工具推翻原本的做法，正是決策棧 `judgment_case` 與 `self_caught` 的定義，那一刻卻沒有任何東西提醒；2026-11-08 量近期決策棧寫入，以使用者引出的為主，自己抓到的很少。改由三支 hook 補：`correction-nudge`（UserPromptSubmit，比對糾正語，只注入不擋）、`gate-fail-nudge`（PostToolUse Bash，`green.sh`、`stack lint`、`pr_checks`、pytest 非零退出時注入）、`loopback-stop`（Stop，本 session 有提醒但回填帳本沒有對應的一行就擋一次，`stop_hook_active` 為真時放行）。帳本 `~/.claude/.dev-standard/backfill-ledger.tsv` 一行五欄：ISO 時間、session id、repo、種類（`judgment_case`、`self_caught`、`backfill`、`skip`）、去處（分支或 PR，`skip` 寫理由）。設計見 `docs/design/DD-2026-1108-subcard-and-mechanical-triggers.md`。檢查：`tests/test_standard_doc.py` 確認精簡版帶得出三支 hook 與同一輪寫完；hook 行為由各自的測試管。
 - **工具：** `tools/sync.py report <repo>…` 列出各 repo overlay 的段落，標出跨 repo 重複的標題（通用候選）與跟正本重名的段落（可能是漂移）。它只列不判，「是不是通用」由人決定。影子導入的 repo 沒有 overlay，那邊的 PR 也沒有 `DERIVED:` 行，候選改從導入者自己的回填帳本來。帳本是本機檔，不進任何 repo，格式由導入者的全域設定定。
 - **來由的寫法：** 來源不是本 repo 清單內的專案時，寫成「某 Rails 專案 2026-10」這種形狀：只留技術類型與年月，不寫公司、專案或 repo 名、票號、人名、MR 編號。0.4.0 的來源是某 Rails 專案 2026-10 一批 PR 的送審：§1 的 force 與搬檔、§4 的三條、§8 與 §9 各一條。
 - **定期回看：** 每月一次，或累積 3 個候選時。
@@ -258,6 +264,7 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 | 規則 | 為什麼 | 怎麼檢查 |
 |---|---|---|
 | 一張卡一個 session；名稱 `<範圍>/<白話描述>（#N）`，範圍由 repo overlay 定；會寫檔的 session 有自己的 worktree | litov 2026-11-01：長壽 session 累積到 14 萬到 26 萬 token，被鎖在開工時的模型；同一個產品有兩個寫入者寫同一個檔。一卡一 session 讓 context、分支、PR 一一對應 | `list_sessions` 的 title 符合 `/（#\d+）$`，無卡的唯讀查詢除外；每個會寫檔的 session 的 cwd 是 worktree |
+| 工作拆成兩塊以上可各自落地的部分，或要派 session、會寫檔的 subagent 去做其中一塊，就在母卡下開 sub-issue，session 名帶子卡號；唯讀查找不開。不在 repo 裡的資料夾開的 session，卡開在 dev-standard repo，標 `scope:workspace` | 2026-11-08 量近 15 個 session：有開卡，但 sub-issue 一次都沒有，因為規則只寫了「一張卡一個 session」，沒寫拆出來的幾塊掛哪裡；`~/Work` 這種不是 repo 的資料夾沒有卡可開，整段協定失效。DD-2026-1108 | `gh api repos/<owner>/<repo>/issues/<母卡>/sub_issues --jq length` 大於 0；派出的 session 名稱帶的卡號是母卡的子卡 |
 | 排程（routine）taskId 用 `<週期>-<範圍>-<動作>`，週期只用 `daily|weekly|monthly|hourly|once`；title 用 `<週期中文>｜<範圍>｜<白話動作>` | litov 2026-11-07：命名條款只管 session，六個排程出現四種順序、兩個沒 title；taskId 建了不能改，亂名會一直留著。DD-2026-1107 | `python3 tools/routine_names.py` 新增違規回 1；2026-11-07 前已結束的兩個舊名列在腳本 `LEGACY` |
 | 耐久的內容只放 issue 或 PR 留言。跨 session 訊息只當叫醒鈴，一行 `PING <repo>#<N> <動作> <head sha 或 無>｜一句白話` | 跨 session 訊息沒有已讀回執，對方忙時會晚讀或沒讀；內容放在 issue 上，誰晚讀都讀到同一份。dev-standard 0.7.0 推出時，確認 loop 的回報與交錯的更正都在訊息裡，對不上哪一則是最新的 | 回報、確認版、裁示都找得到對應的 PR 或 issue 留言連結 |
 | 四個動作：`start` 讀卡、留 CLAIM、照卡上的驗收條件做；`resume` 讀卡上最新留言接著做；`review` 審 PING 帶的那個 head，結果留在 PR；`stop` 已做的落地或留 `DISCARD <分支>`，過完成四條後停手 | litov round1 F8：只帶卡號的鈴，協定生效前開的 session 看不懂。第一次接觸先送一則完整說明，之後才用 PING | PING 的動作是四個之一；舊 session 第一則訊息附卡號與本節位置，這項人工抽查 |
@@ -276,6 +283,7 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 | 票卡、PR、文件、log 都寫成 `[簡述](網址)`；不寫裸編號、裸網址；連結文字不可只是編號或網址。公司網域的網址樣板只放本機未追蹤的 `links.json`；`links.json` 宣告過的前綴（含單字母）才當票號，兩個系統共用的前綴列進 `ambiguous`，一律不自動換、標「歧義票號」由人指定 | 裸編號讓讀者找不到出處；網域屬公司識別，進個人 repo 會被公私閘門擋 | `python3 tools/link_lint.py <檔案>` 回 0；`--ratio` 印裸的比例當基線 |
 | link_lint 的掃描範圍明寫：只掃落成檔案的產出（PR 描述與留言草稿、承接包、稽核報告、規則文件自己）。對話裡直接講的話不在範圍內 | 規則的作用範圍等於檢查的掃描範圍；掃不到的產出會停在訂規則之前的樣子 | 對 STANDARD.md、全域 CLAUDE.md 跑 link_lint 為 0（CHANGELOG 的歷史條目不在內，碰到那段再改）；上線前後各量一次 `--ratio` |
 | 工作外派前先 `tools/route.py`：判斷與需要對話脈絡的留 Claude；機械可比對的用腳本或本機；獨立、唯讀、輸出能驗的才外派 | 出錯誰會發現決定該付多少錢：機器會報的用便宜的，只有人讀到才發現的用強的 | `tests/test_route.py`：判斷類不外派、探測失敗有輸出 |
+| 派 subagent 時 prompt 帶 `route.py` 印的 `ROUTE:` 行，呼叫寫明 `model`（具名 agent 由定義檔帶）與 `effort`；缺任一項由 PreToolUse hook `dispatch-gate` 擋下，放行時記進 `route-log.tsv` | 2026-11-08 量近 15 個 session：`route.py` 一次都沒執行、`route-log.tsv` 不存在，effort 只有約三成帶；規則只寫在文字裡，派工那一刻沒有東西提醒。同時發現 `route.py` 寫死的本機模型名與實際安裝不符，地端路徑一律退回 Claude，也沒有訊號。DD-2026-1108 | hook 的測試：缺 `ROUTE:`、缺 effort、內建 agent 缺 model 各回 deny；`route-log.tsv` 有紀錄 |
 | 資料只送到帳號歸屬與資料歸屬相同的執行者；本機沒宣告 `agy_account` 就不外派 | 公司資料送個人帳號是資料政策問題，不是品質問題 | `tests/test_route.py`：公司資料不回個人 agy，反之亦然，未宣告不回 agy |
 | 外派前現探測 `ollama list`、`agy models`；探測失敗列出來，不默默換執行者；模型清單不信表 | 模型清單會與實際漂移，漂移前沒有訊號 | `tests/test_route.py`：探測失敗出現在注意欄 |
 | 每台機器能用的執行者本來就不同：`route.py --check-agy` 真的呼叫一次 agy，把可用與否與原因寫進該機器的 `routes.local.json`（`agy_available`、`agy_note`、`agy_checked_on`）；註記不可用就不外派 | `agy models` 列得出清單不代表帳號有資格呼叫，某台公司機實測回「not eligible」；只靠清單探測會建議一個用不了的執行者 | `tests/test_route.py`：註記不可用不外派並印原因、`verify_agy` 偵測資格失敗與非 0 結束碼 |
