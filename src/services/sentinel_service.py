@@ -21,7 +21,7 @@ from src.repositories.sentinel_repository import AlchemySentinelRepository
 from src.repositories.snapshot_repository import AlchemySnapshotRepository
 from src.services.settings_service import SettingsService
 from src.services.risk_keyword_service import RiskKeywordService
-from src.services import council_halt_gate, keyword_shadow_recorder
+from src.services import automated_trading_service as _ats, council_halt_gate, keyword_shadow_recorder
 from src.services.param_policy import get_param
 from src.services.rotation_pair_recorder import DECISION_APPROVED, DECISION_REJECTED_DELTA, record_rotation_decision, record_young_blocked
 from src.domain.entities import RiskKeyword
@@ -2232,8 +2232,7 @@ class SentinelService:
             logger.warning(f"Sentinel: shadow proposal recording failed (orders unaffected): {shadow_err!r}")
 
         try:
-            from src.services.automated_trading_service import AutomatedTradingService
-            auto_trade_svc = AutomatedTradingService()
+            auto_trade_svc = _ats.AutomatedTradingService()
 
             for signal in signals:
                 await auto_trade_svc.evaluate_and_execute_trade(
@@ -2495,10 +2494,9 @@ class SentinelService:
         logger.warning(f"Sentinel: Triggering Emergency Liquidation Protocol for {len(users)} users.")
 
         try:
-            from src.services.automated_trading_service import AutomatedTradingService
             from src.services.transaction_service import TransactionService
 
-            auto_trade_svc = AutomatedTradingService()
+            auto_trade_svc = _ats.AutomatedTradingService()
             tx_service = TransactionService()
 
             for uid in users:
@@ -3158,8 +3156,7 @@ class SentinelService:
 
         # Execute only decisions that pass threshold
         try:
-            from src.services.automated_trading_service import AutomatedTradingService
-            auto_trade_svc = AutomatedTradingService()
+            auto_trade_svc = _ats.AutomatedTradingService()
 
             for decision in decisions:
                 if not decision["should_execute"]:
@@ -3260,10 +3257,9 @@ class SentinelService:
         logger.info(f"Sentinel: Processing {len(rebalance_triggers)} rebalance triggers for user {self.user_id}")
 
         try:
-            from src.services.automated_trading_service import AutomatedTradingService
             from src.services.exit_compositor_service import ExitCompositorService
 
-            auto_trade_svc = AutomatedTradingService()
+            auto_trade_svc = _ats.AutomatedTradingService()
             # One instance per batch — it caches the LLM pipeline internally,
             # so rebuilding it per trigger would re-resolve the model router.
             # 每批共用一個實例：其內部快取 LLM 管線，逐筆重建會重複解析模型路由。
@@ -4263,8 +4259,7 @@ class SentinelService:
         if not exit_triggers:
             return
 
-        from src.services.automated_trading_service import AutomatedTradingService
-        auto_trade_svc = AutomatedTradingService()
+        auto_trade_svc = _ats.AutomatedTradingService()
 
         for trigger in exit_triggers:
             if trigger.get("action") != "trigger_exit":
@@ -4272,7 +4267,9 @@ class SentinelService:
 
             ticker = trigger.get("ticker")
             sell_qty = trigger.get("sell_quantity")
-            strategy_name = trigger.get("strategy_name", "position_exit")
+            strategy_name = trigger.get("strategy_name")
+            if not strategy_name:
+                logger.error(f"[Sentinel Exit] {ticker} trigger has no strategy_name; sell sent unnamed")
             current_price = trigger.get("current_price")
             avg_price = trigger.get("avg_price")
             return_pct = trigger.get("return_pct")
@@ -4883,8 +4880,7 @@ class SentinelService:
         if not triggers:
             return
 
-        from src.services.automated_trading_service import AutomatedTradingService
-        auto_trade_svc = AutomatedTradingService()
+        auto_trade_svc = _ats.AutomatedTradingService()
 
         for trigger in triggers:
             ticker = trigger["ticker"]

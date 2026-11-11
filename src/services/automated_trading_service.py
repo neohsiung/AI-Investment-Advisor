@@ -1,4 +1,6 @@
 from src.utils.logger import setup_logger
+from src.domain import strategy_names as sn
+from src.services.strategy_registry import StrategyRegistry
 logger = setup_logger("AutomatedTradingService")
 
 import os
@@ -237,7 +239,6 @@ class AutomatedTradingService:
                 # 1. Full position liquidation
                 is_full_close = (target_weight == 0) or (is_sell and current_weight is not None and abs(current_weight) <= 0.001)
                 # 2. Safety controls
-                from src.services.strategy_registry import StrategyRegistry
                 is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
                 # 3. New position opening from zero
                 is_new_position = (current_weight == 0 or current_weight is None) and (not is_sell)
@@ -262,7 +263,6 @@ class AutomatedTradingService:
 
         # 0b-1. Strategy Low-Confidence Skip Gate (低信心評分跳過 — 屬正常策略過濾非風控阻斷)
         is_sell_action = str(action).upper() == "SELL"
-        from src.services.strategy_registry import StrategyRegistry
         is_safety_action = is_sell_action and StrategyRegistry.is_safety_control(strategy_name or "")
 
         raw_min_th = self.settings_repo.get(user_id, "auto_trade_min_threshold")
@@ -304,7 +304,7 @@ class AutomatedTradingService:
                 cooldown_hours = float(raw_cooldown) if raw_cooldown is not None else 24.0
             except (ValueError, TypeError):
                 cooldown_hours = 24.0
-            is_emergency_stop = str(strategy_name or "").lower() in ("stop_loss", "trailing_stop_loss", "trailing_stop", "emergency_exit", "emergency_liquidation", "position_exit")  # DD-2026-1031
+            is_emergency_stop = sn.has_role(strategy_name, sn.CHURN_COOLDOWN_EXEMPT)  # DD-2026-1031
 
             if cooldown_hours > 0 and not is_emergency_stop:
                 all_txs = self.tx_repo.get_all_by_user(user_id)
@@ -430,9 +430,7 @@ class AutomatedTradingService:
         try:
             from src.services.inference_hurdle_gate_service import InferenceHurdleGateService
             hurdle_svc = InferenceHurdleGateService(user_id=user_id)
-            is_routine = (strategy_name or "") in (
-                "rebalance", "batch_cash_deployment", "tactical_factor_rotation", "automated_trading"
-            )
+            is_routine = sn.has_role(strategy_name, sn.INFERENCE_ROUTINE)
             hurdle_eval = hurdle_svc.evaluate_order_hurdle(
                 order_amount_usd=float(quantity or 0.0),
                 is_routine_rebalance=is_routine,
@@ -522,7 +520,6 @@ class AutomatedTradingService:
         # 停損（stop_loss）與緊急避險（emergency_exit）屬資本安全控制，豁免於回測閘門。
         is_sell = str(action).upper() == "SELL"
         requires_approval_reason = None
-        from src.services.strategy_registry import StrategyRegistry
         is_safety = StrategyRegistry.is_safety_control(strategy_name or "")
         if strategy_name and not is_safety:
             try:
@@ -681,7 +678,6 @@ class AutomatedTradingService:
         # 3. Decision Logic (三段式閥值)
         # 3a. Below minimum → skip silently, no notification
         # Exemption: Safety controls and rebalance liquidations are pre-authorized
-        from src.services.strategy_registry import StrategyRegistry
         is_safety = is_sell and StrategyRegistry.is_safety_control(strategy_name or "")
         if not is_safety and normalized_confidence < min_threshold:
             logger.info(
@@ -814,7 +810,7 @@ class AutomatedTradingService:
                                     if quantity is None or (
                                         is_excess_cash
                                         and dynamic_scaled > quantity
-                                        and strategy_name not in ("cash_deployment", "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance")
+                                        and not sn.has_role(strategy_name, sn.NO_DYNAMIC_SCALING)
                                     ):
                                         logger.info(
                                             f"{sizing_method_name}: Scaled {ticker} BUY ${quantity or 0:.2f} → ${dynamic_scaled:.2f} "
@@ -1128,10 +1124,9 @@ class AutomatedTradingService:
         Streamlined auto-execution policy gatekeeper.
         統一判定是否符合自動執行標準與對應標籤。
         """
-        from src.services.strategy_registry import StrategyRegistry
 
-        if is_sell and strategy_name in ("stop_loss", "trailing_stop_loss", "trailing_stop"):
-            label = "移動停損自動執行" if strategy_name in ("trailing_stop_loss", "trailing_stop") else "停損自動執行"
+        if is_sell and sn.has_role(strategy_name, sn.STOP_LOSS_FAMILY):
+            label = sn.AUTO_EXIT_LABELS[sn.normalize(strategy_name)]
             return True, label
 
         if requires_approval_reason:
@@ -1139,24 +1134,11 @@ class AutomatedTradingService:
 
         # 安全控制與再平衡出場
         if is_sell and (StrategyRegistry.is_safety_control(strategy_name or "") or strategy_name == "tactical_factor_rotation") and auto_exit_enabled:
-            labels = {
-                "stop_loss": "停損自動執行",
-                "trailing_stop_loss": "移動停損自動執行",
-                "trailing_stop": "移動停損自動執行",
-                "take_profit": "停利自動執行",
-                "capital_rotation": "換庫自動執行",
-                "rebalance_diversification": "再平衡自動執行",
-                "portfolio_rebalance": "再平衡自動執行",
-                "concentration_rebalance": "再平衡自動執行",
-                "stagnation_pruning": "停滯修剪自動執行",
-                "macro_volatility_hedge": "避險減碼自動執行",
-                "tactical_factor_rotation": "波段換倉自動執行",
-            }
-            return True, labels.get(strategy_name, "安全出場自動執行")
+            return True, sn.AUTO_EXIT_LABELS.get(sn.normalize(strategy_name), "安全出場自動執行")
 
         # 系統排程與授權策略（分批建倉、再平衡、資本輪動）直接全自主放行 (Scheduled Cash Deployment & Rebalance Authorization Gate)
         # 凡屬經系統排程或投組模型授權之分批建倉、資產配置再平衡與資本輪動，全權自主放行，杜絕卡住 Celery Worker 審批槽
-        if strategy_name in ("cash_deployment", "rebalance_diversification", "portfolio_rebalance", "concentration_rebalance", "capital_rotation"):
+        if sn.has_role(strategy_name, sn.AUTO_EXEC_REBALANCE):
             if not is_sell:
                 if strategy_name == "cash_deployment":
                     return True, "自主分批建倉執行 (系統排程授權)"
@@ -1165,7 +1147,7 @@ class AutomatedTradingService:
                 return True, "自主再平衡賣出 (模型授權)"
 
         # 金字塔加碼、宏觀避險與波段輪動自動執行
-        if not is_sell and strategy_name in ("pyramiding_scale_in", "macro_volatility_hedge", "tactical_factor_rotation") and effective_confidence >= min_threshold:
+        if not is_sell and sn.has_role(strategy_name, sn.AUTO_EXEC_BUY) and effective_confidence >= min_threshold:
             if strategy_name == "pyramiding_scale_in":
                 label = "金字塔加碼自動執行"
             elif strategy_name == "macro_volatility_hedge":
@@ -1407,7 +1389,7 @@ class AutomatedTradingService:
             raw_meta = {
                 "order_status": execution_status,
                 "broker_order_id": broker_order_id,
-                "strategy_name": strategy_name or "AutomatedTrading",
+                "strategy_name": strategy_name,  # None stays None: no plausible default label / 缺名如實記 None
                 "confidence_score": confidence_score,
                 "rationale": rationale,
                 "approval_type": approval_type,
@@ -1539,13 +1521,12 @@ class AutomatedTradingService:
             # SlippageGuardService 需要 SettingsService.get_setting()；repository 物件沒有此方法，
             # 護欄過去每次都崩潰而從未真正執行。
             from src.services.settings_service import SettingsService as _SS
-            from src.services.strategy_registry import StrategyRegistry as _SR
             slippage_guard = SlippageGuardService(user_id=user_id, settings_service=_SS(user_id=user_id))
             # Safety exits (stop-loss, trailing stop, emergency) must never be deferred by the opening-window or
             # spread breaker: getting out matters more than the fill quality. Only entries and discretionary
             # sells are subject to it.
             # 安全類出場（停損/追蹤停損/緊急）不得被開盤窗口或價差熔斷延後；只有進場與非安全賣出受此限制。
-            if order.action.value.upper() == "SELL" and _SR.is_safety_control(strategy_name or ""):
+            if order.action.value.upper() == "SELL" and StrategyRegistry.is_safety_control(strategy_name or ""):
                 guard_eval = None
             else:
                 guard_eval = await slippage_guard.evaluate_trade(
@@ -1645,7 +1626,11 @@ class AutomatedTradingService:
 
                         if execution_price and execution_price > 0:
                             outcome_svc = OutcomeReflectionService(user_id=user_id)
-                            agent_identifier = strategy_name or "AutomatedTrading"
+                            agent_identifier = strategy_name or sn.UNNAMED_LEDGER_LABEL
+                            if not strategy_name:
+                                logger.warning(
+                                    f"Unnamed trade {order.symbol}: outcome tagged {agent_identifier!r} / 缺策略名"
+                                )
                             dec_id = outcome_svc.record_decision(
                                 ticker=order.symbol,
                                 agent_name=agent_identifier,

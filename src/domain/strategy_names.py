@@ -110,6 +110,25 @@ AUTO_EXEC_REBALANCE: FrozenSet[str] = frozenset({
     CASH_DEPLOYMENT, REBALANCE_DIVERSIFICATION, PORTFOLIO_REBALANCE, CONCENTRATION_REBALANCE, CAPITAL_ROTATION,
 })
 
+# automated_trading_service: BUYs auto-executed once confidence clears the minimum. / 信心達最低門檻即自動執行的買單。
+AUTO_EXEC_BUY: FrozenSet[str] = frozenset({PYRAMIDING_SCALE_IN, MACRO_VOLATILITY_HEDGE, TACTICAL_FACTOR_ROTATION})
+
+# automated_trading_service: the label shown for an auto-executed exit, keyed by strategy name. Not a role (it is a
+# mapping); the key set is checked against the roles in tests. / 自動出場的顯示標籤，以策略名為鍵。
+AUTO_EXIT_LABELS = {
+    STOP_LOSS: "停損自動執行",
+    TRAILING_STOP_LOSS: "移動停損自動執行",
+    TRAILING_STOP: "移動停損自動執行",
+    TAKE_PROFIT: "停利自動執行",
+    CAPITAL_ROTATION: "換庫自動執行",
+    REBALANCE_DIVERSIFICATION: "再平衡自動執行",
+    PORTFOLIO_REBALANCE: "再平衡自動執行",
+    CONCENTRATION_REBALANCE: "再平衡自動執行",
+    STAGNATION_PRUNING: "停滯修剪自動執行",
+    MACRO_VOLATILITY_HEDGE: "避險減碼自動執行",
+    TACTICAL_FACTOR_ROTATION: "波段換倉自動執行",
+}
+
 # risk_manager: rebalance batches that skip the daily-trade limit. / 略過單日次數限制的再平衡批次。
 DAILY_LIMIT_REBALANCE: FrozenSet[str] = frozenset({
     REBALANCE_DIVERSIFICATION, PORTFOLIO_REBALANCE, CONCENTRATION_REBALANCE, TACTICAL_FACTOR_ROTATION,

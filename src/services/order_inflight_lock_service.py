@@ -70,7 +70,7 @@ class OrderInflightLockService:
             "ticker": sym,
             "order_id": str(order_id or ""),
             "action": str(action or "").upper(),
-            "strategy_name": strategy_name or "AutomatedTrading",
+            "strategy_name": strategy_name,  # None stays None / 缺名如實記 None
             "acquired_at": now_ts,
             "expires_at": now_ts + ttl,
         }

@@ -36,7 +36,7 @@ grep -rn "is_safety_control" src --include=*.py | grep -v "def is_safety"
 
 ## 3 需要你決定（實作前）
 
-1. **缺名賣單的處理**。查證結果（唯讀，2026-10-30）：近 60 天 3 筆 `AutomatedTrading` 賣單是新聞 webhook 的主觀減碼（`approval_type` 為「出場自動執行」，凍結前的單）。`AutomatedTrading` 是 `automated_trading_service.py:1403` 在沒傳策略名時補的預設標籤，所以「缺名」與 `AutomatedTrading` 是同一類。可重跑：
+1. **缺名賣單的處理**。查證結果（唯讀，2026-10-30）：近 60 天 3 筆 `AutomatedTrading` 賣單是新聞 webhook 的主觀減碼（`approval_type` 為「出場自動執行」，凍結前的單）。`AutomatedTrading` 是 `automated_trading_service.py:1403` 在沒傳策略名時補的預設標籤，所以「缺名」與 `AutomatedTrading` 是同一類。（P6 之後：寫入端缺名記 `None`，只有學習帳本讀取端用同值標記 `UNNAMED_LEDGER_LABEL`。）可重跑：
 
 ```bash
 grep -rn '"AutomatedTrading"' src --include=*.py
@@ -55,7 +55,7 @@ PY
    - `actionable_alert_service.py` 約 400 行的人工確認平倉：SELL、沒帶策略名（第一段已命名 `position_exit`）。
    - `sentinel_service.py` 約 2239 行的 webhook 交易訊號：策略名沒帶，就是上面那 3 筆的來源，屬於主觀減碼。
    - `workflow_service.py`、`socket_manager.py`、`evaluate_trade` skill：也沒帶策略名（`socket_manager.py` 的 SELL 在 #270 命名為 `position_exit`；其餘維持缺名，凍結中會被擋，這是預期）。
-   - 有帶名字的：停損觸發明確帶 `stop_loss`（`sentinel_service.py` 的停損分支）；`sentinel_service.py` 約 4274 行 `trigger.get("strategy_name", "position_exit")` 的預設值目前沒有觸發端會用到，但缺名時會被當成安全出場，是 P6 要處理的缺值補預設。
+   - 有帶名字的：停損觸發明確帶 `stop_loss`（`sentinel_service.py` 的停損分支）；`sentinel_service.py` 約 4274 行 `trigger.get("strategy_name", "position_exit")` 的預設值目前沒有觸發端會用到，但缺名時會被當成安全出場，已在 P6 移除：缺名時策略名為 `None`、賣單照送並記 `logger.error`，不再假冒安全出場。
 
    結論：**不能因為「缺名」就擋賣單**，否則凍結期間緊急清倉與人工平倉會被 S2 誤擋。這比「待決定」更嚴重，是 S2 實作的前提。兩段式做法：
    - **第一段（已完成，#268）**：給緊急清倉（`emergency_exit`）與人工確認平倉（`position_exit`）補上明確策略名，並把 `position_exit` 加進日內反向單冷卻的豁免。
