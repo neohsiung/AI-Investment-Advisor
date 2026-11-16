@@ -1,4 +1,4 @@
-# 由 dev-standard v0.21.0 產生，請勿手改；要改請改 dev-standard 的 components/r3-gate，再跑 sync.py update
+# 由 dev-standard v0.23.2 產生，請勿手改；要改請改 dev-standard 的 components/r3-gate，再跑 sync.py update
 name: r3-gate
 # GitHub 端的「要人合併」紅燈（dev-standard#45）。PR 要人合併（bootstrap、改到檢查工具、R3）就紅燈，
 # 由 repo 在 ruleset 把它設成 required check（來源綁 GitHub Actions app），人用 ruleset bypass 合併。
@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - env:

@@ -1,4 +1,4 @@
-# 由 dev-standard v0.21.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.23.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """外殼：用 gh 取 PR 資料、合併、留言。決策不在這裡。
 
 整個套件只有這個檔起子行程，且只有四處：`_run`（gh）、`_git_head`（唯讀的 `git rev-parse HEAD`）、`_git`（準備 base checkout 的 fetch／worktree）與 `run_classifier`（risk.json 指定的 argv）。
@@ -282,9 +282,20 @@ def repo_owner(repo=None) -> str:
     return out
 
 
+def is_ancestor(other_sha, head_sha, repo=None) -> bool:
+    """other_sha 是不是 head_sha 的祖先（疊鏈判準 a）。用 GitHub compare API，不依賴本機有沒有 fetch 到對方的 commit：
+    compare <other>...<head> 的 status 為 ahead（head 領先 other）或 identical，other 就在 head 的歷史裡。
+    API 失敗丟 GhError（run.py 轉成非 0），不當成「不是疊鏈」悄悄放過，也不當成「是」。"""
+    for sha in (other_sha, head_sha):
+        if not SHA40.match(str(sha)):
+            raise GhError(f"compare 需要完整 40 位 sha：{sha!r}")
+    st = _run(["api", f"repos/{_slug(repo)}/compare/{other_sha}...{head_sha}", "--jq", ".status"]).stdout.strip()
+    return st in ("ahead", "identical")
+
+
 def fetch(number, repo=None, ci_mode=False, cfg=None, local_automerge_off=False, cwd=None, base_dir=None) -> checks.PR:
     """cwd：本機 repo 根目錄。非 CI 模式 classifier 跑在 base 最新版的 checkout：cwd 已是就直接用，否則自備暫存 worktree（或用 base_dir）。"""
-    fields = "number,title,body,headRefOid,baseRefName,isDraft,mergeable,state,changedFiles"
+    fields = "number,title,body,headRefOid,headRefName,baseRefName,isDraft,mergeable,state,changedFiles"
     if not ci_mode:
         fields += ",statusCheckRollup,comments"
     d = json.loads(_run(["pr", "view", str(number), "--json", fields] + (["--repo", repo] if repo else [])).stdout)
@@ -317,17 +328,24 @@ def fetch(number, repo=None, ci_mode=False, cfg=None, local_automerge_off=False,
                 with base_checkout(base, cwd, tip, base_dir) as bdir:
                     level = run_classifier(cfg["classifier"], files, cwd=bdir)
     dbranch = None
-    others, ci, comments, off = {}, [], [], False
+    others, metas, ci, comments, off = {}, {}, [], [], False
     trusted = tuple(cfg["trusted_authors"]) or (repo_owner(repo),)
     if not ci_mode:
         dbranch = default_branch(repo)
-        lcmd = ["pr", "list", "--state", "open", "--limit", str(LIST_LIMIT), "--json", "number,changedFiles"] + (["--repo", repo] if repo else [])
+        lcmd = ["pr", "list", "--state", "open", "--limit", str(LIST_LIMIT), "--json", "number,changedFiles,headRefOid,headRefName,baseRefName,isDraft"] + (["--repo", repo] if repo else [])
         opens = json.loads(_run(lcmd).stdout)
         if len(opens) >= LIST_LIMIT:
             raise GhError(f"開著的 PR 達 {LIST_LIMIT} 筆上限，無法確認無衝突")
+        mine = set(files)
         for o in opens:
-            if o["number"] != number:
-                others[o["number"]] = pr_files(o["number"], repo, o.get("changedFiles"))
+            if o["number"] == number or o.get("isDraft"):     # draft 不擋別人
+                continue
+            others[o["number"]] = pr_files(o["number"], repo, o.get("changedFiles"))
+            meta = {"head_ref": o["headRefName"], "base_ref": o["baseRefName"], "head_sha": o["headRefOid"], "ancestor": False}
+            # 只有「改同檔、分支名又沒銜接」的才需要問 GitHub 祖先關係；沒共用檔的 PR 不會被拿來比衝突
+            if mine & set(others[o["number"]]) and not checks.stacked_by_refs(base, d["headRefName"], meta):
+                meta["ancestor"] = is_ancestor(o["headRefOid"], d["headRefOid"], repo)
+            metas[o["number"]] = meta
         ignore = set(cfg["ci_ignore"])
         ci = [((c.get("name") or c.get("context")), (c.get("conclusion") or c.get("state") or "PENDING"))
               for c in d.get("statusCheckRollup", []) if (c.get("name") or c.get("context")) not in ignore]
@@ -336,6 +354,7 @@ def fetch(number, repo=None, ci_mode=False, cfg=None, local_automerge_off=False,
     return checks.PR(number=d["number"], head_sha=d["headRefOid"], title=d["title"], body=d["body"] or "", files=files,
                      draft=d["isDraft"], mergeable=d["mergeable"] == "MERGEABLE",  # UNKNOWN 當不可合併
                      cfg=cfg, classifier_level=level, ci=ci, comments=comments, other_pr_files=others,
+                     other_pr_meta=metas, head_ref=d["headRefName"],
                      automerge_off=off, trusted=trusted, base=base, default_branch=dbranch, bootstrap=bootstrap)
 
 

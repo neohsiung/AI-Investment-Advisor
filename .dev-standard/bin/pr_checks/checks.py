@@ -1,4 +1,4 @@
-# 由 dev-standard v0.21.0 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
+# 由 dev-standard v0.23.2 產生，請勿手改；要改請改 dev-standard 的 components/pr-checks，再跑 sync.py update
 """七項 PR 檢查＋CI＋R2 reviewer 條件。純函式，不碰網路、不起子行程。
 
 資料由 gh.py 取得，決策在 merge.py。repo 差異全在 PR.cfg（來自 .dev-standard/risk.json）。
@@ -34,6 +34,8 @@ class PR:
     ci: list = field(default_factory=list)   # [(名稱, 結論)]
     comments: list = field(default_factory=list)  # [(作者, 內文)]
     other_pr_files: dict = field(default_factory=dict)  # {PR 編號: [檔]}
+    other_pr_meta: dict = field(default_factory=dict)   # {PR 編號: {head_ref, base_ref, head_sha, ancestor}}；缺就當作沒有疊鏈關係
+    head_ref: object = None                  # 本 PR 的 head 分支；None＝不明（不認疊鏈）
     automerge_off: bool = False
     trusted: tuple = ()
     base: object = None                      # PR 的 base 分支；None＝不明
@@ -103,10 +105,32 @@ def check_outward(pr):
     return Result("4-對外影響", True)
 
 
+def stacked_by_refs(base, head_ref, meta: dict) -> bool:
+    """疊鏈的分支名判準（純函式，gh.py 用它決定要不要再呼叫 compare API）：
+    本 PR 的 base 是對方的 head 分支（我疊在它上面），或對方的 base 是本 PR 的 head 分支（它疊在我上面）。"""
+    if base and meta.get("head_ref") and base == meta["head_ref"]:
+        return True
+    return bool(head_ref and meta.get("base_ref") and head_ref == meta["base_ref"])
+
+
+def is_stacked(pr: PR, n) -> bool:
+    """同一疊鏈＝對方的 head 是本 PR head 的祖先（gh.py 查出 ancestor），或分支名銜接。疊鏈必然共用檔案，不算衝突。"""
+    meta = pr.other_pr_meta.get(n)
+    return bool(meta) and (bool(meta.get("ancestor")) or stacked_by_refs(pr.base, pr.head_ref, meta))
+
+
 def check_conflict(pr):
+    """與其他開著的非 draft PR 改同檔：編號小（較老）的先合、通過；編號大的紅燈並指出該等誰。
+    其他 PR 比我新就不擋我（輪到它們等我）。疊鏈照舊不算衝突。"""
     mine = set(pr.files)
-    clash = {n: sorted(mine & set(fs)) for n, fs in pr.other_pr_files.items() if mine & set(fs)}
-    return Result("5-無衝突", not clash, "" if not clash else "與其他開著的 PR 改同檔：" + str(clash))
+    overlap = {n: sorted(mine & set(fs)) for n, fs in pr.other_pr_files.items() if mine & set(fs)}
+    stacked = sorted(n for n in overlap if is_stacked(pr, n))
+    clash = {n: fs for n, fs in overlap.items() if n not in stacked and n < pr.number}
+    note = "疊鏈：" + "、".join(f"#{n}" for n in stacked) + "（依序合，不算衝突）" if stacked else ""
+    if clash:
+        waits = "；".join(f"等 #{n} 先合，再併 main 重跑（共用：{', '.join(fs)}）" for n, fs in sorted(clash.items()))
+        return Result("5-無衝突", False, waits + ("；" + note if note else ""))
+    return Result("5-無衝突", True, note)
 
 
 def check_derived(pr):
