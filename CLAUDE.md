@@ -2,7 +2,7 @@
 
 # CLAUDE.md — Claude Code 專屬說明
 
-<!-- DEV-STANDARD:BEGIN v0.21.0 -->
+<!-- DEV-STANDARD:BEGIN v0.23.2 -->
 <!-- 由 dev-standard 的 tools/sync.py 產生。要改規則請改 dev-standard 的 STANDARD.md 再 update；本 repo 自己的差異寫在這個區塊外。 -->
 ## 開發辦法（精簡版，由 dev-standard 同步，不要在這裡改）
 
@@ -28,9 +28,11 @@
 | R3 | 人。腳本印「R3：要人合併」並拒絕 |
 
 - `SCOPE: OK <sha>` 表示說明與改動對得上，每一級合併都要；`REVIEW: PASS <sha>` 表示審過。兩者都可以由寫 PR 的 session 留，只證明檢查跑過，不證明有第二雙眼睛。要獨立審查，另設一個 gh 身分加進 `risk.json` 的 `trusted_authors`。
+- 疊鏈不算衝突，仍要依序合：「無衝突」不把同一疊鏈的 PR 當衝突（細節見 `docs/design/DD-2026-1109-stack-aware-conflict.md`），但每個 PR 都要各自過檢查，由下往上、每一個都合進 main。
 
 - 裝了 `r3-gate` 的 repo，要人合併的 PR 在 GitHub 上會亮紅的 r3-gate，這是設計，不算 CI 失敗；其他檢查要全綠。
 - 根目錄的 `.automerge-off` 是熔斷開關：存在就拒絕自動合併；讀不到它時中止，不當作沒有。合併指令固定 `gh pr merge --merge --match-head-commit <sha> --delete-branch`，不 squash、不用 `--auto`。
+- 交給人合併時，上面那條 `gh pr merge` 是 `run.py` 內部用的，不原樣交出去：人的終端機不經 hook，繞過 `run.py` 就沒有合併後 retro。R0、R1 給 `python3 .dev-standard/bin/pr_checks/run.py <PR> --repo <owner/repo> --merge`；R2 先給 `REVIEW: PASS <sha>` 的留言指令，再給同一支 `run.py --merge`；只有 R3、bootstrap、改到檢查工具本身的 PR（`run.py` 會拒絕）才給裸的 `gh pr merge … --match-head-commit <sha> --delete-branch`，並附補 retro 的 `gh pr comment <PR> --repo <owner/repo> --body-file <檔>`（檔內第一行「合併後 retro」，接 `run.py` 那五行，「發生什麼」寫成人合併，不寫腳本合併）。guard.json 有加 `blocked_commands` 那一項的 repo，agent 自己跑 `gh pr merge` 會跳核可，範例見 `components/guard/guard.example.json`。
 
 **模型分層**
 - 選模型看「錯了誰會發現、多久發現」，不看角色。內容已定稿、結果能機械讀回比對的用 Haiku：代送已核准的訊息、提醒、查找。有規則可循、錯了有讀回、閘門或下游檢查會發現的用 Sonnet：清單盤點、照規則核可、報表、程式實作、調查型 subagent、多數排程。人在場一起想、產出離開對話而且只有人讀到才會發現錯的用 Opus：規劃、管理判斷、給人看的文字、跨來源整合。
@@ -54,8 +56,11 @@
 - 每個「系統在某情況會怎樣」的說法都附可重跑的指令。跑不了的寫成推論並說明依據。
 - 改門檻、改規則、改契約，同一個 commit 附 DD。
 - 送出去的 PR 描述、留言、訊息也是產出：裡面每個「已補、已改、第 N 行」，對著要推的那一版逐項核對才送；有通過標記才放行送出。
+- 由產生器管理的遠端資源，例如看板、告警、雲端設定，套用前先拿產生器的版本跟正式端比對。比對在套用當下重跑，不沿用 dry-run 時的結果；比對失敗或沒跑完就停，不當成相同；「跟 dry-run 相同」用自己寫的比較程式判斷，不靠可能被 hook 包裝的 shell 指令的結束碼。正式端有、產生器沒有的手改，先收回產生器再套用；套用後讀回比對，完全相同才算完成（DD-2026-1111）。
 - 迭代檢核只在「本輪新必修為 0」時停，最多兩輪，超過就把剩下的攤給人決定；每輪報告最後一行寫「新必修數：N」。
+- verify 不只回報問題：每個發現附給 develop 的修法、測項與回流目標（共通、語言模組、專案 overlay，或不回流並寫理由），寫進 `.claude-task/verify.json`。develop 先把規則寫進回流目標的清單，再改程式與測項；`tools/review_loop.py check` 綠了才交回 verify。審查清單分三層：共通與語言模組在 dev-standard，專案差異由 `.dev-standard/review.json` 指到 overlay（DD-2026-1110）。
 - 跨天的 worktree、草稿、未 commit 的實作，不放 `/tmp`，也不放被排程同步工具掃描的目錄。
+- 交給別人在正式環境跑的查詢或腳本：連讀庫、唯讀、依主鍵分批、單批逾時、批與批之間暫停，寫明離峰時段並避開大促日；偵測用的正規式交付前，用正例、反例、繞過寫法與對抗輸入的語料反向驗證；結果由查詢先分類並附判讀表，給多語言團隊的是 pseudo code 加參數化 SQL，不是單一語言腳本。
 
 **安全**
 - 金鑰只走環境變數或金鑰庫；只驗存在或長度，不印出來。被 hook 擋下就不繞路：跳核可視窗的由人按允許，擋死的請人在電腦的終端機用 `!` 自己執行（Remote Control 跑不了 `!`）。人能核可的動作寫進 guard 的 `ask: true` 或 `ask_paths`。

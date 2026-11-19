@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 由 dev-standard v0.21.0 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
+# 由 dev-standard v0.23.2 產生，請勿手改；要改請改 dev-standard 的 components/guard，再跑 sync.py update
 """guard.py — Claude Code PreToolUse 硬底線（來由：hermes hermes_guard.py 與它的測試，加上 litov 的 worktree 基底檢查；dev-standard §1、§2、§6）
 
 CLAUDE.md／AGENTS.md 是建議，擋不住任何事；這支是擋得住的那一層（exit 2 在權限規則之前生效，bypass 也一樣）。
@@ -21,10 +21,14 @@ repo 自己的擋（.dev-standard/guard.json，缺的欄位＝不啟用；範例
   ⑦ exec_guard：用 AST 算 import 閉包，直接執行「碰得到下單模組」的腳本就擋（比路徑清單準，不會漂）。
      modules／calls／scripts_dir_name
   ⑧ dotenv_out_only：這些指令的 --out 只能寫成 .env* 檔名（不然繞過 ② 的檔名比對）
-  ⑨ private_egress：私有目錄（待核可草稿、個資）的內容不准交給會出網的 CLI（agy、gemini、codex、curl、wget、scp、sftp、
-     rsync、nc、ncat、gh、ssh；可用 clis 改）。paths（目錄，相對 repo 根目錄）、allow（目錄內可出網的檔，例 .gitkeep）。
-     只看同一條管線；cd 進私有目錄或把私有路徑指給變數後，同一條指令後面的出網 CLI 一律擋。沒設 paths ＝ 關。
-     擋不到的（python -c 自己開 socket、先 cp 出去再送）不在範圍。來由：litov#140。
+  ⑨ private_egress：粗規則。擋 ⇔ 指令不符 allow_commands ∧ 含出網 CLI（agy、gemini、codex、curl、wget、scp、sftp、rsync、nc、
+     ssh、gh、openssl、aws、mail…；可用 clis 改）∧ 含私有引用（paths 的目錄、其祖先、後綴、glob、cwd 在私有目錄內）。
+     不切管線、不追資料流：同一個 Bash 指令裡兩者都有就擋。設計上讓擋得更少的只有兩個：allow_commands（整條 fullmatch、含換行
+     不比對）與 allow（目錄內單一檔的整條路徑精確比對，例 .gitkeep）。here-doc 內文、引號字串、指令裡的 cd 都不降低擋；
+     有出網 CLI 又有 file: 開頭的字（含 %XX、[x-y] 寫法）也擋；判斷不了就退回擋。其餘認不出私有路徑的寫法是已知限制，
+     不是豁免（`x://…` 開頭的字不比對私有路徑、相對路徑往上再下來的 glob、開頭是萬用字元的 glob、壞括號的 glob、跨呼叫先複製再送、腳本檔內部讀檔等），
+     見 README〈擋不到的〉。paths（目錄，相對 repo 根目錄）。沒設 paths ＝ 關。
+     來由：litov#140、#334；設計 DD-2026-1113。
   ⑩ 跳核可（opt-in）：blocked_commands 的項目加 "ask": true、或路徑寫進 ask_paths（regex，相對 repo 根目錄），命中時不擋死，
      改輸出 permissionDecision=ask，跳 Claude Code 的核可視窗（依官方文件 auto 模式也跳、Remote Control 轉送得到；`!` 轉不到。
      手機端尚未實測，見 DD-2026-1104 AC5）。
@@ -46,6 +50,7 @@ guard.json 存在但內容壞了（不是合法 JSON、型別不對、缺 patter
 from __future__ import annotations
 
 import ast
+import fnmatch
 import json
 import os
 import re
@@ -80,9 +85,11 @@ ORDER_MODULES = set()
 ORDER_CALLS = ()
 SCRIPTS_DIR = "scripts"
 DOTENV_ONLY = set()
-EXTERNAL_CLIS_DEFAULT = ("agy", "gemini", "codex", "curl", "wget", "scp", "sftp", "rsync", "nc", "ncat", "gh", "ssh")
-EGRESS = None                    # {"clis": set, "dirs": [(完整路徑, [regex…], [祖先 regex…])], "allow": set}；None ＝ 關
-SHELL_C = re.compile(r"^-[a-zA-Z]*c[a-zA-Z]*$")
+EXTERNAL_CLIS_DEFAULT = ("agy", "gemini", "codex", "curl", "wget", "scp", "sftp", "rsync", "nc", "ncat", "gh", "ssh",
+                         "netcat", "socat", "telnet", "ftp", "tftp", "aria2c", "rclone", "xh", "openssl", "aws", "gsutil",
+                         "gcloud", "az", "mail", "mailx", "sendmail", "mutt", "msmtp", "swaks", "osascript", "dig", "nslookup")
+REPO_ROOT = ""                  # _main() 填入；private_egress 的絕對路徑 glob 從這個目錄名起算
+EGRESS = None                    # build_egress() 的結果（dirs、anc、suf、roots、allow、clis、allow_cmds）；None ＝ 關
 SHELLS = {"bash", "sh", "zsh", "dash"}
 
 
@@ -192,6 +199,8 @@ def validate_config(cfg: dict) -> None:
         for k in ("clis", "paths", "allow"):
             if k in pe:
                 _strs(pe[k], f"private_egress.{k}")
+        if "allow_commands" in pe:
+            _regexes(pe["allow_commands"], "private_egress.allow_commands")
         for p in pe.get("paths", []):
             if not p.strip("/") or p.startswith(("/", "~")) or ".." in p.split("/"):
                 raise ValueError(f"private_egress.paths 要是相對 repo 根目錄的目錄，不接受 {p!r}")
@@ -227,7 +236,7 @@ def configure(cfg: dict) -> None:
     ORDER_CALLS = tuple(eg.get("calls") or [])
     SCRIPTS_DIR = eg.get("scripts_dir_name") or "scripts"
     DOTENV_ONLY = set(cfg.get("dotenv_out_only") or [])
-    EGRESS = build_egress(cfg.get("private_egress") or {})
+    EGRESS = build_egress(cfg.get("private_egress") or {}, REPO_ROOT)
 
 
 def in_live(path: str):
@@ -390,11 +399,55 @@ def trunk_commit_allowed(target: str) -> bool:
     return cfg.get("trunk_commit_allowed") is True
 
 
-def check_trunk(segs: list, cwd: str) -> None:
-    for w in segs:
+def trunk_targets(segs: list, cwd: str, cmd) -> list:
+    """(字詞, git 作用前的目錄)。只跟著連續 && 鏈上的 cd／pushd 走（cd 失敗 git 就不跑）；
+    遇到 ; || | & 換行或子 shell、目錄展開不了（$X、cd -、cd 沒給目錄）都退回 session 的 cwd ⇒ 不會比只看 session cwd 寬鬆（#220）。
+    換行要當分隔（多行指令、heredoc 內文各自成段，跟 segments() 一樣）；行尾的 && 接下一行仍算同一條鏈。
+    切不開（引號不成對）退回舊做法：每段都用 session 的 cwd。"""
+    if cmd is None:
+        return [(w, cwd) for w in segs]
+    lx = shlex.shlex(cmd, posix=True, punctuation_chars=";&|\n")
+    lx.whitespace = " \t\r"
+    lx.whitespace_split = True
+    try:
+        toks = list(lx)
+    except ValueError:
+        return [(w, cwd) for w in segs]
+    ops, cur, prev = [], [], None
+    for t in toks + [";"]:
+        if t and set(t) <= set(";&|\n"):                # shlex 會把相鄰的運算子黏成一個 token（如 "&&\n"）
+            if cur:
+                ops.append((cur, prev))
+            elif prev == "&&" and not t.strip("\n"):       # `&&` 後面的空行：仍是同一條鏈
+                continue
+            cur, prev = [], "&&" if t.rstrip("\n") == "&&" else t
+        else:
+            cur.append(t)
+    out, target, env = [], cwd, base_env()
+    for raw, prev in ops:
+        if prev not in (None, "&&"):
+            target = cwd
+        w = strip_wrappers(raw)
+        if not w:
+            continue
+        if w[0].startswith("("):                         # 子 shell：裡面的 cd 不跟，當 session 的 cwd
+            target = cwd
+            w = strip_wrappers([w[0].lstrip("(")] + w[1:] if w[0].lstrip("(") else w[1:])
+            if not w:
+                continue
+        elif w[0] in ("cd", "pushd"):
+            nxt_dir = resolve(w[1], target, env) if len(w) > 1 else None
+            target = cwd if nxt_dir is None else nxt_dir
+            continue
+        out.append((w, target))
+    return out
+
+
+def check_trunk(segs: list, cwd: str, cmd=None) -> None:
+    for w, base in trunk_targets(segs, cwd, cmd):
         if os.path.basename(w[0]) != "git":
             continue
-        sub, args, target = git_parts(w, cwd)
+        sub, args, target = git_parts(w, base)
         if sub == "commit" and current_branch(target) in MAIN and not trunk_commit_allowed(target):
             block("在 main 上 commit", WT_HOW)
         if sub == "worktree":
@@ -835,123 +888,322 @@ def write_targets(segs: list, cmd: str) -> list:
     return out
 
 
-# ── ⑨ 私有資料出網 ───────────────────────────────────────────────────────────
-def _glob_part(comp: str) -> str:
-    return re.escape(comp).replace(r"\*", "[^/]*")
+# ── ⑨ 私有資料出網（粗規則）─────────────────────────────────────────────────
+# 擋 ⇔ 指令不符 allow_commands ∧ 指令含出網 CLI ∧ 指令含私有引用。不切管線、不切敘述、不追資料流。
+# 只有 allow_commands（整條 fullmatch）能讓擋得更少。here-doc 內文、含空白的引號字串都算指令的一部分，指令裡的 cd 不降低擋：
+# 要送的文字用 Write／Edit 寫成檔，再 `--body-file <檔>`，內文就不在指令字串裡。
+# 設計：docs/design/DD-2026-1113-guard-coarse-egress.md。
+EG_INTERP = re.compile(r"^(python[0-9.]*|pypy[0-9.]*|node|nodejs|deno|bun|ruby|perl|php|lua|rscript)$")
+EG_INLINE_OPT = re.compile(r"^(-[a-z]*[cep]|-r|--eval|--print|eval|-)$")                 # 比對時已轉小寫
+EG_NETKW = re.compile(r"urllib|urlopen|requests|http\.client|httpx|aiohttp|socket|smtplib|ftplib|xmlrpc|paramiko"
+                      r"|fetch\(|xmlhttprequest|child_process|subprocess|os\.system|popen|net::http|lwp::|io::socket"
+                      r"|open-uri|websocket|/dev/tcp|/dev/udp|from\s+http\s+import|require\(https?\)")
+EG_SPLIT = re.compile(r"[\s;|&()<>`{}=,@]+")             # 刻意不切 `:`，needs:growth、team:growth 才不會中
+EG_GLOB = re.compile(r"[*?\[]")
+EG_BRACE = re.compile(r"\{([^{}\s]*,[^{}\s]*)\}")
+EG_BRANGE = re.compile(r"\{([A-Za-z0-9])\.\.([A-Za-z0-9])\}")
+EG_ANSI = re.compile(r"\$'((?:[^'\\]|\\.)*)'")
+EG_ESC = re.compile(r"\\(x[0-9a-fA-F]{1,2}|[0-7]{1,3}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|c.|.)", re.S)
+EG_BRACE_CAP = 512
+EG_HOW = ("讀私有檔與出網分兩次指令做；出網那一次不得帶私有內容，也不得把私有檔複製、改名、另存到別處再送。"
+          "要送的文字用 Write 工具寫成檔（內容不進指令字串），再 `--body-file <檔>`；確實要送私有內容，請使用者用 `!` 自己執行")
+EG_META = (";", "&", "|", "`", "$(")                    # allow_commands：指令裡有這些字元，regex 自己要寫出來
 
 
-def build_egress(pe: dict):
-    """paths 空或沒設 ＝ 關（回 None）。每個目錄產生：
-    相對 repo 根目錄的各種後綴（growth/outbox、outbox：cd 進 growth 之後用的寫法）、絕對路徑、以及祖先目錄（tar c growth）。"""
-    paths = [p.strip("/") for p in pe.get("paths") or [] if p.strip("/")]
+def build_egress(pe: dict, root: str = ""):
+    """paths 空或沒設 ＝ 關（回 None）。全部轉小寫（APFS 不分大小寫）。
+    dirs ＝ 私有目錄；anc ＝ 它們的祖先（growth）；suf ＝ 去掉前綴的後綴（outbox）。roots ＝ 絕對路徑 glob 從哪個目錄名起算。"""
+    paths = [p.strip("/").lower() for p in pe.get("paths") or [] if p.strip("/")]
     if not paths:
         return None
-    dirs = []
-    for full in paths:
-        comps = full.split("/")
-        parts = [_glob_part(c) for c in comps]
-        rels = [re.compile(r"^(?:\./)?" + "/+".join(parts[k:]) + r"(?:/+(.*))?$") for k in range(len(parts))]
-        rels.append(re.compile(r"(?:^|/)" + "/+".join(parts) + r"(?:/+(.*))?$"))      # 絕對路徑、$PWD/…
-        ancestors = [re.compile(r"^(?:\./)?" + "/+".join(parts[:k]) + r"/*$") for k in range(1, len(parts))]
-        dirs.append((full, rels, ancestors))
-    return {"clis": set(pe.get("clis") or EXTERNAL_CLIS_DEFAULT), "dirs": dirs, "allow": set(pe.get("allow") or [])}
+    anc, suf = set(), set()
+    for p in paths:
+        comps = p.split("/")
+        anc |= {"/".join(comps[:k]) for k in range(1, len(comps))}
+        suf |= {"/".join(comps[k:]) for k in range(1, len(comps))}
+    roots = {"$pwd"}
+    if root and os.path.basename(root.rstrip("/")):
+        roots.add(os.path.basename(root.rstrip("/")).lower())
+    return {"dirs": paths, "anc": anc, "suf": suf, "roots": roots,
+            "allow": {a.lower() for a in pe.get("allow") or []},
+            "clis": {c.lower() for c in pe.get("clis") or EXTERNAL_CLIS_DEFAULT},
+            "allow_cmds": [re.compile(r) for r in pe.get("allow_commands") or []]}
 
 
-def split_pipe(group: list) -> list:
-    stages, cur = [], []
-    for t in group + ["|"]:
-        if t in ("|", "|&"):
-            cur = strip_wrappers(cur)
-            if cur:
-                stages.append(cur)
-            cur = []
-        else:
-            cur.append(t)
-    return stages
+def decode_ansi_c(text: str) -> str:
+    """$'\\x70riv'、$'\\160riv' 這類 ANSI-C 引號在解析階段就變成字元：解開跳脫，後面的比對才看得到。只處理含反斜線的。"""
+    names = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v"}
+
+    def esc(m):
+        e = m.group(1)
+        try:
+            if e[0] == "x" and len(e) > 1:
+                return chr(int(e[1:], 16))
+            if e[0] in "01234567":
+                return chr(int(e, 8) & 0xFF)
+            if e[0] in "uU" and len(e) > 1:
+                return chr(int(e[1:], 16))
+            if e[0] == "c" and len(e) == 2:
+                return chr(ord(e[1]) & 0x1F)
+        except (ValueError, OverflowError):
+            return e
+        return names.get(e[0], e)
+
+    return EG_ANSI.sub(lambda m: EG_ESC.sub(esc, m.group(1)) if "\\" in m.group(1) else m.group(0), text)
 
 
-def pipelines(cmd: str) -> list:
-    """依 ; && || 換行切成 pipeline，管線（|）與重導向留在同一組，才看得出資料從哪流向哪。"""
-    lx = shlex.shlex(cmd, posix=True, punctuation_chars=";&|\n")
-    lx.whitespace = " \t\r"
-    lx.whitespace_split = True
-    try:
-        toks = list(lx)
-    except ValueError:                                   # 引號沒閉合：退回粗切，寧可多看
-        toks = cmd.replace("\n", " ; ").split()
-    out, cur = [], []
-    for t in toks + [";"]:
-        if t in OPERATORS and t not in ("|", "|&"):
-            if cur:
-                out.append(cur)
-            cur = []
-        else:
-            cur.append(t)
-    return out
+def _range_items(m):
+    x, y = m.group(1), m.group(2)
+    if x.isdigit() and y.isdigit():
+        lo, hi = int(x), int(y)
+        return [str(i) for i in range(min(lo, hi), max(lo, hi) + 1)]
+    if x.isalpha() and y.isalpha():
+        lo, hi = ord(x), ord(y)
+        return [chr(i) for i in range(min(lo, hi), max(lo, hi) + 1)]
+    return [x, y]
 
 
-def private_token(tok: str) -> str:
-    """token 是私有目錄的資料（或目錄本身）就回傳該 token，否則空字串。
-    只看整個 token：含空白的句子、URL 裡提到路徑不算；絕對路徑與 $PWD/… 算。allow 只比對整個檔名。"""
-    for cand in {tok, tok.lstrip("@<>"), tok.split("=")[-1].lstrip("@<>")}:
-        cand = cand.strip("\"'")
-        if not cand or re.search(r"\s", cand) or "://" in cand:
+def brace_variants(text: str):
+    """大括號展開（{a,b}、{a..c}）的所有寫法，含原文；只用來找藏在展開裡的出網 CLI 名。組合超過 EG_BRACE_CAP 回 None。"""
+    seen, stack = {text}, [text]
+    while stack:
+        s = stack.pop()
+        m = EG_BRACE.search(s)
+        alts = m.group(1).split(",") if m else None
+        if not m:
+            m = EG_BRANGE.search(s)
+            alts = _range_items(m) if m else None
+        if not m:
             continue
-        for full, rels, ancestors in EGRESS["dirs"]:
-            for rx in rels:
-                m = rx.search(cand)
-                if m:
-                    rest = m.group(1)
-                    if not rest or (rest not in EGRESS["allow"] and f"{full}/{rest}" not in EGRESS["allow"]):
-                        return tok
-            if any(a.match(cand) for a in ancestors):
-                return tok
-    return ""
+        for alt in alts:
+            v = s[:m.start()] + alt + s[m.end():]
+            if v not in seen:
+                if len(seen) >= EG_BRACE_CAP:
+                    return None
+                seen.add(v)
+                stack.append(v)
+    return list(seen)
 
 
-def inner_commands(group: list) -> list:
-    """bash -lc "…"、eval "…"、<<< "…"、$(…)、`…` 裡面的指令字串。"""
-    out = []
-    for i, t in enumerate(group):
-        name = os.path.basename(t)
-        if name in SHELLS:
-            for j in range(i + 1, len(group)):
-                if SHELL_C.match(group[j]) and j + 1 < len(group):
-                    out.append(group[j + 1])
+def has_expansion_forms(cmd: str, use_quotes: bool = True) -> bool:
+    """有沒有不在引號裡的大括號展開（{a,b}、{x..y}）或帶跳脫的 ANSI-C 引號（$'\\x70'）。這兩種在解析階段才變成字，不展開、有出網就擋。
+    `${…}` 是變數展開、`{ cmd; }` 是群組，都不算。引號不成對（例如 here-doc 內文裡的 `it's`）時，改成不管引號整段重掃，寧可多判。"""
+    n, i, q = len(cmd), 0, None
+    while i < n:
+        c = cmd[i]
+        if q:
+            if c == "\\" and q == '"':
+                i += 2
+                continue
+            if c == q:
+                q = None
+            i += 1
+            continue
+        if c == "\\":
+            i += 2
+            continue
+        if c == "$" and cmd.startswith("$'", i):                       # ANSI-C 字串：本體內有反斜線就是跳脫
+            j, esc = i + 2, False
+            while j < n and cmd[j] != "'":
+                if cmd[j] == "\\":
+                    esc, j = True, j + 1
+                j += 1
+            if esc:
+                return True
+            i = j + 1
+            continue
+        if use_quotes and c in "'\"":
+            q = c
+            i += 1
+            continue
+        if c == "{" and cmd[i - 1:i] != "$":
+            j, depth, comma, rng, quote = i + 1, 1, False, False, None
+            while j < n and depth:
+                d = cmd[j]
+                if quote:
+                    if d == "\\" and quote == '"':
+                        j += 2
+                        continue
+                    if d == quote:
+                        quote = None
+                elif d == "\\":
+                    j += 2
+                    continue
+                elif use_quotes and d in "'\"":
+                    quote = d
+                elif d.isspace() or d in ";&|<>()":
+                    break                                              # 有空白或分隔符：群組，不是展開
+                elif d == "{":
+                    depth += 1
+                elif d == "}":
+                    depth -= 1
+                elif depth == 1 and d == ",":
+                    comma = True
+                elif depth == 1 and cmd.startswith("..", j):
+                    rng = True
+                j += 1
+            if depth == 0 and (comma or rng):
+                return True
+        i += 1
+    return use_quotes and q is not None and has_expansion_forms(cmd, False)    # 引號不成對：不管引號整段重掃
+
+
+def allow_command_match(cmd: str) -> bool:
+    """allow_commands：整條 fullmatch；含換行不比對；指令裡的 `;`、`&`、`|`、反引號、`$(`，regex 自己沒寫出來就不放行。"""
+    if "\n" in cmd:
+        return False
+    for rx in EGRESS["allow_cmds"]:
+        if rx.fullmatch(cmd) and all(tok in rx.pattern for tok in EG_META if tok in cmd):
+            return True
+    return False
+
+
+# ── 正規化、出網、私有引用 ──
+def egress_normalize(text: str) -> str:
+    """小寫；刪引號與反斜線（gro""wth、c\\url、$'curl'）；`//` 摺成 `/`（保留 `://`）；去 `/./`；摺疊 `x/../`。"""
+    t = text.lower()
+    t = re.sub(r"""['"\\]""", "", t)
+    t = re.sub(r"(?<!:)/{2,}", "/", t)
+    t = re.sub(r"(?<=/)\./", "", t)
+    prev = None
+    while prev != t:
+        prev = t
+        t = re.sub(r"(?:(?<=/)|(?<=[\s=@<>:]))(?!\.\./)[^/\s;|&()<>`{}=,@]+/\.\./", "", t)
+    return t
+
+
+def egress_hits(norm: str) -> list:
+    """指令裡的出網：CLI 名（比對每個字的 basename，含 :// 的字也算：`x://../../usr/bin/curl` 是路徑）、/dev/tcp、行內直譯器加網路關鍵字。"""
+    found = []
+    for w in (w for w in EG_SPLIT.split(norm) if w):
+        if os.path.basename(w.lstrip("$")) in EGRESS["clis"]:
+            found.append(os.path.basename(w.lstrip("$")))
+    if "/dev/tcp/" in norm or "/dev/udp/" in norm:
+        found.append("/dev/tcp")
+    for seg in re.split(r"[;|&\n()`{}]+", norm):                         # 行內直譯器：後面沒有腳本檔或模組
+        ws = seg.split()
+        for k, w in enumerate(ws):
+            if not EG_INTERP.match(os.path.basename(w)):
+                continue
+            rest, py = ws[k + 1:], bool(re.match(r"^(python|pypy)", os.path.basename(w)))
+            inline = False
+            for r in rest:
+                if py and r.startswith("-m"):                             # python 的 -m 是模組；perl 的 -M、ruby 的 -r 只是載入模組
                     break
-        if name == "eval":
-            out.append(" ".join(group[i + 1:]))
-        if t == "<<<" and i + 1 < len(group):
-            out.append(group[i + 1])
-        out += re.findall(r"\$\(([^()]*)\)", t) + re.findall(r"`([^`]*)`", t)
-    return out
+                if EG_INLINE_OPT.match(r) or r.startswith("<<") or r == "<":
+                    inline = True                                        # 後面任何位置有 -c／-e／-p／heredoc 都算行內（-W ignore -c 這類帶參數的選項）
+                    break
+            else:
+                inline = not any(not r.startswith("-") for r in rest)    # 沒有腳本檔：程式從 stdin 讀
+            if inline and EG_NETKW.search(norm):
+                found.append("inline:" + os.path.basename(w))
+    return found
 
 
-def check_exfil(cmd: str, depth: int = 0) -> None:
-    """私有目錄的內容不准交給會出網的 CLI。只看同一條管線：`ls <私有> && curl …` 沒有資料流相連，不誤擋。
-    `cd` 進私有目錄或把私有路徑指給變數後，同一條指令後面的出網 CLI 一律擋。bash -c 的字串遞迴檢查；xargs 後面的指令算在內。"""
+def _allowed_file(full: str, rest: str) -> bool:
+    rest = rest.split(";")[0].rstrip(")`},")
+    return bool(rest) and not EG_GLOB.search(rest) and f"{full}/{rest}" in EGRESS["allow"]
+
+
+def private_refs(norm: str, cwd: str) -> list:
+    """指令裡的私有引用（任一層命中即算）。A：多段私有目錄的子串；S／B1／B2／B3：單段目錄與祖先、後綴、glob；C：cwd 在私有目錄內。"""
+    E, hits = EGRESS, []
+    for d in [x for x in E["dirs"] if "/" in x]:                         # A：左邊不設邊界，右邊不得接 [a-z0-9_-]
+        for m in re.finditer(re.escape(d) + r"(?![a-z0-9_-])", norm):
+            tail = norm[m.end():]
+            if tail.startswith("/") and _allowed_file(d, re.match(r"/([^\s|&()<>`{}=,]*)", tail).group(1)):
+                continue
+            hits.append("A:" + d)
+    src = norm                                                           # 含空白的引號字串也算指令文字：trap、tcsh -c、git alias、$F 都會重新解析它
+    for d in [x for x in E["dirs"] if "/" not in x]:                     # S：單段目錄依字邊界
+        for m in re.finditer(re.escape(d) + r"(?=$|/|[\s;|&()<>`{}=,@])", src):
+            tok = re.split(r"[\s;|&()<>`{}=,@]", src[:m.start()])[-1]    # 黏在左邊同一個字的文字
+            if "://" in tok:
+                continue
+            if tok == "" or tok.endswith("/") or re.fullmatch(r"-[a-z]{1,4}", tok):
+                tail = src[m.end():]
+                rest = re.match(r"/([^\s|&()<>`{}=,]*)", tail).group(1) if tail.startswith("/") else ""
+                if rest and _allowed_file(d, rest):
+                    continue
+                hits.append("S:" + d)
+    for w in EG_SPLIT.split(src):
+        if not w or "://" in w:
+            continue
+        v = w[2:] if w.startswith("./") else w
+        v = v.rstrip("/") or v
+        if v in E["anc"] or any(v.endswith("/" + a) for a in E["anc"]):  # B1：整個字是祖先
+            hits.append("B1:" + v)
+            continue
+        for sfx in E["suf"]:                                             # B2：後綴，不看 cwd
+            if v == sfx or v.startswith(sfx + "/"):
+                full = next(d for d in E["dirs"] if d.endswith(sfx))
+                if not _allowed_file(full, v[len(sfx) + 1:]):
+                    hits.append("B2:" + v)
+        if EG_GLOB.search(v):                                            # B3：glob 逐段比對私有目錄的前 k 段
+            wc = v.split("/")
+            start = 0
+            if v.startswith(("/", "~", "$")):                            # 絕對：只從 repo 根目錄那一段之後算
+                start = next((k + 1 for k, x in enumerate(wc) if x in E["roots"]), None)
+                if start is None:
+                    continue
+            sub = wc[start:]
+            if not sub or (not re.search(r"[a-z0-9]", sub[0]) and len(sub) < 2):
+                continue
+            for t in E["dirs"]:
+                tc = t.split("/")
+                try:
+                    ok = all(fnmatch.fnmatchcase(tc[k], sub[k]) for k in range(min(len(tc), len(sub))))
+                except re.error:
+                    ok = False                                           # 壞括號（`[ops-agent→all]`）當沒中：改成當中，會擋所有 `[來源→目標]` 前綴的 gh 留言
+                if ok:
+                    hits.append("B3:" + v)
+                    break
+    c = (cwd or "").lower().rstrip("/") + "/"                            # C：cwd 在私有目錄內，裸檔名也是私有的
+    if any(f"/{d}/" in c for d in E["dirs"]):
+        hits.append("C:cwd")
+    return hits
+
+
+def has_file_url(norm: str) -> bool:
+    """有沒有 file: 開頭的字（比對前已轉小寫、刪引號）。curl 自己會解 %XX、展開 [x-y]、{a,b}，guard 看不到，所以不解碼，有就算。
+    也算：scheme 部分帶 `[`、`%` 的 `…://`（`[f-f]ile://`、`%66ile://`）。IPv6 位址 `http://[::1]` 的 scheme 沒有這些字元，不算。
+    引號裡的 `{file,x}://` 由呼叫端傳入大括號展開後的每個寫法，這裡拆字時 `{`、`,`、`}` 已被切掉，認不出來。"""
+    for w in (w for w in EG_SPLIT.split(norm) if w):
+        if w.startswith("file:") or re.match(r"[^/:]*[\[%][^/:]*://", w):
+            return True
+    return False
+
+
+def check_exfil(cmd: str, cwd: str = "") -> None:
+    """私有目錄的內容不准交給會出網的 CLI。擋 ⇔ 不符 allow_commands ∧ 有出網 ∧ 有私有引用，其餘一律不管敘述與資料流。
+    只有 allow_commands 讓擋得更少。here-doc 內文、含空白的引號字串、指令裡的 cd 都不降低擋；規則 C 只看事件的 cwd。
+    有出網 CLI 又有不在引號裡的大括號展開或帶跳脫的 `$'…'`：不展開，直接擋。有出網 CLI 又有 file: 開頭的字：不解碼，直接擋。"""
     if EGRESS is None:
         return
-    tainted = ""
-    for group in pipelines(cmd):
-        stages = split_pipe(group)
-        if depth < 3:
-            for inner in inner_commands(group):
-                check_exfil(inner, depth + 1)
-        ext = next((os.path.basename(t) for st in stages
-                    for t in (st[:1] + (st[1:] if os.path.basename(st[0]) == "xargs" else []))
-                    if os.path.basename(t) in EGRESS["clis"]), "")
-        inner_toks = [t for inner in inner_commands(group) for t in inner.split()]
-        hit = next((private_token(t) for t in group + inner_toks if private_token(t)), "")
-        if ext and (hit or tainted):
-            block(f"{ext} 的指令碰到 {hit or tainted}：設定為私有的目錄（private_egress.paths）內容不准出網",
-                  "出網前先把要送的公開文字另存到私有目錄以外，或請使用者用 `!` 自己執行")
-        if not ext and hit and (os.path.basename(group[0]) in ("cd", "pushd") or re.match(r"^\w+=", group[0])):
-            tainted = hit
+    if allow_command_match(cmd):
+        return
+    decoded = decode_ansi_c(cmd)
+    variants = brace_variants(decoded)
+    forms = has_expansion_forms(cmd)
+    eg = []
+    for v in (variants if variants is not None else [decoded]):
+        eg += egress_hits(egress_normalize(v))
+    if not eg:
+        if variants is None and egress_hits(egress_normalize(decoded)):
+            eg = ["brace"]
+        else:
+            return
+    if forms or variants is None:
+        block(f"{eg[0]} 與大括號展開或 $'\\x..' 跳脫在同一個 Bash 指令，判斷不了會碰到什麼路徑（private_egress），保守擋", EG_HOW)
+    if any(has_file_url(egress_normalize(v)) for v in (variants if variants is not None else [decoded])):
+        block(f"{eg[0]} 與 file: 網址在同一個 Bash 指令，curl 自己會解碼與展開網址裡的路徑，判斷不了會讀到什麼（private_egress），保守擋", EG_HOW)
+    pr = private_refs(egress_normalize(cmd), cwd)
+    if pr:
+        block(f"{eg[0]} 與私有目錄（{pr[0]}；private_egress.paths）在同一個 Bash 指令", EG_HOW)
 
 
 def check_bash(cmd: str, cwd: str, root: str, cfg: dict) -> None:
-    check_exfil(cmd)
+    check_exfil(cmd, cwd)
     segs = segments(cmd)
     for item in cfg.get("blocked_commands", []):         # 逐段比對；要精準就在 pattern 用 ^ 錨定
         if any(re.search(item["pattern"], " ".join(w)) for w in segs):
@@ -961,7 +1213,7 @@ def check_bash(cmd: str, cwd: str, root: str, cfg: dict) -> None:
                 block(f"危險指令：{item.get('why', item['pattern'])}")
     if cfg.get("secret_extraction", True):
         check_secret_extraction_text(cmd)
-    check_trunk(segs, cwd)
+    check_trunk(segs, cwd, cmd)
     cwd0, cwd_run = cwd, cwd
     for w in segs:
         if w[0] == "cd" and len(w) > 1:                  # cd X && python3 y.py：之後的段落以 X 為 cwd
@@ -1023,6 +1275,7 @@ def ask_path_hit(path: str, root: str, cfg: dict):
 
 
 def _main() -> int:
+    global REPO_ROOT
     try:
         ev = json.loads(sys.stdin.read() or "{}")
     except ValueError:
@@ -1041,6 +1294,7 @@ def _main() -> int:
             check_file(tool, path, root, {})
             return 0
         block(cfg["__error__"], "請使用者用 `!` 自己修好 .dev-standard/guard.json；在那之前除了 Read 所有動作都擋，免得保護靜默失效")
+    REPO_ROOT = root
     configure(cfg)
     if tool == "Bash":
         check_bash(inp.get("command", ""), cwd, root, cfg)

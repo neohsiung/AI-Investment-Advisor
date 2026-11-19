@@ -35,9 +35,11 @@
 | R3 | 人。腳本印「R3：要人合併」並拒絕 |
 
 - `SCOPE: OK <sha>` 表示說明與改動對得上，每一級合併都要；`REVIEW: PASS <sha>` 表示審過。兩者都可以由寫 PR 的 session 留，只證明檢查跑過，不證明有第二雙眼睛。要獨立審查，另設一個 gh 身分加進 `risk.json` 的 `trusted_authors`。
+- 疊鏈不算衝突，仍要依序合：「無衝突」不把同一疊鏈的 PR 當衝突（細節見 `docs/design/DD-2026-1109-stack-aware-conflict.md`），但每個 PR 都要各自過檢查，由下往上、每一個都合進 main。
 
 - 裝了 `r3-gate` 的 repo，要人合併的 PR 在 GitHub 上會亮紅的 r3-gate，這是設計，不算 CI 失敗；其他檢查要全綠。
 - 根目錄的 `.automerge-off` 是熔斷開關：存在就拒絕自動合併；讀不到它時中止，不當作沒有。合併指令固定 `gh pr merge --merge --match-head-commit <sha> --delete-branch`，不 squash、不用 `--auto`。
+- 交給人合併時，上面那條 `gh pr merge` 是 `run.py` 內部用的，不原樣交出去：人的終端機不經 hook，繞過 `run.py` 就沒有合併後 retro。R0、R1 給 `python3 .dev-standard/bin/pr_checks/run.py <PR> --repo <owner/repo> --merge`；R2 先給 `REVIEW: PASS <sha>` 的留言指令，再給同一支 `run.py --merge`；只有 R3、bootstrap、改到檢查工具本身的 PR（`run.py` 會拒絕）才給裸的 `gh pr merge … --match-head-commit <sha> --delete-branch`，並附補 retro 的 `gh pr comment <PR> --repo <owner/repo> --body-file <檔>`（檔內第一行「合併後 retro」，接 `run.py` 那五行，「發生什麼」寫成人合併，不寫腳本合併）。guard.json 有加 `blocked_commands` 那一項的 repo，agent 自己跑 `gh pr merge` 會跳核可，範例見 `components/guard/guard.example.json`。
 
 **模型分層**
 - 選模型看「錯了誰會發現、多久發現」，不看角色。內容已定稿、結果能機械讀回比對的用 Haiku：代送已核准的訊息、提醒、查找。有規則可循、錯了有讀回、閘門或下游檢查會發現的用 Sonnet：清單盤點、照規則核可、報表、程式實作、調查型 subagent、多數排程。人在場一起想、產出離開對話而且只有人讀到才會發現錯的用 Opus：規劃、管理判斷、給人看的文字、跨來源整合。
@@ -61,8 +63,11 @@
 - 每個「系統在某情況會怎樣」的說法都附可重跑的指令。跑不了的寫成推論並說明依據。
 - 改門檻、改規則、改契約，同一個 commit 附 DD。
 - 送出去的 PR 描述、留言、訊息也是產出：裡面每個「已補、已改、第 N 行」，對著要推的那一版逐項核對才送；有通過標記才放行送出。
+- 由產生器管理的遠端資源，例如看板、告警、雲端設定，套用前先拿產生器的版本跟正式端比對。比對在套用當下重跑，不沿用 dry-run 時的結果；比對失敗或沒跑完就停，不當成相同；「跟 dry-run 相同」用自己寫的比較程式判斷，不靠可能被 hook 包裝的 shell 指令的結束碼。正式端有、產生器沒有的手改，先收回產生器再套用；套用後讀回比對，完全相同才算完成（DD-2026-1111）。
 - 迭代檢核只在「本輪新必修為 0」時停，最多兩輪，超過就把剩下的攤給人決定；每輪報告最後一行寫「新必修數：N」。
+- verify 不只回報問題：每個發現附給 develop 的修法、測項與回流目標（共通、語言模組、專案 overlay，或不回流並寫理由），寫進 `.claude-task/verify.json`。develop 先把規則寫進回流目標的清單，再改程式與測項；`tools/review_loop.py check` 綠了才交回 verify。審查清單分三層：共通與語言模組在 dev-standard，專案差異由 `.dev-standard/review.json` 指到 overlay（DD-2026-1110）。
 - 跨天的 worktree、草稿、未 commit 的實作，不放 `/tmp`，也不放被排程同步工具掃描的目錄。
+- 交給別人在正式環境跑的查詢或腳本：連讀庫、唯讀、依主鍵分批、單批逾時、批與批之間暫停，寫明離峰時段並避開大促日；偵測用的正規式交付前，用正例、反例、繞過寫法與對抗輸入的語料反向驗證；結果由查詢先分類並附判讀表，給多語言團隊的是 pseudo code 加參數化 SQL，不是單一語言腳本。
 
 **安全**
 - 金鑰只走環境變數或金鑰庫；只驗存在或長度，不印出來。被 hook 擋下就不繞路：跳核可視窗的由人按允許，擋死的請人在電腦的終端機用 `!` 自己執行（Remote Control 跑不了 `!`）。人能核可的動作寫進 guard 的 `ask: true` 或 `ask_paths`。
@@ -106,6 +111,8 @@
 | 一個 PR 一個連貫範圍；以「合併後系統自洽」為單位，上限是一次 review 讀得完 | decision-stack 寫入程序：只加工具不改契約等於沒生效；審不完的 diff 等於沒被審 | reviewer 問「拿掉這個 PR 的任一半，另一半還成立嗎」 |
 | 疊起來的 PR 每一個都合進 main | litov #2 疊在 #1 上，#1 先合進 main，#2 合進沒人看的 base 分支，main 沒拿到內容 | 合併前看 base 是不是 main |
 | 合併依風險級，一律 merge commit、不 squash | hermes：squash 會讓部署端的 `pull --ff-only` 與原子 commit 失效。litov 的私有免費 repo 沒有分支保護，`--auto` 等於立刻合，所以只用 `--match-head-commit` 鎖住檢查時的 head。2026-10-31 使用者決定：自動合併升成通用規則、預設開啟（`docs/design/DD-2026-1031-merge-by-risk.md`） | `tests/test_pr_checks.py`：R3 路徑判 R3 且拒絕合併、`.automerge-off` 拒絕、R2 缺 reviewer 拒絕、合併指令不含 `--squash`／`--auto` |
+| 交給人合併時給 `run.py --merge`，不給裸的 `gh pr merge`；R2 先給 `REVIEW: PASS <sha>` 留言指令；R3、bootstrap、改到檢查工具的 PR 才給裸指令，並附補 retro 的指令 | litov 2026-11-06 起合併的 PR 有 54 件沒有合併後 retro，其中 24 件是 R0／R1：session 把裸的 `gh pr merge … --match-head-commit …` 交給創辦人在終端機跑，不經 `run.py`，所以不留 retro。人在終端機跑的指令不經過 hook，guard 擋不到，這一側只能靠規則；agent 自己跑的那一側，guard.json 有加 `blocked_commands`（`ask: true`）的 repo 會跳核可（[litov#346](https://github.com/neohsiung/litov/issues/346)，[litov#367](https://github.com/neohsiung/litov/pull/367)）。設計見 `docs/design/DD-2026-1113-merge-handoff-to-human.md` | `tests/test_guard_bare_merge.py`：範例設定下直接合併跳核可、`run.py --merge` 放行；`tests/test_standard_doc.py` 確認精簡版帶得出 `run.py --merge`、`REVIEW: PASS`、補 retro 指令 |
+| 規則的正本 repo 自己的 PR 也走 `run.py`，但執行的檢查程式一律取自 origin/main，不取工作目錄：dev-standard 用 `git show origin/main:tools/self_merge.py \| python3 -I - <PR> --merge` | dev-standard 2026-11-13：正本沒有複本，`run.py` 讀不到 risk.json 跑不起來，PR 都由創辦人裸合，沒有 retro；直接從 `components/pr-checks/` 跑時，排程都在 PR 的 worktree，PR 改過的程式可以替自己放行。設計見 `docs/design/DD-2026-1113-self-merge-checks.md` | `tests/test_self_merge_launcher.py`：工作目錄的 `run.py` 被改過，入口仍執行 origin/main 那份；`tests/test_self_merge_config.py`：改檢查工具、guard、hooks、loopback-hooks 要人合併，文件不必 |
 | main 與共用分支不 force push；自己的 feature 分支整理歷史，例如 rebase、拿掉試做後又刪掉的 commit，用 `--force-with-lease=<分支>:<遠端舊 SHA>`，推完讀回遠端 SHA 確認等於本機 | 某 Rails 專案 2026-10：8 條 PR 送審前整理歷史，不 force 就推不上去。不寫舊 SHA 的 `--force` 會蓋掉別人在同一分支的推送，而且沒有訊號 | guard 擋 push 到 main（`templates/hooks/guard.py`）；`pre-push` 以「遠端 SHA 不是本機 SHA 的祖先」判 non-fast-forward，對 main 與共用分支擋、對 feature 分支要求帶 lease，這一段範本尚未實作；推完 `git ls-remote origin <分支>` 的 SHA 等於 `git rev-parse HEAD` |
 | 只做 `git mv` 的 commit 單獨放；有這種 commit 的 PR 合併時不 squash | 某 Rails 專案 2026-10：搬檔與後面加的內容合成一個 commit，內容一多，相似度掉到 50% 以下，git 認不出是搬檔，`git log --follow` 與 `git blame` 追不回搬檔前的歷史。單獨放時 git 判 rename 100%，reviewer 可略過逐行 | `git show -M100% --name-status <commit>` 是 `R100`，且 `--numstat` 0 增 0 刪 |
 | PR 合併後不再往同一分支推；要補從 main 開新分支 | litov#25 合併後又推了三個檔，沒進 main，半天後才被另一個 session 發現，另開 #34 補；錶面 repo 發生過同樣的事。每條分支的檢查只看分支，看不到「它已經合併了」 | hooks 元件的 `pre-push`：分支已有合併的 PR 就擋（只查 origin、排除 fork 同名分支）；gh 不在、失敗或逾時印警告不靜默 |
@@ -122,7 +129,7 @@
 
 R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，關著的車道不會（hermes lane C）。
 
-**GitHub 端也要擋。** `run.py` 只在走它的時候擋得住；PR 作者就是唯一的 code owner 時，`gh pr merge` 直接成功（investment 2026-11-02，AI-Investment-Advisor#302 實測 `mergeStateStatus=CLEAN`）。能設 ruleset 的 repo 裝 `r3-gate` 元件：要人合併的 PR 讓 workflow 回紅，設成 required check、來源綁 GitHub Actions app，人用 ruleset bypass 合併，guard 另擋 agent 的 `gh pr merge`。檢查：先用 `gh api repos/<owner>/<repo>/commits/<head sha>/check-runs` 確認 r3-gate 掛在 PR 的 head 上，再設 required check；之後 R3 測試 PR 的 `mergeStateStatus` 是 `BLOCKED`，R1 測試 PR 照樣由 `run.py --merge` 合併。設計見 `docs/design/DD-2026-1102-r3-gate.md`。
+**GitHub 端也要擋。** `run.py` 只在走它的時候擋得住；PR 作者就是唯一的 code owner 時，`gh pr merge` 直接成功（investment 2026-11-02，AI-Investment-Advisor#302 實測 `mergeStateStatus=CLEAN`）。能設 ruleset 的 repo 裝 `r3-gate` 元件：要人合併的 PR 讓 workflow 回紅，設成 required check、來源綁 GitHub Actions app，人用 ruleset bypass 合併，guard 另擋 agent 的 `gh pr merge`（`blocked_commands` 加 `ask: true`，寫法見 `components/guard/guard.example.json`）。檢查：先用 `gh api repos/<owner>/<repo>/commits/<head sha>/check-runs` 確認 r3-gate 掛在 PR 的 head 上，再設 required check；之後 R3 測試 PR 的 `mergeStateStatus` 是 `BLOCKED`，R1 測試 PR 照樣由 `run.py --merge` 合併。設計見 `docs/design/DD-2026-1102-r3-gate.md`。
 
 對照：hermes 的 lane A＝R0／R1，B＝R2，C＝R3。investment 的 R0–R3 名稱不變。
 
@@ -154,8 +161,13 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 | 改門檻、規則、契約，同一個 commit 附 DD | hermes `dd_gate`：門檻在沒有紀錄的情況下被調過，之後沒人知道為什麼 | hermes 由 git 歷史判定；其他 repo 由 reviewer 檢查 |
 | 逾時算失敗，不算跳過 | hermes green_gate：逾時被當成沒事，紅燈就消失了 | green_gate 逾時回 124 |
 | 送出去的 PR 描述、留言、訊息也是產出：裡面每個「已補、已改、第 N 行」的宣稱，對著要推的那一版逐項核對才送 | 某 Rails 專案 2026-10：回覆寫「已補」但程式裡沒有，被 reviewer 逐點抓出。當時驗過程式與描述，從來沒驗過回覆 | 宣稱核對腳本在送出前跑；送出動作比對文字內容的雜湊，沒有通過標記就擋 |
+| 由產生器管理的遠端資源，例如看板、告警、雲端設定，套用前先跟正式端比對；比對在套用當下重跑，不沿用 dry-run 的結果；比對失敗就停；正式端獨有的手改先收回產生器，套用後讀回要完全相同 | 某監控看板 2026-11：前一天有人在 UI 加了一個群組，產生器裡沒有。照產生器直接套用會把它蓋掉，而且不會報任何錯。套用回成功只證明請求被接受，不證明正式端等於產生器。同一個產生器 2026-11 又兩次：dry-run 比對過了一個多小時才套用，期間正式端被存檔過一次，套用前沒重跑；另一次套用前的比對因網路錯誤沒跑完，拿來判斷「跟 dry-run 相同」的 `diff` 被輸出壓縮的 hook 包過，結束碼不可靠，誤判成相同 | 比對腳本把差異分三類列出：只在正式端、只在產生器、兩邊不同。套用前人看過「只在正式端」那一類；套用指令在同一個步驟裡先跑比對，比對沒跑完就不套用；「相同」的判斷由比較程式印出，不看 shell 指令的結束碼；套用後重跑，印出「完全相同 N 項，共 N 項」才放行 |
 | 迭代檢核要有可數的停止條件：本輪新必修為 0 才停，最多兩輪，超過就把剩下的攤給人決定 | 某 Rails 專案 2026-10：檢核迴圈跑了數次，最後一輪仍找出 7 項必修。沒有收斂判準時，次數多不代表收斂 | 每輪報告最後一行寫「新必修數：N」，兩輪後 N 仍大於 0 就轉給人 |
+| verify 每個發現附修法、測項、回流目標，寫進 `.claude-task/verify.json`；develop 先改回流目標的清單再改程式，`tools/review_loop.py check` 綠了才交回。清單分三層：共通 `templates/review-checklist.md`、語言模組 `templates/checklists/<語言>.md`、專案 overlay（`.dev-standard/review.json` 的 `overlays`） | 某 Rails 專案 2026-11：主 session 派 subagent 寫碼與 spec、reviewer 審查、主 session 套用意見。意見只修了當次程式，沒有回流到清單，下一個同類 agent 照舊清單寫；reviewer 的語言清單放在本機，不在版控與分層之下，改了也沒有紀錄（DD-2026-1110） | `tools/review_loop.py check`：報告缺修法、must 缺測項、缺回流目標、指名的規則 id 不在該 repo 載入的清單裡，都回 1；`tests/test_review_loop.py` 管契約、分層解析與語言模組格式 |
 | 跨天的 worktree、草稿、未 commit 的實作，不放在會被系統清掉或被排程掃到的位置 | 某 Rails 專案 2026-10：`/tmp` 底下的暫存一個週末後被清空；放在被每日同步工具掃描的目錄下，凍結中的分支被 rebase，上游的 commit 被重寫 | 閘門拒收 `/tmp` 底下的路徑；同步類工具只處理 `.git` 是目錄的主 checkout，不處理 `.git` 是檔案的 linked worktree |
+| 交給別人在正式環境跑的查詢或腳本，交付前先做成連讀庫、唯讀、依主鍵分批、單批逾時、批與批之間暫停，並寫明離峰時段；遇大促日往後排 | 某 Rails 專案 2026-11：資安票要掃描數百萬筆描述欄位，第一版是一支全表查詢，交付前才發現隔天是大促，全表跑正規式會佔用讀庫。改成分批、逾時、批間暫停的版本 | `templates/review-checklist.md`〈交給別人跑的查詢與規則〉第一項；範本裡找得到 `statement_timeout` 與主鍵範圍條件；`tests/test_standard_doc.py` 確認清單項沒被拿掉 |
+| 偵測用的正規式與判斷規則，交付前用正例、反例、繞過寫法與對抗輸入的語料反向驗證一次；前置篩選要涵蓋所有細項，找不到對應列的 JOIN 不可靜默丟資料 | 某 Rails 專案 2026-11：第一版偵測規則在語料上判錯一批：實體編碼與夾空白的 `javascript:` 抓不到、純文字被誤判、網域比對可用 `@` 繞過、INNER JOIN 把孤兒資料靜默丟掉。讀正規式看不出來，語料一跑就現形 | `templates/review-checklist.md` 第二項；語料測試全過；前置篩選為真但任一細項為假的列數為 0；對抗輸入單筆耗時在 0.1 秒內 |
+| 請同仁判讀的結果由查詢先分類並附判讀表，執行的人只貼結果、不判斷內容；團隊用多種語言時，交 pseudo code 加參數化 SQL，不交單一語言腳本 | 某 Rails 專案 2026-11：只給筆數時，同仁跑完也不知道「可疑」怎麼判斷，等於無法運作；單一語言腳本還得先看懂才能跑 | `templates/review-checklist.md` 第三項；留言含判讀表與 pseudo code，SQL 模板用綁定參數在本機驗過 |
 
 ## 5. 決策紀錄（DD）
 
@@ -217,6 +229,7 @@ R3 不是「門檻設很高的 R2」，是關著的車道。門檻會被調，�
 | 型別與邊界 | 公開函式有型別標註；外部輸入在邊界驗證一次，裡面信任 | `ruff ANN`（新程式碼）；pydantic 或 dataclass 驗證 |
 | 命名用領域詞 | 名字是使用者或領域會講的詞，不是 `data2`、`helper` | 審查 |
 | 不寫死模型名 | LLM 用別名或等級，不在程式裡寫模型 id | investment 憲章第 1 條；grep 模型 id |
+| 產生器只動自己寫的那一段 | 產生器寫進一個也放人寫內容的欄位時，例如人寫的原說明後面接自動產生的段落：讀回時只剝掉固定位置、錨定在自己產生格式上的那一段，不用關鍵字切割去反解；能從結構化來源取原文，就不從混合欄位反解。產生條件消失時，清掉自己寫過的那一段，只剩原文。來由：某監控看板產生器 2026-11，說明欄位用關鍵字切割反解，原文含同樣的字時會被截掉；格子不再符合條件後，舊的自動段落留在欄位裡（DD-2026-1113-generator-owned-segment） | 兩支測試。一，原文本身含產生格式的關鍵字時，套用後原文一字不缺，連跑兩次也不疊加；二，拿掉產生條件後，欄位只剩原文 |
 
 ### 測試
 
